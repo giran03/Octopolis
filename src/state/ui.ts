@@ -47,6 +47,8 @@ export const ui = createRoot(() => {
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
   const [palette, setPalette] = createSignal<"go" | "commands" | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
+  const [lockPaths, setLockPaths] = createSignal<readonly string[] | null>(null);
+  const [batchRenameOpen, setBatchRenameOpen] = createSignal(false);
   /** Vim visual mode: movement extends the selection. */
   const [visual, setVisual] = createSignal(false);
 
@@ -70,10 +72,14 @@ export const ui = createRoot(() => {
     closePalette: () => setPalette(null),
     shortcutsOpen,
     setShortcutsOpen,
+    lockPaths,
+    setLockPaths,
+    batchRenameOpen,
+    setBatchRenameOpen,
     visual,
     setVisual,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || shortcutsOpen()),
+    modalOpen: () => !!(menu() || confirm() || palette() || shortcutsOpen() || lockPaths() || batchRenameOpen()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

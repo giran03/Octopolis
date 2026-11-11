@@ -281,3 +281,100 @@ fn create_folder_numbers_duplicates() {
     assert_eq!(create_folder(tmp.path(), "New folder").unwrap(), tmp.path().join("New folder"));
     assert_eq!(create_folder(tmp.path(), "New folder").unwrap(), tmp.path().join("New folder (2)"));
 }
+
+#[test]
+fn verify_passes_for_a_good_copy_and_records_pairs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("a.bin");
+    fs::write(&f, vec![9u8; 4096]).unwrap();
+    let dest = tmp.path().join("d");
+    fs::create_dir(&dest).unwrap();
+    let opts = Options { verify: true, ..Options::default() };
+    let r = run_with(&Operation::Copy { sources: vec![f.clone()], dest: dest.clone() }, &opts, &CancelToken::default(), &mut |_| {});
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(r.pairs, vec![(f, dest.join("a.bin"))]);
+}
+
+#[test]
+fn speed_limit_slows_the_transfer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("a.bin");
+    fs::write(&f, vec![1u8; 200 * 1024]).unwrap();
+    let dest = tmp.path().join("d");
+    fs::create_dir(&dest).unwrap();
+    let opts = Options { limit_bps: Some(1024 * 1024), ..Options::default() }; // about 190 ms
+    let t = std::time::Instant::now();
+    let r = run_with(&Operation::Copy { sources: vec![f], dest: dest.clone() }, &opts, &CancelToken::default(), &mut |_| {});
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert!(t.elapsed() >= std::time::Duration::from_millis(150), "{:?}", t.elapsed());
+    assert_eq!(fs::metadata(dest.join("a.bin")).unwrap().len(), 200 * 1024);
+}
+
+#[test]
+fn pause_holds_the_operation_until_resumed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("a.txt");
+    fs::write(&f, b"x").unwrap();
+    let dest = tmp.path().join("d");
+    fs::create_dir(&dest).unwrap();
+    let token = CancelToken::default();
+    token.set_paused(true);
+    let resume = token.clone();
+    let waker = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        resume.set_paused(false);
+    });
+    let t = std::time::Instant::now();
+    run(&Operation::Copy { sources: vec![f], dest: dest.clone() }, Conflict::KeepBoth, &token, &mut |_| {});
+    waker.join().unwrap();
+    assert!(t.elapsed() >= std::time::Duration::from_millis(100));
+    assert!(dest.join("a.txt").exists());
+}
+
+#[test]
+fn relocate_restores_exact_names_and_refuses_to_overwrite() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("report (2).pdf");
+    let b = tmp.path().join("sub/report.pdf");
+    fs::write(&a, b"1").unwrap();
+    let (r, _) = run_op(Operation::Relocate { pairs: vec![(a.clone(), b.clone())] }, Conflict::KeepBoth);
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert!(b.exists() && !a.exists());
+
+    fs::write(&a, b"2").unwrap();
+    let (r, _) = run_op(Operation::Relocate { pairs: vec![(a.clone(), b.clone())] }, Conflict::KeepBoth);
+    assert_eq!(r.errors.len(), 1);
+    assert_eq!(fs::read(&b).unwrap(), b"1", "the existing file is untouched");
+}
+
+#[test]
+fn batch_rename_swaps_and_is_all_or_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a.txt");
+    let b = tmp.path().join("b.txt");
+    fs::write(&a, b"A").unwrap();
+    fs::write(&b, b"B").unwrap();
+    let done = batch_rename(&[(a.clone(), "b.txt".into()), (b.clone(), "a.txt".into())]).unwrap();
+    assert_eq!(done.len(), 2);
+    assert_eq!(fs::read(&a).unwrap(), b"B");
+    assert_eq!(fs::read(&b).unwrap(), b"A");
+
+    let c = tmp.path().join("c.txt");
+    fs::write(&c, b"C").unwrap();
+    assert!(matches!(batch_rename(&[(a.clone(), "c.txt".into())]), Err(crate::Error::AlreadyExists(_))));
+    assert!(matches!(batch_rename(&[(a.clone(), "x.txt".into()), (b.clone(), "X.TXT".into())]), Err(crate::Error::AlreadyExists(_))));
+    assert!(matches!(batch_rename(&[(a.clone(), "bad:name".into())]), Err(crate::Error::InvalidName(_))));
+    assert!(a.exists() && b.exists() && c.exists(), "nothing moved after a refused batch");
+}
+
+#[test]
+fn remove_empty_dir_keeps_folders_with_content() {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path().join("d");
+    fs::create_dir(&d).unwrap();
+    fs::write(d.join("f"), b"").unwrap();
+    assert!(remove_empty_dir(&d).is_err());
+    fs::remove_file(d.join("f")).unwrap();
+    remove_empty_dir(&d).unwrap();
+    assert!(!d.exists());
+}

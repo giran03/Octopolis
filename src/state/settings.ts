@@ -7,9 +7,13 @@ interface Settings {
   showHidden: boolean;
   sidebarOpen: boolean;
   vimMode: boolean;
+  inspectorOpen: boolean;
+  verifyCopies: boolean;
+  /** Bytes per second; null means unlimited. */
+  speedLimit: number | null;
 }
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null };
 
 /** Reads a JSON value from local storage; storage may be unavailable. */
 export function loadJson<T>(key: string, fallback: T): T {
@@ -40,6 +44,12 @@ export const settings = createRoot(() => {
     showHidden: () => value().showHidden,
     sidebarOpen: () => value().sidebarOpen,
     vimMode: () => value().vimMode,
+    inspectorOpen: () => value().inspectorOpen,
+    verifyCopies: () => value().verifyCopies,
+    speedLimit: () => value().speedLimit,
+    toggleInspector: () => update({ inspectorOpen: !value().inspectorOpen }),
+    toggleVerify: () => update({ verifyCopies: !value().verifyCopies }),
+    setSpeedLimit: (speedLimit: number | null) => update({ speedLimit }),
     toggleHidden: () => update({ showHidden: !value().showHidden }),
     toggleSidebar: () => update({ sidebarOpen: !value().sidebarOpen }),
     toggleVim: () => update({ vimMode: !value().vimMode }),

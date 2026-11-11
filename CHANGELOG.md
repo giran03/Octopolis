@@ -26,3 +26,11 @@
 - Keyboard shortcuts editor (Ctrl+K Ctrl+S): change any shortcut, including two-step shortcuts.
 - Optional Vim keys: h j k l, gg, G, yy, dd, p, v for visual selection, / to filter.
 - Reopen the last closed tab with Ctrl+Shift+T.
+- Inspector panel (Ctrl+I or Space): syntax-highlighted code, Markdown, images, SVG, PDF, video, audio with a waveform, 3D models (OBJ, STL), hex dumps for binary files, and folder thumbnails.
+- Browse inside zip, 7z and tar archives like folders, preview files in them, and copy items out.
+- Real Windows file icons in the list.
+- Batch rename (select several, F2): name patterns with numbering, dates, photo and music tags, find and replace with regular expressions, an editable list of names, and a live preview that flags conflicts.
+- What is locking this? shows which programs hold a file, with the option to end them.
+- Undo and redo (Ctrl+Z, Ctrl+Y) for moves, renames, copies, new folders and Recycle Bin deletes.
+- Transfers now wait in a queue, can be paused and resumed, can be verified with checksums, and can be limited to a chosen speed.
+- Folder sizes (Ctrl+Shift+S) with proportional bars, and a disk space treemap (Ctrl+Shift+M).

@@ -4,6 +4,7 @@ import { formatSize } from "../lib/format";
 import { baseName } from "../lib/paths";
 import { ops, type OpView } from "../state/ops";
 import { ui, type MenuEntry, type MenuItem, type MenuState } from "../state/ui";
+import { BatchRename, LockHunter } from "./Dialogs";
 import { IconClose } from "./Icons";
 import { Palette } from "./Palette";
 import { Shortcuts } from "./Shortcuts";
@@ -23,6 +24,12 @@ export function Overlays() {
       <Show when={ui.shortcutsOpen()}>
         <Shortcuts />
       </Show>
+      <Show when={ui.batchRenameOpen()}>
+        <BatchRename />
+      </Show>
+      <Show when={ui.lockPaths()} keyed>
+        {(paths) => <LockHunter paths={paths} />}
+      </Show>
       <div class="toasts" role="status" aria-live="polite">
         <For each={ui.toasts()}>{(t) => <div class="toast">{t.text}</div>}</For>
       </div>
@@ -40,6 +47,7 @@ function OpsTray() {
 
 function OpCard(props: { op: OpView }) {
   const o = () => props.op;
+  const finished = () => props.op.state === "finished";
   const fraction = () => {
     const p = o();
     if (p.totalBytes > 0) return p.doneBytes / p.totalBytes;
@@ -47,22 +55,31 @@ function OpCard(props: { op: OpView }) {
   };
   const summary = () => {
     const p = o();
-    if (p.finished) {
+    if (p.state === "queued") return "Waiting in queue";
+    if (p.state === "paused") return `Paused at ${formatSize(p.doneBytes)}`;
+    if (p.state === "finished") {
       if (p.cancelled) return "Cancelled";
       return p.errors.length ? `Finished with ${p.errors.length} problem${p.errors.length === 1 ? "" : "s"}` : "Done";
     }
     return p.totalBytes > 0 ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}` : `${p.doneItems} of ${p.totalItems} items`;
   };
   return (
-    <div class="op-card" classList={{ failed: o().finished && o().errors.length > 0 }}>
+    <div class="op-card" classList={{ failed: finished() && o().errors.length > 0 }}>
       <div class="op-top">
         <span class="op-label">{o().label}</span>
         <Show
-          when={o().finished}
+          when={finished()}
           fallback={
-            <button class="btn small" onClick={() => ops.cancel(o())}>
-              Cancel
-            </button>
+            <span class="op-buttons">
+              <Show when={o().state !== "queued"}>
+                <button class="btn small" onClick={() => ops.togglePause(o())}>
+                  {o().state === "paused" ? "Resume" : "Pause"}
+                </button>
+              </Show>
+              <button class="btn small" onClick={() => ops.cancel(o())}>
+                Cancel
+              </button>
+            </span>
           }
         >
           <button class="icon-btn" aria-label="Dismiss" onClick={() => ops.dismiss(o().key)}>
@@ -71,7 +88,7 @@ function OpCard(props: { op: OpView }) {
         </Show>
       </div>
       <div class="progress" role="progressbar" aria-valuenow={Math.round(fraction() * 100)} aria-valuemin={0} aria-valuemax={100}>
-        <span style={{ width: `${(o().finished && !o().cancelled ? 1 : fraction()) * 100}%` }} />
+        <span style={{ width: `${(finished() && !o().cancelled ? 1 : fraction()) * 100}%` }} />
       </div>
       <div class="op-sub">
         <span>{summary()}</span>
@@ -81,6 +98,11 @@ function OpCard(props: { op: OpView }) {
         <ul class="op-errors">
           <For each={o().errors.slice(0, 50)}>{(e) => <li title={e.path}>{e.message}</li>}</For>
         </ul>
+        <Show when={o().errors.some((e) => e.path && /used by another|being used|access.denied|sharing/i.test(e.message))}>
+          <button class="btn small op-hunt" onClick={() => ui.setLockPaths(o().errors.map((e) => e.path).filter(Boolean))}>
+            What is locking these?
+          </button>
+        </Show>
       </Show>
     </div>
   );

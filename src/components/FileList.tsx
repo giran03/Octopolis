@@ -10,6 +10,7 @@ import type { SortKey } from "../lib/sort";
 import { ops } from "../state/ops";
 import type { TabModel } from "../state/tab";
 import { ui, type MenuEntry } from "../state/ui";
+import { iconFor } from "../state/icons";
 import { FileGlyph } from "./Icons";
 
 export const ROW_HEIGHT = 26;
@@ -20,6 +21,7 @@ const DRAG_MIME = "application/x-octopolis-paths";
 const scrollMemory = new WeakMap<TabModel, number>();
 /** Paths being dragged (dragover can't read the payload, only its types). */
 let dragging: readonly string[] = [];
+let draggingArchive: string | null = null;
 
 const COLUMNS: { key: SortKey; label: string; align?: "end" }[] = [
   { key: "name", label: "Name" },
@@ -103,6 +105,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
       t.setFocus(pos);
     }
     dragging = t.selectedPaths();
+    draggingArchive = t.archive();
     e.dataTransfer!.setData(DRAG_MIME, JSON.stringify(dragging));
     e.dataTransfer!.effectAllowed = "copyMove";
   };
@@ -124,7 +127,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
     e.preventDefault();
     e.stopPropagation();
     const paths: string[] = JSON.parse(e.dataTransfer?.getData(DRAG_MIME) || "[]");
-    A.dropPaths(paths, destFor(target), e.ctrlKey);
+    A.dropPaths(paths, destFor(target), e.ctrlKey, draggingArchive, !!tab().archive());
   };
 
   return (
@@ -191,14 +194,14 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                     }}
                   >
                     <div class="cell name">
-                      <FileGlyph category={categoryOf(baseOf(name()), dir())} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
+                      <RowIcon path={tab().pathOf(entry())} name={baseOf(name())} isDir={dir()} virtual={!!tab().archive()} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
                       <Show when={tab().renaming() === entry()} fallback={<NameLabel name={name()} />}>
                         <RenameInput name={baseOf(name())} isDir={dir()} onDone={(v) => (v === null ? tab().setRenaming(null) : void A.commitRename(tab(), entry(), v))} />
                       </Show>
                     </div>
                     <div class="cell muted col-modified">{formatDate(l().mtimes[entry()])}</div>
                     <div class="cell muted col-type">{typeLabel(baseOf(name()), dir())}</div>
-                    <div class="cell end muted num">{dir() ? "" : formatSize(l().sizes[entry()])}</div>
+                    <SizeCell tab={tab()} entry={entry()} name={name()} dir={dir()} />
                   </div>
                 </Show>
               );
@@ -267,20 +270,24 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         "separator",
         { label: "Cut", shortcut: "Ctrl+X", run: () => A.copySelection(tab, "cut") },
         { label: "Copy", shortcut: "Ctrl+C", run: () => A.copySelection(tab, "copy") },
-        { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => ops.paste(tab.path()) },
+        { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => A.pasteInto(tab) },
         "separator",
         { label: "Rename", shortcut: "F2", disabled: !single, run: () => A.startRename(tab) },
+        { label: "Batch rename…", disabled: tab.selection().size < 2, run: () => A.openBatchRename(tab) },
         { label: "Copy path", shortcut: "Ctrl+Shift+C", run: () => void A.copyPaths(tab) },
+        { label: "What is locking this?", run: () => A.whoLocks(tab) },
+        ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : []),
         { label: "Show in Explorer", run: () => A.reveal(tab) },
         "separator",
         { label: "Delete", shortcut: "Del", run: () => A.deleteSelection(tab, false) },
         { label: "Delete permanently", shortcut: "Shift+Del", danger: true, run: () => A.deleteSelection(tab, true) },
       ]
     : [
-        { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => ops.paste(tab.path()) },
+        { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => A.pasteInto(tab) },
         { label: "New folder", shortcut: "Ctrl+Shift+N", run: () => void A.newFolder(tab) },
         "separator",
         { label: "Refresh", shortcut: "F5", run: () => void tab.refresh() },
+        { label: tab.dirSizes() ? "Hide folder sizes" : "Calculate folder sizes", shortcut: "Ctrl+Shift+S", run: () => (tab.dirSizes() ? tab.clearSizes() : tab.computeSizes()) },
         { label: "Copy folder path", run: () => void A.copyPaths(tab, [tab.path()]) },
         { label: "Open in Explorer", run: () => A.reveal(tab, tab.path()) },
       ];
@@ -294,5 +301,29 @@ function NameLabel(props: { name: string }) {
       {baseOf(props.name)}
       <Show when={dirOf(props.name)}>{(d) => <span class="label-dir">{d()}</span>}</Show>
     </span>
+  );
+}
+
+/** The Windows shell icon for this type, with a drawn glyph until it loads. */
+function RowIcon(props: { path: string; name: string; isDir: boolean; virtual: boolean; link: boolean }) {
+  const url = () => (props.virtual ? null : iconFor(props.path, props.name, props.isDir)());
+  return (
+    <Show when={url()} fallback={<FileGlyph category={categoryOf(props.name, props.isDir)} link={props.link} />}>
+      {(u) => <img class="row-icon" src={u()} alt="" width="16" height="16" />}
+    </Show>
+  );
+}
+
+/** File size, or a folder's computed size with a proportional bar. */
+function SizeCell(props: { tab: TabModel; entry: number; name: string; dir: boolean }) {
+  const known = () => (props.dir ? props.tab.dirSizes()?.get(props.name.toLowerCase()) : undefined);
+  const max = () => Math.max(1, ...(props.tab.dirSizes()?.values() ?? []));
+  return (
+    <div class="cell end muted num size-cell">
+      <Show when={known() !== undefined}>
+        <span class="size-bar" style={{ width: `${(known()! / max()) * 100}%` }} />
+      </Show>
+      <span class="size-text">{props.dir ? (known() === undefined ? "" : formatSize(known()!)) : formatSize(props.tab.listing().sizes[props.entry])}</span>
+    </div>
   );
 }

@@ -24,6 +24,7 @@ function encode(names: string[]): ArrayBuffer {
 
 vi.mock("../lib/ipc", () => ({
   errorText: (e: unknown) => String(e),
+  folderSizes: async () => undefined,
   unwatchDir: async () => undefined,
   watchDir: async () => undefined,
   listDir: async (path: string, onBatch: (b: ArrayBuffer) => boolean) => {
@@ -34,7 +35,7 @@ vi.mock("../lib/ipc", () => ({
       await new Promise<void>((r) => gates.push(r));
     }
     onBatch(payload);
-    return { count: 0, elapsedMs: 1 };
+    return { count: 0, elapsedMs: 1, archive: null };
   },
 }));
 

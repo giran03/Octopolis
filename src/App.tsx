@@ -1,4 +1,5 @@
 import { onCleanup, onMount, Show } from "solid-js";
+import { Inspector } from "./components/Inspector";
 import { Overlays } from "./components/Overlays";
 import { PaneTree } from "./components/PaneTree";
 import { Sidebar } from "./components/Sidebar";
@@ -24,8 +25,13 @@ export function App() {
         <Sidebar />
       </Show>
       <main class="workspace">
-        <Show when={workspace.paneCount() > 0 && workspace.activePaneId() !== "none"}>
-          <PaneTree node={workspace.layout()} />
+        <div class="panes">
+          <Show when={workspace.paneCount() > 0 && workspace.activePaneId() !== "none"}>
+            <PaneTree node={workspace.layout()} />
+          </Show>
+        </div>
+        <Show when={settings.inspectorOpen()}>
+          <Inspector />
         </Show>
       </main>
       <StatusBar />

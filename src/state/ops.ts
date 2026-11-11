@@ -1,19 +1,25 @@
-// Running and finished file operations, plus the internal clipboard.
-import { createRoot, createSignal } from "solid-js";
-import { cancelOp, errorText, startOp, type ConflictChoice, type OpEvent, type OpRequest } from "../lib/ipc";
+// Queued and finished file operations, the internal clipboard, and undo.
+import { batch, createRoot, createSignal } from "solid-js";
+import * as ipc from "../lib/ipc";
+import { cancelOp, errorText, pauseOp, startOp, type OpEvent, type OpOptions, type OpRequest } from "../lib/ipc";
 import { baseName, parentPath, samePath } from "../lib/paths";
+import { EMPTY_STACKS, popRedo, popUndo, pushAction, redoStep, undoStep, type Pair, type Step, type UndoAction } from "../lib/undo";
+import { settings } from "./settings";
+import { ui } from "./ui";
 import { workspace } from "./workspace";
+
+export type OpState = "queued" | "running" | "paused" | "finished";
 
 export interface OpView {
   readonly key: number;
   readonly id: number | null;
   readonly label: string;
+  readonly state: OpState;
   readonly totalBytes: number;
   readonly doneBytes: number;
   readonly totalItems: number;
   readonly doneItems: number;
   readonly current: string | null;
-  readonly finished: boolean;
   readonly cancelled: boolean;
   readonly errors: readonly { path: string; message: string }[];
 }
@@ -21,59 +27,105 @@ export interface OpView {
 export interface Clip {
   readonly mode: "copy" | "cut";
   readonly paths: readonly string[];
+  /** The archive these paths are inside, if any (copying then extracts). */
+  readonly archive?: string | null;
 }
 
 /** How long a successful operation stays in the tray. */
 const DONE_LINGER_MS = 2500;
 let nextKey = 1;
 
+const describe = (paths: readonly string[]) => (paths.length === 1 ? `"${baseName(paths[0])}"` : `${paths.length} items`);
+
 export const ops = createRoot(() => {
   const [list, setList] = createSignal<readonly OpView[]>([]);
   const [clip, setClip] = createSignal<Clip | null>(null);
+  const [stacks, setStacks] = createSignal(EMPTY_STACKS);
 
   const patch = (key: number, fn: (o: OpView) => OpView) => setList((l) => l.map((o) => (o.key === key ? fn(o) : o)));
   const dismiss = (key: number) => setList((l) => l.filter((o) => o.key !== key));
+  const record = (a: UndoAction) => setStacks((s) => pushAction(s, a));
 
-  /** Refreshes every tab showing a folder the operation touched, and selects new items in the destination. */
+  function refreshDirs(dirs: readonly (string | null)[]) {
+    for (const tab of workspace.allTabs()) {
+      if (dirs.some((d) => d && samePath(d, tab.path()))) void tab.refresh();
+    }
+  }
+
+  /** Refreshes tabs showing touched folders and selects new items in the destination. */
   function refreshAffected(request: OpRequest, created: readonly string[]) {
-    const dirs = request.kind === "delete" ? request.paths.map(parentPath) : [request.dest, ...request.sources.map(parentPath)];
+    let dirs: (string | null)[];
+    let dest: string | null = null;
+    switch (request.kind) {
+      case "delete":
+        dirs = request.paths.map(parentPath);
+        break;
+      case "relocate":
+        dirs = request.pairs.flatMap(([a, b]) => [parentPath(a), parentPath(b)]);
+        break;
+      case "extract":
+        dest = request.dest;
+        dirs = [request.dest];
+        break;
+      default:
+        dest = request.dest;
+        dirs = [request.dest, ...request.sources.map(parentPath)];
+    }
     for (const tab of workspace.allTabs()) {
       if (!dirs.some((d) => d && samePath(d, tab.path()))) continue;
-      const isDest = request.kind !== "delete" && samePath(request.dest, tab.path());
-      if (isDest && created.length) tab.navigate(tab.path(), created.map(baseName));
+      if (dest && samePath(dest, tab.path()) && created.length && !tab.search()) void tab.navigate(tab.path(), created.map(baseName));
       else void tab.refresh();
     }
   }
 
-  async function run(request: OpRequest, label: string, conflict: ConflictChoice = "keepBoth") {
+  function recordFinished(request: OpRequest, label: string, e: Extract<OpEvent, { type: "done" }>) {
+    if (e.cancelled) return;
+    const failed = new Set(e.errors.map((x) => x.path.toLowerCase()));
+    const pairs = e.pairs as readonly Pair[];
+    if (request.kind === "copy" && pairs.length) record({ kind: "copy", label, pairs });
+    else if (request.kind === "move" && pairs.length) record({ kind: "move", label, pairs });
+    else if (request.kind === "delete" && !request.permanent) {
+      const paths = request.paths.filter((p) => !failed.has(p.toLowerCase()));
+      if (paths.length) record({ kind: "recycle", label, paths });
+    }
+  }
+
+  async function run(request: OpRequest, label: string, remember = true) {
     const key = nextKey++;
     setList((l) => [
       ...l,
-      { key, id: null, label, totalBytes: 0, doneBytes: 0, totalItems: 0, doneItems: 0, current: null, finished: false, cancelled: false, errors: [] },
+      { key, id: null, label, state: "queued", totalBytes: 0, doneBytes: 0, totalItems: 0, doneItems: 0, current: null, cancelled: false, errors: [] },
     ]);
     const onEvent = (e: OpEvent) => {
+      if (e.type === "started") return patch(key, (o) => (o.state === "queued" ? { ...o, state: "running" } : o));
       if (e.type === "progress") {
-        patch(key, (o) => ({ ...o, ...e }));
-        return;
+        const { type: _t, ...fields } = e;
+        return patch(key, (o) => ({ ...o, ...fields, state: o.state === "queued" ? "running" : o.state }));
       }
-      patch(key, (o) => ({ ...o, finished: true, cancelled: e.cancelled, errors: e.errors, current: null }));
+      patch(key, (o) => ({ ...o, state: "finished", cancelled: e.cancelled, errors: e.errors, current: null }));
+      if (remember) recordFinished(request, label, e);
       refreshAffected(request, e.created);
       if (e.errors.length === 0) setTimeout(() => dismiss(key), DONE_LINGER_MS);
     };
+    const transfer = request.kind === "copy" || request.kind === "move";
+    const options: OpOptions = { conflict: "keepBoth", verify: transfer && settings.verifyCopies(), limitBps: transfer ? settings.speedLimit() : null };
     try {
-      const id = await startOp(request, conflict, onEvent);
+      const id = await startOp(request, options, onEvent);
       patch(key, (o) => ({ ...o, id }));
     } catch (e) {
-      patch(key, (o) => ({ ...o, finished: true, errors: [{ path: "", message: errorText(e) }] }));
+      patch(key, (o) => ({ ...o, state: "finished", errors: [{ path: "", message: errorText(e) }] }));
     }
   }
 
   function paste(dest: string) {
     const c = clip();
     if (!c || c.paths.length === 0) return;
-    const n = c.paths.length;
-    const what = n === 1 ? `"${baseName(c.paths[0])}"` : `${n} items`;
-    if (c.mode === "cut") {
+    const what = describe(c.paths);
+    if (c.archive) {
+      const root = c.archive;
+      const items = c.paths.map((p) => p.slice(root.length + 1));
+      void run({ kind: "extract", archive: root, items, dest }, `Extracting ${what}`);
+    } else if (c.mode === "cut") {
       void run({ kind: "move", sources: [...c.paths], dest }, `Moving ${what}`);
       setClip(null); // a cut is consumed by its paste
     } else {
@@ -83,8 +135,38 @@ export const ops = createRoot(() => {
 
   function remove(paths: readonly string[], permanent: boolean) {
     if (paths.length === 0) return;
-    const what = paths.length === 1 ? `"${baseName(paths[0])}"` : `${paths.length} items`;
-    void run({ kind: "delete", paths: [...paths], permanent }, permanent ? `Deleting ${what}` : `Recycling ${what}`);
+    void run({ kind: "delete", paths: [...paths], permanent }, permanent ? `Deleting ${describe(paths)}` : `Recycling ${describe(paths)}`);
+  }
+
+  async function perform(step: Step) {
+    switch (step.type) {
+      case "relocate":
+        return run({ kind: "relocate", pairs: step.pairs.map(([a, b]) => [a, b] as [string, string]) }, "Moving items back", false);
+      case "recycle":
+        return run({ kind: "delete", paths: [...step.paths], permanent: false }, `Recycling ${describe(step.paths)}`, false);
+      case "copy":
+        return run({ kind: "copy", sources: [...step.sources], dest: step.dest }, `Copying ${describe(step.sources)}`, false);
+      case "restore":
+        await ipc.restoreRecycled([...step.paths]);
+        return refreshDirs(step.paths.map(parentPath));
+      case "removeEmpty":
+        await ipc.removeEmptyDir(step.path);
+        return refreshDirs([parentPath(step.path)]);
+      case "createFolder":
+        await ipc.createFolder(parentPath(step.path) ?? step.path, baseName(step.path));
+        return refreshDirs([parentPath(step.path)]);
+    }
+  }
+
+  async function travel(popped: ReturnType<typeof popUndo>, step: (a: UndoAction) => Step, verb: string) {
+    if (!popped) return ui.toast(`Nothing to ${verb.toLowerCase()}`);
+    batch(() => setStacks(popped.stacks));
+    try {
+      await perform(step(popped.action));
+      ui.toast(`${verb}: ${popped.action.label}`);
+    } catch (e) {
+      ui.toast(`Couldn't ${verb.toLowerCase()}: ${errorText(e)}`);
+    }
   }
 
   return {
@@ -95,7 +177,16 @@ export const ops = createRoot(() => {
     paste,
     remove,
     dismiss,
+    record,
+    undo: () => travel(popUndo(stacks()), undoStep, "Undo"),
+    redo: () => travel(popRedo(stacks()), redoStep, "Redo"),
     cancel: (o: OpView) => o.id !== null && void cancelOp(o.id),
+    togglePause: (o: OpView) => {
+      if (o.id === null) return;
+      const paused = o.state !== "paused";
+      void pauseOp(o.id, paused);
+      patch(o.key, (x) => ({ ...x, state: paused ? "paused" : "running" }));
+    },
     isCut: (path: string) => {
       const c = clip();
       return c?.mode === "cut" && c.paths.some((p) => samePath(p, path));

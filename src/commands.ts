@@ -69,10 +69,15 @@ export const COMMANDS: readonly Command[] = [
   { id: "file.newFolder", title: "New folder", category: "File", keys: ["ctrl+shift+n"], run: withTab((t) => void A.newFolder(t)) },
   { id: "file.copy", title: "Copy", category: "File", keys: ["ctrl+c"], vimKeys: ["y y"], run: withTab((t) => A.copySelection(t, "copy")) },
   { id: "file.cut", title: "Cut", category: "File", keys: ["ctrl+x"], vimKeys: ["d d"], run: withTab((t) => A.copySelection(t, "cut")) },
-  { id: "file.paste", title: "Paste", category: "File", keys: ["ctrl+v"], vimKeys: ["p"], run: withTab((t) => ops.paste(t.path())) },
+  { id: "file.paste", title: "Paste", category: "File", keys: ["ctrl+v"], vimKeys: ["p"], run: withTab(A.pasteInto) },
   { id: "file.delete", title: "Delete (Recycle Bin)", category: "File", keys: ["delete"], run: withTab((t) => A.deleteSelection(t, false)) },
   { id: "file.deletePermanently", title: "Delete permanently", category: "File", keys: ["shift+delete"], run: withTab((t) => A.deleteSelection(t, true)) },
   { id: "file.copyPath", title: "Copy path", category: "File", keys: ["ctrl+shift+c"], run: withTab((t) => void A.copyPaths(t)) },
+  { id: "file.undo", title: "Undo", category: "File", keys: ["ctrl+z"], vimKeys: ["u"], run: () => void ops.undo() },
+  { id: "file.redo", title: "Redo", category: "File", keys: ["ctrl+y", "ctrl+shift+z"], run: () => void ops.redo() },
+  { id: "file.batchRename", title: "Batch rename…", category: "File", keys: ["ctrl+shift+r"], run: withTab(A.openBatchRename) },
+  { id: "file.whoLocks", title: "What is locking this?", category: "File", keys: ["ctrl+shift+l"], run: withTab(A.whoLocks) },
+  { id: "file.extract", title: "Extract selected items from the archive", category: "File", run: withTab(A.extractHere) },
   { id: "file.reveal", title: "Show in Windows Explorer", category: "File", run: withTab((t) => A.reveal(t)) },
   { id: "file.selectAll", title: "Select all", category: "File", keys: ["ctrl+a"], run: withTab((t) => t.setSelection(selectAll(t.view()))) },
 
@@ -91,6 +96,23 @@ export const COMMANDS: readonly Command[] = [
     },
   },
   { id: "search.flat", title: "Toggle flat view (all files in subfolders)", category: "Search", keys: ["ctrl+shift+e"], run: withTab(toggleFlatView) },
+  { id: "view.inspector", title: "Show or hide the inspector", category: "View", keys: ["ctrl+i", "space"], run: settings.toggleInspector },
+  { id: "view.sizes", title: "Calculate folder sizes", category: "View", keys: ["ctrl+shift+s"], run: withTab((t) => (t.dirSizes() ? t.clearSizes() : t.computeSizes())) },
+  { id: "view.treemap", title: "Toggle disk space treemap", category: "View", keys: ["ctrl+shift+m"], run: withTab((t) => {
+      if (!t.treemap() && !t.dirSizes()) t.computeSizes();
+      t.setTreemap(!t.treemap());
+    }) },
+  { id: "transfer.verify", title: "Toggle verifying copies with checksums", category: "App", run: () => {
+      settings.toggleVerify();
+      ui.toast(settings.verifyCopies() ? "Copies will be verified with BLAKE3" : "Copy verification off");
+    } },
+  { id: "transfer.limit", title: "Cycle transfer speed limit", category: "App", run: () => {
+      const steps = [null, 10, 50, 100, 500];
+      const mb = settings.speedLimit() === null ? null : settings.speedLimit()! / 1048576;
+      const next = steps[(steps.indexOf(mb) + 1) % steps.length];
+      settings.setSpeedLimit(next === null ? null : next * 1048576);
+      ui.toast(next === null ? "Transfer speed: unlimited" : `Transfer speed limit: ${next} MB/s`);
+    } },
   { id: "view.hidden", title: "Show or hide hidden items", category: "View", keys: ["ctrl+h"], global: true, run: settings.toggleHidden },
   { id: "view.sidebar", title: "Show or hide the sidebar", category: "View", keys: ["ctrl+b"], global: true, run: settings.toggleSidebar },
 

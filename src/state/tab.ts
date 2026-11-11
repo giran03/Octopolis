@@ -1,6 +1,6 @@
 // One browsing tab: location, history, streamed listing, sort and selection.
 import { batch, createMemo, createRoot, createSignal } from "solid-js";
-import { cancelSearch, errorText, listDir, search as runSearchIpc, unwatchDir, watchDir, type SearchSummary } from "../lib/ipc";
+import { cancelSearch, errorText, folderSizes, listDir, search as runSearchIpc, unwatchDir, watchDir, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
@@ -49,6 +49,11 @@ export function createTab(initialPath: string) {
     const [anchor, setAnchor] = createSignal(0);
     const [renaming, setRenaming] = createSignal<number | null>(null);
     const [search, setSearch] = createSignal<SearchState | null>(null);
+    /** The archive this folder is inside, if any (such folders are read-only). */
+    const [archive, setArchive] = createSignal<string | null>(null);
+    /** Recursive subfolder sizes by lower-case name, once requested. */
+    const [dirSizes, setDirSizes] = createSignal<ReadonlyMap<string, number> | null>(null);
+    const [treemap, setTreemap] = createSignal(false);
     /** Folder-mode sort, restored when a search ends. */
     let folderSort: SortSpec = DEFAULT_SORT;
 
@@ -107,7 +112,10 @@ export function createTab(initialPath: string) {
           setSelection(new Set<number>());
           setFocus(0);
           setRenaming(null);
+          setDirSizes(null);
+          setTreemap(false);
         });
+        void folderSizes(id, "", () => undefined).catch(() => undefined);
       }
       try {
         let firstPaint = !sameDir;
@@ -132,6 +140,7 @@ export function createTab(initialPath: string) {
           pendingSelect = null;
           setListing(snapshot(builder));
           setStatus({ loading: false, error: null, elapsedMs: summary.elapsedMs });
+          setArchive(summary.archive);
           if (explicit?.length) selectNames(explicit, listing());
           else restoreByName(names, focusName);
         });
@@ -208,6 +217,17 @@ export function createTab(initialPath: string) {
       }
     }
 
+    /** Computes the recursive size of every subfolder, updating as each finishes. */
+    function computeSizes() {
+      if (archive() || search()) return;
+      const dir = path();
+      setDirSizes(new Map());
+      void folderSizes(id, dir, (s) => {
+        if (!samePath(dir, path())) return;
+        setDirSizes((m) => new Map(m ?? []).set(s.name.toLowerCase(), s.bytes));
+      }).catch(() => undefined);
+    }
+
     function exitSearch() {
       if (!search()) return;
       dropSearch();
@@ -249,6 +269,7 @@ export function createTab(initialPath: string) {
       generation++;
       void unwatchDir(id).catch(() => undefined);
       void cancelSearch(id).catch(() => undefined);
+      void folderSizes(id, "", () => undefined).catch(() => undefined);
       dispose();
     }
 
@@ -273,6 +294,15 @@ export function createTab(initialPath: string) {
       setRenaming,
       navigate,
       search,
+      archive,
+      dirSizes,
+      treemap,
+      setTreemap,
+      computeSizes,
+      clearSizes: () => {
+        setDirSizes(null);
+        void folderSizes(id, "", () => undefined).catch(() => undefined);
+      },
       runSearch,
       exitSearch,
       back: () => go(-1),

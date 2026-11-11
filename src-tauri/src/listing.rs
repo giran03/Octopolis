@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use octo_core::codec::BatchEncoder;
+use octo_core::{EntryKind, RawEntry, archive};
 use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -17,6 +18,8 @@ const NEXT_BATCH: u32 = 8192;
 pub struct ListSummary {
     count: u32,
     elapsed_ms: f64,
+    /// The archive file, when this listing is a folder inside one.
+    archive: Option<String>,
 }
 
 #[tauri::command]
@@ -26,7 +29,36 @@ pub async fn list_dir(path: String, on_batch: Channel<InvokeResponseBody>) -> Re
         .map_err(|e| e.to_string())?
 }
 
+/// Lists a folder inside an archive, using the same wire format as a real one.
+fn stream_archive(file: &Path, inner: &str, channel: &Channel<InvokeResponseBody>) -> Result<ListSummary, String> {
+    let started = Instant::now();
+    let children = archive::children(file, inner).map_err(|e| e.to_string())?;
+    let mut enc = BatchEncoder::with_capacity(64 * 1024);
+    for e in &children {
+        let units: Vec<u16> = e.name().encode_utf16().collect();
+        enc.push(&RawEntry {
+            name: &units,
+            kind: if e.is_dir { EntryKind::Dir } else { EntryKind::File },
+            attrs: 0,
+            size: if e.is_dir { 0 } else { e.size },
+            modified_ms: e.modified_ms,
+        });
+        if enc.len() >= NEXT_BATCH {
+            channel.send(InvokeResponseBody::Raw(enc.finish(false))).map_err(|e| e.to_string())?;
+        }
+    }
+    channel.send(InvokeResponseBody::Raw(enc.finish(true))).map_err(|e| e.to_string())?;
+    Ok(ListSummary {
+        count: children.len() as u32,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        archive: Some(file.to_string_lossy().into_owned()),
+    })
+}
+
 fn stream_listing(dir: &Path, channel: &Channel<InvokeResponseBody>) -> Result<ListSummary, String> {
+    if let Some((file, inner)) = archive::split_path(dir) {
+        return stream_archive(&file, &inner, channel);
+    }
     let started = Instant::now();
     let mut enc = BatchEncoder::with_capacity(64 * 1024);
     let mut limit = FIRST_BATCH;
@@ -49,7 +81,7 @@ fn stream_listing(dir: &Path, channel: &Channel<InvokeResponseBody>) -> Result<L
         return Err(e);
     }
     channel.send(InvokeResponseBody::Raw(enc.finish(true))).map_err(|e| e.to_string())?;
-    Ok(ListSummary { count: total, elapsed_ms: started.elapsed().as_secs_f64() * 1000.0 })
+    Ok(ListSummary { count: total, elapsed_ms: started.elapsed().as_secs_f64() * 1000.0, archive: None })
 }
 
 #[derive(Serialize)]
@@ -78,6 +110,15 @@ fn resolve(input: String) -> Result<Resolved, String> {
         path.push("\\"); // `C:` alone means the drive root, not its current dir
     }
     let path = std::path::absolute(&path).map_err(|e| e.to_string())?;
+    // A path into an archive is a virtual folder or file.
+    if let Some((file, inner)) = archive::split_path(&path) {
+        let is_file = !inner.is_empty() && archive::entries(&file).is_ok_and(|all| all.iter().any(|e| !e.is_dir && e.path.eq_ignore_ascii_case(&inner)));
+        if is_file {
+            let parent = path.parent().ok_or("That path has no folder")?;
+            return Ok(Resolved { dir: display(parent), select: path.file_name().map(|n| n.to_string_lossy().into_owned()) });
+        }
+        return Ok(Resolved { dir: display(&path), select: None });
+    }
     let meta = std::fs::metadata(&path).map_err(|_| format!("Can't find \"{}\"", path.display()))?;
     if meta.is_dir() {
         return Ok(Resolved { dir: display(&path), select: None });

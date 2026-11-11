@@ -6,6 +6,7 @@ import type { TabModel } from "../state/tab";
 import { ui } from "../state/ui";
 import { workspace, type PaneModel } from "../state/workspace";
 import { FileList, type ListHandle } from "./FileList";
+import { Treemap } from "./Treemap";
 import { IconBack, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
 
 /** List handles per tab, used by keyboard navigation to scroll and page. */
@@ -21,7 +22,9 @@ export function Pane(props: { pane: PaneModel }) {
         {(t) => (
           <>
             <Toolbar paneId={props.pane.id} tab={t} />
-            <FileList tab={t} active={active()} onReady={(h) => listHandles.set(t, h)} />
+            <Show when={!t.treemap()} fallback={<Treemap tab={t} />}>
+              <FileList tab={t} active={active()} onReady={(h) => listHandles.set(t, h)} />
+            </Show>
           </>
         )}
       </Show>

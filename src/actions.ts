@@ -1,10 +1,19 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
-import { createFolder, errorText, openPath, renameItem, revealInExplorer } from "./lib/ipc";
+import { createFolder, errorText, extractAndOpen, openPath, renameItem, revealInExplorer } from "./lib/ipc";
 import { baseOf, isDir } from "./lib/listing";
 import { baseName, joinPath, sameVolume } from "./lib/paths";
 import { ops } from "./state/ops";
 import type { TabModel } from "./state/tab";
 import { ui } from "./state/ui";
+
+export const ARCHIVE_NAME = /\.(zip|jar|nupkg|vsix|apk|7z|tar|tgz|tbz2?|tar\.gz|tar\.bz2)$/i;
+
+/** Archives are read-only; returns true (and explains) when `tab` is inside one. */
+function blockedInArchive(tab: TabModel): boolean {
+  if (!tab.archive()) return false;
+  ui.toast("Archives are read-only here. Copy items out to change them.");
+  return true;
+}
 
 /** The focused entry when nothing is selected, otherwise the selection. */
 export function targets(tab: TabModel): string[] {
@@ -18,8 +27,9 @@ export function openEntry(tab: TabModel, entry: number) {
   const l = tab.listing();
   if (entry >= l.count) return;
   const full = tab.pathOf(entry);
-  if (isDir(l, entry)) void tab.navigate(full);
-  else openPath(full).catch((e) => ui.toast(`Couldn't open ${l.names[entry]}: ${errorText(e)}`));
+  if (isDir(l, entry) || ARCHIVE_NAME.test(l.names[entry])) return void tab.navigate(full);
+  const open = tab.archive() ? extractAndOpen : openPath;
+  open(full).catch((e) => ui.toast(`Couldn't open ${l.names[entry]}: ${errorText(e)}`));
 }
 
 export function openSelection(tab: TabModel) {
@@ -35,11 +45,13 @@ export function openSelection(tab: TabModel) {
 export function copySelection(tab: TabModel, mode: "copy" | "cut") {
   const paths = targets(tab);
   if (paths.length === 0) return;
-  ops.setClip({ mode, paths });
+  if (mode === "cut" && blockedInArchive(tab)) return;
+  ops.setClip({ mode, paths, archive: tab.archive() });
   ui.toast(`${mode === "cut" ? "Cut" : "Copied"} ${paths.length === 1 ? `"${baseName(paths[0])}"` : `${paths.length} items`}`);
 }
 
 export function deleteSelection(tab: TabModel, permanent: boolean) {
+  if (blockedInArchive(tab)) return;
   const paths = targets(tab);
   if (paths.length === 0) return;
   if (!permanent) return ops.remove(paths, false);
@@ -54,6 +66,8 @@ export function deleteSelection(tab: TabModel, permanent: boolean) {
 }
 
 export function startRename(tab: TabModel) {
+  if (blockedInArchive(tab)) return;
+  if (tab.selection().size > 1) return ui.setBatchRenameOpen(true);
   const sel = [...tab.selection()];
   const entry = sel.length === 1 ? sel[0] : tab.view()[tab.focus()];
   if (entry !== undefined) tab.setRenaming(entry);
@@ -67,7 +81,9 @@ export async function commitRename(tab: TabModel, entry: number, newName: string
   const name = newName.trim();
   if (!name || name === baseOf(old)) return;
   try {
-    await renameItem(joinPath(l.path, old), name);
+    const from = joinPath(l.path, old);
+    const to = await renameItem(from, name);
+    ops.record({ kind: "move", label: `Rename to "${name}"`, pairs: [[from, to]] });
     if (tab.search()) await tab.refresh();
     else await tab.navigate(tab.path(), [name]);
   } catch (e) {
@@ -75,9 +91,35 @@ export async function commitRename(tab: TabModel, entry: number, newName: string
   }
 }
 
+export function pasteInto(tab: TabModel) {
+  if (!blockedInArchive(tab)) ops.paste(tab.path());
+}
+
+export function openBatchRename(tab: TabModel) {
+  if (!blockedInArchive(tab) && tab.selection().size > 0) ui.setBatchRenameOpen(true);
+}
+
+export function whoLocks(tab: TabModel) {
+  const paths = targets(tab);
+  if (paths.length) ui.setLockPaths(paths);
+}
+
+/** Extracts an archive (or selected items inside one) next to the archive. */
+export function extractHere(tab: TabModel) {
+  const paths = targets(tab);
+  const inside = tab.archive();
+  if (inside) {
+    const dest = inside.slice(0, inside.lastIndexOf("\\")) || inside;
+    return void ops.run({ kind: "extract", archive: inside, items: paths.map((p) => p.slice(inside.length + 1)), dest }, `Extracting ${paths.length} item${paths.length === 1 ? "" : "s"}`);
+  }
+  ui.toast("Open the archive, select items, then extract them");
+}
+
 export async function newFolder(tab: TabModel) {
+  if (blockedInArchive(tab)) return;
   try {
     const created = await createFolder(tab.path(), "New folder");
+    ops.record({ kind: "newFolder", label: `New folder "${baseName(created)}"`, path: created });
     await tab.navigate(tab.path(), [baseName(created)]);
     const entry = [...tab.selection()][0];
     if (entry !== undefined) tab.setRenaming(entry);
@@ -109,8 +151,13 @@ export function reveal(tab: TabModel, explicit?: string) {
 }
 
 /** Drag-and-drop transfer: move within a drive, copy across drives, Ctrl forces copy. */
-export function dropPaths(sources: readonly string[], dest: string, forceCopy: boolean) {
+export function dropPaths(sources: readonly string[], dest: string, forceCopy: boolean, archive?: string | null, destReadOnly?: boolean) {
   if (sources.length === 0) return;
+  if (destReadOnly) return ui.toast("Archives are read-only here.");
+  if (archive) {
+    const items = sources.map((s) => s.slice(archive.length + 1));
+    return void ops.run({ kind: "extract", archive, items, dest }, `Extracting ${sources.length} item${sources.length === 1 ? "" : "s"}`);
+  }
   const move = !forceCopy && sources.every((s) => sameVolume(s, dest));
   const what = sources.length === 1 ? `"${baseName(sources[0])}"` : `${sources.length} items`;
   void ops.run({ kind: move ? "move" : "copy", sources: [...sources], dest }, `${move ? "Moving" : "Copying"} ${what}`);

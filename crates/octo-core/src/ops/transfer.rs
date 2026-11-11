@@ -12,6 +12,7 @@ use crate::names::unique_path;
 /// call; bigger ones are copied in chunks so progress and cancel stay live.
 const CHUNKED_THRESHOLD: u64 = 8 * 1024 * 1024;
 const CHUNK: usize = 4 * 1024 * 1024;
+const MIN_LIMITED_CHUNK: usize = 16 * 1024;
 /// Win32 ERROR_NOT_SAME_DEVICE, returned by rename across volumes.
 const ERROR_NOT_SAME_DEVICE: i32 = 17;
 
@@ -25,8 +26,48 @@ pub fn copy(ctx: &mut Ctx<'_>, sources: &[PathBuf], dest: &Path, conflict: Confl
         let before = ctx.report.errors.len();
         copy_tree(ctx, src, &target, conflict);
         if ctx.report.errors.len() == before && !ctx.cancelled() {
+            ctx.report.pairs.push((src.clone(), target.clone()));
             ctx.report.created.push(target);
         }
+    }
+}
+
+/// Moves each item to its exact destination path. Refuses to overwrite.
+pub fn relocate_exact(ctx: &mut Ctx<'_>, pairs: &[(PathBuf, PathBuf)]) {
+    ctx.progress.total_items = pairs.len() as u64;
+    for (src, dst) in pairs {
+        if ctx.cancelled() {
+            return;
+        }
+        ctx.progress.current = Some(src.clone());
+        if dst.symlink_metadata().is_ok() {
+            ctx.fail(dst, crate::Error::AlreadyExists(dst.clone()));
+            continue;
+        }
+        if let Some(parent) = dst.parent()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            ctx.fail(parent, crate::Error::io(parent, e));
+            continue;
+        }
+        match fs::rename(src, dst) {
+            Ok(()) => {
+                ctx.report.pairs.push((src.clone(), dst.clone()));
+                ctx.report.created.push(dst.clone());
+            }
+            Err(e) if is_cross_device(&e) => {
+                let before = ctx.report.errors.len();
+                copy_tree(ctx, src, dst, Conflict::KeepBoth);
+                if ctx.report.errors.len() == before && !ctx.cancelled() {
+                    super::remove::remove_permanently(ctx, src);
+                    ctx.report.pairs.push((src.clone(), dst.clone()));
+                    ctx.report.created.push(dst.clone());
+                }
+            }
+            Err(e) => ctx.fail(src, crate::Error::io(src, e)),
+        }
+        ctx.progress.done_items += 1;
+        ctx.emit(false);
     }
 }
 
@@ -51,6 +92,7 @@ pub fn relocate(ctx: &mut Ctx<'_>, sources: &[PathBuf], dest: &Path, conflict: C
         match fs::rename(src, &target) {
             Ok(()) => {
                 ctx.progress.done_items += 1;
+                ctx.report.pairs.push((src.clone(), target.clone()));
                 ctx.report.created.push(target);
                 ctx.emit(false);
             }
@@ -61,6 +103,7 @@ pub fn relocate(ctx: &mut Ctx<'_>, sources: &[PathBuf], dest: &Path, conflict: C
                 copy_tree(ctx, src, &target, conflict);
                 if ctx.report.errors.len() == before && !ctx.cancelled() {
                     super::remove::remove_permanently(ctx, src);
+                    ctx.report.pairs.push((src.clone(), target.clone()));
                     ctx.report.created.push(target);
                 }
             }
@@ -141,6 +184,8 @@ fn copy_tree(ctx: &mut Ctx<'_>, src: &Path, dst: &Path, conflict: Conflict) {
             ctx.report.skipped.push(src.into());
         } else if let Err(e) = copy_file(ctx, src, dst, meta.len()) {
             ctx.fail(src, crate::Error::io(src, e));
+        } else if ctx.options.verify && !ctx.cancelled() {
+            verify(ctx, src, dst);
         }
         ctx.progress.done_items += 1;
         return ctx.emit(false);
@@ -162,7 +207,8 @@ fn copy_tree(ctx: &mut Ctx<'_>, src: &Path, dst: &Path, conflict: Conflict) {
 }
 
 fn copy_file(ctx: &mut Ctx<'_>, src: &Path, dst: &Path, len: u64) -> io::Result<()> {
-    if len < CHUNKED_THRESHOLD {
+    // A speed limit needs small steps, so it always takes the chunked path.
+    if len < CHUNKED_THRESHOLD && ctx.options.limit_bps.is_none() {
         fs::copy(src, dst)?;
         ctx.progress.done_bytes += len;
         return Ok(());
@@ -192,8 +238,11 @@ fn copy_chunked(ctx: &mut Ctx<'_>, src: &Path, dst: &Path) -> io::Result<()> {
     let meta = reader.metadata()?;
     let mut writer = File::create(dst)?;
     writer.set_len(meta.len())?; // preallocate to reduce fragmentation
-    let mut buf = vec![0u8; CHUNK];
+    // With a speed limit, about eight chunks per second keep the pacing smooth.
+    let chunk = ctx.options.limit_bps.map_or(CHUNK, |l| ((l / 8) as usize).clamp(MIN_LIMITED_CHUNK, CHUNK));
+    let mut buf = vec![0u8; chunk];
     ctx.reset_throttle();
+    ctx.begin_window();
     loop {
         if ctx.cancelled() {
             return Ok(());
@@ -205,6 +254,7 @@ fn copy_chunked(ctx: &mut Ctx<'_>, src: &Path, dst: &Path) -> io::Result<()> {
         writer.write_all(&buf[..n])?;
         ctx.progress.done_bytes += n as u64;
         ctx.emit(false);
+        ctx.throttle();
     }
     writer.flush()?;
     if let Ok(modified) = meta.modified() {
@@ -212,4 +262,19 @@ fn copy_chunked(ctx: &mut Ctx<'_>, src: &Path, dst: &Path) -> io::Result<()> {
     }
     drop(writer);
     fs::set_permissions(dst, meta.permissions())
+}
+
+/// Hashes source and copy with BLAKE3 and reports a mismatch. A failed
+/// verification counts as an error, so a move keeps its source.
+fn verify(ctx: &mut Ctx<'_>, src: &Path, dst: &Path) {
+    let hash = |p: &Path| -> io::Result<blake3::Hash> {
+        let mut h = blake3::Hasher::new();
+        h.update_reader(File::open(p)?)?;
+        Ok(h.finalize())
+    };
+    match (hash(src), hash(dst)) {
+        (Ok(a), Ok(b)) if a == b => {}
+        (Ok(_), Ok(_)) => ctx.fail(src, "verification failed: the copy does not match the original"),
+        (Err(e), _) | (_, Err(e)) => ctx.fail(src, format!("verification could not read the file: {e}")),
+    }
 }

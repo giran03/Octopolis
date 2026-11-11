@@ -95,3 +95,26 @@ fn remove_clearing_readonly(path: &Path, meta: &fs::Metadata, remove: impl Fn() 
         let _ = fs::set_permissions(path, original);
     })
 }
+
+/// Puts recently recycled items back. Returns how many were restored.
+#[cfg(windows)]
+pub fn restore_recycled(paths: &[PathBuf]) -> crate::Result<usize> {
+    let mut items = trash::os_limited::list().map_err(|e| crate::Error::Trash(e.to_string()))?;
+    // Newest first, so the most recent deletion of a path is the one restored.
+    items.sort_by_key(|i| std::cmp::Reverse(i.time_deleted));
+    let mut picked = Vec::new();
+    for p in paths {
+        let want = p.to_string_lossy().to_lowercase();
+        if let Some(at) = items.iter().position(|i| i.original_path().to_string_lossy().to_lowercase() == want) {
+            picked.push(items.remove(at));
+        }
+    }
+    let n = picked.len();
+    trash::os_limited::restore_all(picked).map_err(|e| crate::Error::Trash(e.to_string()))?;
+    Ok(n)
+}
+
+#[cfg(not(windows))]
+pub fn restore_recycled(_: &[PathBuf]) -> crate::Result<usize> {
+    Ok(0)
+}
