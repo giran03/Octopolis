@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const USER_AGENT: &str = "octopolis-updater";
 const UPDATES_DIR: &str = "updates";
