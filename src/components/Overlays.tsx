@@ -1,10 +1,13 @@
 // Floating UI: operations tray, context menu, confirmation dialog, toasts.
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { formatSize } from "../lib/format";
 import { baseName } from "../lib/paths";
 import { ops, type OpView } from "../state/ops";
+import { filterMenu } from "../lib/menu";
+import { settings } from "../state/settings";
 import { ui, type MenuEntry, type MenuItem, type MenuState } from "../state/ui";
 import { BatchRename, LockHunter } from "./Dialogs";
+import { PromptDialog, SettingsDialog } from "./Extras";
 import { IconClose } from "./Icons";
 import { Palette } from "./Palette";
 import { Shortcuts } from "./Shortcuts";
@@ -23,6 +26,12 @@ export function Overlays() {
       </Show>
       <Show when={ui.shortcutsOpen()}>
         <Shortcuts />
+      </Show>
+      <Show when={ui.settingsOpen()}>
+        <SettingsDialog />
+      </Show>
+      <Show when={ui.prompt()} keyed>
+        {(p) => <PromptDialog title={p.title} label={p.label} onSubmit={p.onSubmit} />}
       </Show>
       <Show when={ui.batchRenameOpen()}>
         <BatchRename />
@@ -112,8 +121,10 @@ function ContextMenu(props: { menu: MenuState }) {
   let el!: HTMLDivElement;
   const [pos, setPos] = createSignal({ x: props.menu.x, y: props.menu.y });
   const [hot, setHot] = createSignal(-1);
-  const items = props.menu.items;
-  const actionable = items.map((it, i) => (it !== "separator" && !it.disabled ? i : -1)).filter((i) => i >= 0);
+  const [filter, setFilter] = createSignal("");
+  const pinned = () => new Set(settings.pinnedActions());
+  const items = createMemo(() => filterMenu<MenuItem>(props.menu.items, filter(), pinned()));
+  const actionable = () => items().map((it, i) => (it !== "separator" && !it.disabled ? i : -1)).filter((i) => i >= 0);
 
   const run = (item: MenuItem) => {
     ui.closeMenu();
@@ -140,16 +151,24 @@ function ContextMenu(props: { menu: MenuState }) {
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    const at = actionable.indexOf(hot());
+    const list = actionable();
+    const at = list.indexOf(hot());
     if (e.key === "Escape") ui.closeMenu();
-    if (e.key === "ArrowDown") setHot(actionable[(at + 1) % actionable.length]);
-    if (e.key === "ArrowUp") setHot(actionable[(at - 1 + actionable.length) % actionable.length]);
-    if (e.key === "Enter" && hot() >= 0) run(items[hot()] as MenuItem);
+    else if (e.key === "ArrowDown") setHot(list[(at + 1) % list.length]);
+    else if (e.key === "ArrowUp") setHot(list[(at - 1 + list.length) % list.length]);
+    else if (e.key === "Enter") {
+      const target = hot() >= 0 ? items()[hot()] : items()[list[0]];
+      if (target && target !== "separator") run(target);
+    } else if (e.key === "Backspace") setFilter((f) => f.slice(0, -1));
+    else if (e.key.length === 1 && !e.ctrlKey && !e.altKey) setFilter((f) => f + e.key);
   };
 
   return (
     <div ref={el} class="menu" role="menu" tabIndex={-1} style={{ left: `${pos().x}px`, top: `${pos().y}px` }} onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()}>
-      <For each={items as MenuEntry[]}>
+      <Show when={filter()}>
+        <div class="menu-filter">{filter()}</div>
+      </Show>
+      <For each={items() as MenuEntry[]}>
         {(it, i) =>
           it === "separator" ? (
             <div class="menu-sep" role="separator" />
@@ -163,6 +182,18 @@ function ContextMenu(props: { menu: MenuState }) {
               onClick={() => run(it)}
             >
               <span>{it.label}</span>
+              <span
+                class="menu-pin"
+                classList={{ on: pinned().has(it.label) }}
+                role="button"
+                aria-label={`Pin ${it.label}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  settings.togglePinned(it.label);
+                }}
+              >
+                ★
+              </span>
               <Show when={it.shortcut}>
                 <kbd>{it.shortcut}</kbd>
               </Show>

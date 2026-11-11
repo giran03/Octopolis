@@ -413,6 +413,23 @@ mod tests {
     }
 
     #[test]
+    fn lists_reads_and_extracts_7z() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        fs_dir(&src.join("inner"));
+        std::fs::write(src.join("inner").join("a.txt"), b"seven").unwrap();
+        let archive = tmp.path().join("a.7z");
+        sevenz_rust2::compress_to_path(&src, &archive).unwrap();
+        let root = children(&archive, "").unwrap();
+        assert!(root.iter().any(|e| e.name() == "inner" && e.is_dir), "{root:?}");
+        assert_eq!(read(&archive, r"inner\a.txt", 1024).unwrap(), b"seven");
+        let out = tmp.path().join("out");
+        fs_dir(&out);
+        extract(&archive, &["inner".into()], &out, &CancelToken::default(), |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(out.join("inner").join("a.txt")).unwrap(), b"seven");
+    }
+
+    #[test]
     fn refuses_paths_that_escape_the_destination() {
         assert!(safe_relative(r"a\b.txt").is_some());
         assert!(safe_relative(r"..\evil.txt").is_none());

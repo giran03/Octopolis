@@ -25,6 +25,8 @@ function encode(names: string[]): ArrayBuffer {
 vi.mock("../lib/ipc", () => ({
   errorText: (e: unknown) => String(e),
   folderSizes: async () => undefined,
+  gitStatus: async () => null,
+  gitLastCommits: async () => ({}),
   unwatchDir: async () => undefined,
   watchDir: async () => undefined,
   listDir: async (path: string, onBatch: (b: ArrayBuffer) => boolean) => {

@@ -15,7 +15,11 @@
 - **Keyboard first.** Navigate, select, rename, copy and paste without touching the mouse. Type to jump to a file.
 - **Safe file operations.** Copies and moves run in the background with live progress and a Cancel button. Problem files are skipped and listed at the end, so one locked file never stops the whole job.
 - **Always up to date.** Folders refresh by themselves when something changes on disk.
-- **Clean, modern look.** Dark and light themes that follow Windows.
+- **Find anything.** Fuzzy search across whole folder trees with filters like `ext:pdf size:>10mb dm:week`, plus a flat view of every file.
+- **See inside.** Preview code, Markdown, images, PDF, audio, video and 3D models, and browse zip, 7z and tar archives like folders.
+- **Power tools.** Batch rename with live preview, undo and redo, a lock hunter, folder sizes and a disk treemap, and a transfer queue with pause, speed limit and checksum verification.
+- **Built for developers.** Git badges, a synced terminal, a command palette, rebindable shortcuts and optional Vim keys.
+- **Clean, modern look.** Multiple themes, custom accent colors and adjustable density.
 
 ## Keyboard shortcuts
 
@@ -33,6 +37,12 @@
 | Copy path | `Ctrl+Shift+C` |
 | Show hidden items / sidebar | `Ctrl+H` / `Ctrl+B` |
 | Refresh | `F5` |
+| Go to folder / all commands | `Ctrl+P` / `Ctrl+Shift+P` |
+| Search subfolders / flat view | `Ctrl+Shift+F` / `Ctrl+Shift+E` |
+| Inspector / terminal | `Ctrl+I` or `Space` / ``Ctrl+` `` |
+| Undo / redo | `Ctrl+Z` / `Ctrl+Y` |
+| Details / grid / columns | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` |
+| Keyboard shortcuts / settings | `Ctrl+K Ctrl+S` / `Ctrl+,` |
 
 ## Install
 

@@ -113,6 +113,15 @@ export const COMMANDS: readonly Command[] = [
       settings.setSpeedLimit(next === null ? null : next * 1048576);
       ui.toast(next === null ? "Transfer speed: unlimited" : `Transfer speed limit: ${next} MB/s`);
     } },
+  { id: "view.terminal", title: "Show or hide the terminal", category: "View", keys: ["ctrl+`"], global: true, run: settings.toggleTerminal },
+  { id: "view.details", title: "Details view", category: "View", keys: ["ctrl+1"], run: withTab((t) => t.setViewMode("details")) },
+  { id: "view.grid", title: "Thumbnail grid view", category: "View", keys: ["ctrl+2"], run: withTab((t) => t.setViewMode("grid")) },
+  { id: "view.columns", title: "Column (Miller) view", category: "View", keys: ["ctrl+3"], run: withTab((t) => t.setViewMode("columns")) },
+  { id: "shelf.add", title: "Add selection to the shelf", category: "File", keys: ["ctrl+shift+d"], run: withTab(A.addToShelf) },
+  { id: "file.nativeMenu", title: "Windows context menu", category: "File", keys: ["shift+f10"], run: withTab(A.nativeContextMenu) },
+  { id: "workspace.save", title: "Save workspace…", category: "Panes", run: A.savePreset },
+  { id: "workspace.load", title: "Open saved workspace…", category: "Panes", run: A.openPresetMenu },
+  { id: "app.settings", title: "Settings", category: "App", keys: ["ctrl+,"], global: true, run: () => ui.setSettingsOpen(true) },
   { id: "view.hidden", title: "Show or hide hidden items", category: "View", keys: ["ctrl+h"], global: true, run: settings.toggleHidden },
   { id: "view.sidebar", title: "Show or hide the sidebar", category: "View", keys: ["ctrl+b"], global: true, run: settings.toggleSidebar },
 

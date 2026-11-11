@@ -1,13 +1,29 @@
 // One pane: tab strip, navigation toolbar with path bar and filter, file list.
 import { createEffect, createSignal, For, on, Show } from "solid-js";
-import { errorText, resolvePath } from "../lib/ipc";
-import { breadcrumbs } from "../lib/paths";
+import { errorText, listDir, resolvePath } from "../lib/ipc";
+import { fuzzyRank } from "../lib/fuzzy";
+import { createBuilder, decodeBatch, isDir, snapshot } from "../lib/listing";
+import { breadcrumbs, joinPath } from "../lib/paths";
+import { history } from "../state/history";
 import type { TabModel } from "../state/tab";
 import { ui } from "../state/ui";
 import { workspace, type PaneModel } from "../state/workspace";
-import { FileList, type ListHandle } from "./FileList";
+import { contextMenu, FileList, type ListHandle } from "./FileList";
+import { GridView, MillerView } from "./Extras";
 import { Treemap } from "./Treemap";
 import { IconBack, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
+
+const TAB_MIME = "application/x-octopolis-tab";
+const SUGGEST_DEBOUNCE_MS = 90;
+const MAX_SUGGESTIONS = 12;
+
+/** Lists the subfolders of `dir`, for path bar suggestions and crumb menus. */
+async function subfolders(dir: string): Promise<string[]> {
+  const b = createBuilder(dir);
+  await listDir(dir, (buf) => decodeBatch(buf, b));
+  const l = snapshot(b);
+  return l.names.filter((_, i) => isDir(l, i)).sort((x, y) => x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" }));
+}
 
 /** List handles per tab, used by keyboard navigation to scroll and page. */
 export const listHandles = new WeakMap<TabModel, ListHandle>();
@@ -23,7 +39,20 @@ export function Pane(props: { pane: PaneModel }) {
           <>
             <Toolbar paneId={props.pane.id} tab={t} />
             <Show when={!t.treemap()} fallback={<Treemap tab={t} />}>
-              <FileList tab={t} active={active()} onReady={(h) => listHandles.set(t, h)} />
+              <Show when={t.viewMode() === "details"}>
+                <FileList tab={t} active={active()} onReady={(h) => listHandles.set(t, h)} />
+              </Show>
+              <Show when={t.viewMode() === "grid"}>
+                <GridView
+                  tab={t}
+                  active={active()}
+                  onReady={(columns, ensureVisible, pageRows) => listHandles.set(t, { columns, ensureVisible, pageRows })}
+                  onMenu={(e, pos) => contextMenu(t, e, pos)}
+                />
+              </Show>
+              <Show when={t.viewMode() === "columns"}>
+                <MillerView tab={t} />
+              </Show>
             </Show>
           </>
         )}
@@ -34,12 +63,38 @@ export function Pane(props: { pane: PaneModel }) {
 
 function TabStrip(props: { pane: PaneModel }) {
   return (
-    <div class="tabstrip" role="tablist" onDblClick={(e) => e.target === e.currentTarget && workspace.newTab(props.pane.id)}>
+    <div
+      class="tabstrip"
+      role="tablist"
+      onDblClick={(e) => e.target === e.currentTarget && workspace.newTab(props.pane.id)}
+      onDragOver={(e) => e.dataTransfer?.types.includes(TAB_MIME) && e.preventDefault()}
+      onDrop={(e) => {
+        const raw = e.dataTransfer?.getData(TAB_MIME);
+        if (!raw) return;
+        e.preventDefault();
+        const { pane, tab } = JSON.parse(raw) as { pane: string; tab: string };
+        workspace.moveTab(pane, tab, props.pane.id, props.pane.tabs().length);
+      }}
+    >
       <For each={props.pane.tabs()}>
         {(t) => (
           <div
             class="tab"
             role="tab"
+            draggable={true}
+            onDragStart={(e) => {
+              e.dataTransfer!.setData(TAB_MIME, JSON.stringify({ pane: props.pane.id, tab: t.id }));
+              e.dataTransfer!.effectAllowed = "move";
+            }}
+            onDragOver={(e) => e.dataTransfer?.types.includes(TAB_MIME) && e.preventDefault()}
+            onDrop={(e) => {
+              const raw = e.dataTransfer?.getData(TAB_MIME);
+              if (!raw) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const { pane, tab } = JSON.parse(raw) as { pane: string; tab: string };
+              workspace.moveTab(pane, tab, props.pane.id, props.pane.tabs().indexOf(t));
+            }}
             aria-selected={props.pane.activeTabId() === t.id}
             classList={{ current: props.pane.activeTabId() === t.id }}
             title={t.path()}
@@ -151,6 +206,33 @@ function SearchBox(props: { tab: TabModel; ref: (el: HTMLInputElement) => void }
 
 function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boolean) => void }) {
   let input: HTMLInputElement | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const [suggestions, setSuggestions] = createSignal<readonly string[]>([]);
+  const [hot, setHot] = createSignal(-1);
+
+  /** Offers subfolders of the typed parent, then frequent folders that match. */
+  function suggest(text: string) {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const value = text.replace(/\//g, "\\");
+      const at = value.lastIndexOf("\\");
+      const parent = at >= 0 ? (at === 2 ? value.slice(0, 3) : value.slice(0, at)) : "";
+      const partial = at >= 0 ? value.slice(at + 1) : value;
+      let names: string[] = [];
+      if (parent) names = await subfolders(parent).catch(() => []);
+      const local = fuzzyRank(partial, names, (n) => n).map((r) => joinPath(parent, r.item));
+      const frequent = fuzzyRank(value, history.top(100).map((v) => v.path), (p) => p).map((r) => r.item);
+      setSuggestions([...new Set([...local, ...frequent])].slice(0, MAX_SUGGESTIONS));
+      setHot(-1);
+    }, SUGGEST_DEBOUNCE_MS);
+  }
+
+  async function showSiblings(dir: string, e: MouseEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const names = await subfolders(dir).catch(() => []);
+    if (names.length === 0) return ui.toast("No folders here");
+    ui.openMenu(rect.left, rect.bottom + 4, names.slice(0, 200).map((n) => ({ label: n, run: () => void props.tab.navigate(joinPath(dir, n)) })));
+  }
 
   const submit = async (value: string) => {
     try {
@@ -174,7 +256,9 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
               {(c, i) => (
                 <>
                   <Show when={i() > 0}>
-                    <IconChevron size={12} class="crumb-sep" />
+                    <button class="crumb-sep" aria-label={`Folders in ${breadcrumbs(props.tab.path())[i() - 1].label}`} onClick={(e) => showSiblings(breadcrumbs(props.tab.path())[i() - 1].path, e)}>
+                      <IconChevron size={12} />
+                    </button>
                   </Show>
                   <button class="crumb" onClick={() => void props.tab.navigate(c.path)}>
                     {c.label}
@@ -197,13 +281,46 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
           class="path-input"
           value={props.tab.path()}
           spellcheck={false}
+          onInput={(e) => suggest(e.currentTarget.value)}
           onKeyDown={(e) => {
             e.stopPropagation();
-            if (e.key === "Enter") void submit(e.currentTarget.value);
-            if (e.key === "Escape") props.setEditing(false);
+            const list = suggestions();
+            if (e.key === "ArrowDown" && list.length) {
+              e.preventDefault();
+              setHot((h) => Math.min(h + 1, list.length - 1));
+            } else if (e.key === "ArrowUp" && list.length) {
+              e.preventDefault();
+              setHot((h) => Math.max(h - 1, -1));
+            } else if (e.key === "Tab" && list.length) {
+              e.preventDefault();
+              const pick = list[Math.max(hot(), 0)];
+              e.currentTarget.value = pick.endsWith("\\") ? pick : `${pick}\\`;
+              suggest(e.currentTarget.value);
+            } else if (e.key === "Enter") void submit(hot() >= 0 ? list[hot()] : e.currentTarget.value);
+            else if (e.key === "Escape") props.setEditing(false);
           }}
           onBlur={() => props.setEditing(false)}
         />
+      </Show>
+      <Show when={props.editing && suggestions().length > 0}>
+        <div class="path-suggest" role="listbox">
+          <For each={suggestions()}>
+            {(s, i) => (
+              <button
+                class="palette-row"
+                role="option"
+                aria-selected={hot() === i()}
+                classList={{ hot: hot() === i() }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  void submit(s);
+                }}
+              >
+                <span>{s}</span>
+              </button>
+            )}
+          </For>
+        </div>
       </Show>
     </div>
   );

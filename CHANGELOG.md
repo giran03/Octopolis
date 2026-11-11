@@ -34,3 +34,11 @@
 - Undo and redo (Ctrl+Z, Ctrl+Y) for moves, renames, copies, new folders and Recycle Bin deletes.
 - Transfers now wait in a queue, can be paused and resumed, can be verified with checksums, and can be limited to a chosen speed.
 - Folder sizes (Ctrl+Shift+S) with proportional bars, and a disk space treemap (Ctrl+Shift+M).
+- Git status badges on files and folders, the current branch in the status bar, and an optional last commit column.
+- Built-in terminal (Ctrl+`) that follows the folder you browse, and moves the file list when you `cd`.
+- Thumbnail grid view (Ctrl+2) and macOS-style column view (Ctrl+3).
+- Shelf: collect files from many folders (Ctrl+Shift+D or drag them in), then copy or move them all at once.
+- Settings (Ctrl+,): themes, accent color, text size, list density, importable custom themes.
+- Path bar suggestions as you type, and a folder list on each breadcrumb arrow.
+- Drag tabs to reorder them or move them to another pane; save and reopen workspaces.
+- Context menu you can type to filter, with pinned actions and a link to the classic Windows menu.

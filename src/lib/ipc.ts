@@ -118,6 +118,27 @@ export function startOp(request: OpRequest, options: OpOptions, onEvent: (e: OpE
   return invoke<number>("start_op", { request, options, onEvent: channel });
 }
 
+export interface GitInfo {
+  branch: string | null;
+  children: Record<string, string>;
+}
+export const gitStatus = (dir: string) => invoke<GitInfo | null>("git_status", { dir });
+export interface CommitInfo {
+  timeMs: number;
+  author: string;
+}
+export const gitLastCommits = (dir: string) => invoke<Record<string, CommitInfo>>("git_last_commits", { dir });
+export const nativeMenu = (paths: string[]) => invoke<void>("native_menu", { paths });
+
+export function termStart(cwd: string, cols: number, rows: number, onData: (buf: ArrayBuffer) => void): Promise<number> {
+  const channel = new Channel<ArrayBuffer>();
+  channel.onmessage = onData;
+  return invoke<number>("term_start", { cwd, cols, rows, onData: channel });
+}
+export const termWrite = (id: number, data: string) => invoke<void>("term_write", { id, data });
+export const termResize = (id: number, cols: number, rows: number) => invoke<void>("term_resize", { id, cols, rows });
+export const termClose = (id: number) => invoke<void>("term_close", { id });
+
 export const cancelOp = (id: number) => invoke<void>("cancel_op", { id });
 export const pauseOp = (id: number, paused: boolean) => invoke<void>("pause_op", { id, paused });
 export const batchRename = (items: [string, string][]) => invoke<[string, string][]>("batch_rename", { items });

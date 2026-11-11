@@ -204,3 +204,53 @@ pub async fn extract_and_open(path: PathBuf) -> Result<(), String> {
     })
     .await
 }
+
+#[derive(Serialize)]
+pub struct GitDto {
+    branch: Option<String>,
+    /// Status letter per lower-case child name.
+    children: HashMap<String, &'static str>,
+}
+
+/// Git status of a folder's children; null outside a repository.
+#[tauri::command]
+pub async fn git_status(dir: PathBuf) -> Result<Option<GitDto>, String> {
+    crate::off_main(move || {
+        Ok(octo_core::git::status(&dir).map(|s| GitDto {
+            branch: s.branch,
+            children: s.children.into_iter().map(|(k, v)| (k, v.letter())).collect(),
+        }))
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDto {
+    time_ms: i64,
+    author: String,
+}
+
+#[tauri::command]
+pub async fn git_last_commits(dir: PathBuf) -> Result<HashMap<String, CommitDto>, String> {
+    crate::off_main(move || {
+        Ok(octo_core::git::last_commits(&dir)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, c)| (k, CommitDto { time_ms: c.time_ms, author: c.author }))
+            .collect())
+    })
+    .await
+}
+
+/// Shows the classic Windows menu. It runs on the UI thread because shell
+/// menus need that thread's message loop.
+#[tauri::command]
+pub fn native_menu(window: tauri::WebviewWindow, paths: Vec<PathBuf>) -> Result<(), String> {
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+    window
+        .run_on_main_thread(move || {
+            let _ = octo_core::shell::show_native_menu(hwnd, &paths);
+        })
+        .map_err(|e| e.to_string())
+}

@@ -4,6 +4,7 @@ mod listing;
 mod ops_cmd;
 mod search_cmd;
 mod system;
+mod term_cmd;
 mod tools_cmd;
 mod watch;
 
@@ -22,6 +23,7 @@ pub fn run() {
         .manage(watch::WatchState::default())
         .manage(search_cmd::SearchState::default())
         .manage(tools_cmd::SizesState::default())
+        .manage(term_cmd::TermState::default())
         .invoke_handler(tauri::generate_handler![
             search_cmd::search,
             search_cmd::cancel_search,
@@ -41,6 +43,13 @@ pub fn run() {
             tools_cmd::kill_process,
             tools_cmd::file_tags,
             tools_cmd::folder_sizes,
+            tools_cmd::git_status,
+            tools_cmd::git_last_commits,
+            tools_cmd::native_menu,
+            term_cmd::term_start,
+            term_cmd::term_write,
+            term_cmd::term_resize,
+            term_cmd::term_close,
             ops_cmd::rename_item,
             ops_cmd::create_folder,
             system::open_path,

@@ -6,6 +6,7 @@ pub mod codec;
 pub mod entry;
 pub mod enumerate;
 pub mod error;
+pub mod git;
 pub mod lock;
 pub mod meta;
 pub mod names;

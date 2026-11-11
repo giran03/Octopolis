@@ -9,6 +9,7 @@ license.workspace = true
 blake3 = "1.8.7"
 bzip2 = "0.6.1"
 flate2 = "1.1.11"
+gix = { version = "0.90.0", default-features = false, features = ["status", "revision", "index", "dirwalk", "sha1", "parallel"] }
 id3 = "1.17.3"
 jiff = "0.2.42"
 kamadak-exif = "0.6.2"
@@ -50,7 +51,9 @@ windows = { version = "0.62.2", features = [
     "Win32_System_RestartManager",
     "Win32_System_Threading",
     "Win32_System_Ioctl",
+    "Win32_System_Ole",
     "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

@@ -24,6 +24,12 @@ export interface ConfirmState {
   readonly onConfirm: () => void;
 }
 
+export interface PromptState {
+  readonly title: string;
+  readonly label: string;
+  readonly onSubmit: (value: string) => void;
+}
+
 export interface Toast {
   readonly key: number;
   readonly text: string;
@@ -49,6 +55,8 @@ export const ui = createRoot(() => {
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   const [lockPaths, setLockPaths] = createSignal<readonly string[] | null>(null);
   const [batchRenameOpen, setBatchRenameOpen] = createSignal(false);
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [prompt, setPrompt] = createSignal<PromptState | null>(null);
   /** Vim visual mode: movement extends the selection. */
   const [visual, setVisual] = createSignal(false);
 
@@ -76,10 +84,15 @@ export const ui = createRoot(() => {
     setLockPaths,
     batchRenameOpen,
     setBatchRenameOpen,
+    settingsOpen,
+    setSettingsOpen,
+    prompt,
+    askText: (p: PromptState) => setPrompt(p),
+    closePrompt: () => setPrompt(null),
     visual,
     setVisual,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || shortcutsOpen() || lockPaths() || batchRenameOpen()),
+    modalOpen: () => !!(menu() || confirm() || palette() || shortcutsOpen() || lockPaths() || batchRenameOpen() || settingsOpen() || prompt()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

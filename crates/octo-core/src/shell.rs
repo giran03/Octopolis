@@ -45,6 +45,13 @@ pub fn list_drives() -> Vec<Drive> {
     imp::list_drives()
 }
 
+/// Shows the classic Windows context menu for `paths` (all in one folder) at
+/// the mouse position, and runs what the user picks. Must be called on the UI
+/// thread. `hwnd` is the owning window handle.
+pub fn show_native_menu(hwnd: isize, paths: &[PathBuf]) -> Result<()> {
+    imp::show_native_menu(hwnd, paths)
+}
+
 /// Stops Windows from showing "There is no disk in the drive" dialogs when
 /// an empty card reader or optical drive is queried. Call once at startup.
 pub fn suppress_drive_error_dialogs() {
@@ -112,6 +119,76 @@ mod imp {
         }
     }
 
+    pub fn show_native_menu(hwnd: isize, paths: &[PathBuf]) -> Result<()> {
+        use windows::Win32::Foundation::{HWND, POINT};
+        use windows::Win32::System::Com::CoTaskMemFree;
+        use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+        use windows::Win32::UI::Shell::{CMF_NORMAL, CMINVOKECOMMANDINFO, IContextMenu, IShellFolder, SHBindToParent, SHParseDisplayName};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreatePopupMenu, DestroyMenu, GetCursorPos, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx,
+        };
+        use windows::core::PCSTR;
+
+        let first = paths.first().ok_or_else(|| Error::NotFound(PathBuf::new()))?;
+        let fail = |e: windows::core::Error| Error::io(first, e.into());
+        let owner = HWND(hwnd as *mut _);
+        let mut absolute: Vec<*mut ITEMIDLIST> = Vec::new();
+        let result = (|| -> Result<()> {
+            for p in paths {
+                let wide = wide(p.as_os_str());
+                let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();
+                // SAFETY: `wide` is NUL-terminated; `pidl` receives memory we free below.
+                unsafe { SHParseDisplayName(PCWSTR(wide.as_ptr()), None, &mut pidl, 0, None) }.map_err(fail)?;
+                absolute.push(pidl);
+            }
+            let mut children: Vec<*const ITEMIDLIST> = Vec::new();
+            let mut folder: Option<IShellFolder> = None;
+            for pidl in &absolute {
+                let mut child: *mut ITEMIDLIST = std::ptr::null_mut();
+                // SAFETY: `pidl` is a valid absolute PIDL; `child` points inside it.
+                let parent: IShellFolder = unsafe { SHBindToParent(*pidl, Some(&mut child)) }.map_err(fail)?;
+                children.push(child);
+                folder.get_or_insert(parent);
+            }
+            let folder = folder.ok_or_else(|| Error::NotFound(first.clone()))?;
+            // SAFETY: the child PIDLs stay valid while `absolute` is alive.
+            let menu: IContextMenu = unsafe { folder.GetUIObjectOf(owner, &children, None) }.map_err(fail)?;
+            // SAFETY: plain Win32 menu calls on a menu we create and destroy.
+            unsafe {
+                let popup = CreatePopupMenu().map_err(fail)?;
+                let picked = (|| -> Result<i32> {
+                    menu.QueryContextMenu(popup, 0, 1, 0x7FFF, CMF_NORMAL).ok().map_err(fail)?;
+                    let mut at = POINT::default();
+                    GetCursorPos(&mut at).map_err(fail)?;
+                    let _ = SetForegroundWindow(owner);
+                    Ok(TrackPopupMenuEx(popup, (TPM_RETURNCMD | TPM_RIGHTBUTTON).0, at.x, at.y, owner, None).0)
+                })();
+                let result = match picked {
+                    Ok(cmd) if cmd > 0 => {
+                        let info = CMINVOKECOMMANDINFO {
+                            cbSize: size_of::<CMINVOKECOMMANDINFO>() as u32,
+                            hwnd: owner,
+                            // MAKEINTRESOURCE: the verb is the command offset.
+                            lpVerb: PCSTR((cmd - 1) as usize as *const u8),
+                            nShow: SW_SHOWNORMAL.0,
+                            ..Default::default()
+                        };
+                        menu.InvokeCommand(&info).map_err(fail)
+                    }
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(e),
+                };
+                let _ = DestroyMenu(popup);
+                result
+            }
+        })();
+        for pidl in absolute {
+            // SAFETY: allocated by SHParseDisplayName above.
+            unsafe { CoTaskMemFree(Some(pidl as *const _)) };
+        }
+        result
+    }
+
     pub fn list_drives() -> Vec<Drive> {
         let mut buf = [0u16; 512];
         // SAFETY: the buffer is valid for its full length.
@@ -158,6 +235,10 @@ mod imp {
 
     use super::{Drive, DriveKind};
     use crate::error::{Error, Result};
+
+    pub fn show_native_menu(_: isize, _: &[PathBuf]) -> Result<()> {
+        Ok(())
+    }
 
     pub fn open_path(path: &Path) -> Result<()> {
         std::process::Command::new("xdg-open").arg(path).spawn().map(|_| ()).map_err(|e| Error::io(path, e))

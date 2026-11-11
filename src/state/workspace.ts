@@ -133,6 +133,76 @@ export const workspace = createRoot(() => {
     setActivePaneId(ids[(at + step + ids.length) % ids.length]);
   }
 
+  /** Moves a tab within a pane or to another pane, closing a pane it empties. */
+  function moveTab(fromPane: string, tabId: string, toPane: string, index: number) {
+    const from = state(fromPane);
+    const tab = from?.tabs.find((t) => t.id === tabId);
+    if (!from || !tab || !state(toPane)) return;
+    batch(() => {
+      const rest = from.tabs.filter((t) => t.id !== tabId);
+      const fromIdx = from.tabs.indexOf(tab);
+      const target = fromPane === toPane ? rest : state(toPane)!.tabs;
+      const at = Math.min(fromPane === toPane && fromIdx < index ? index - 1 : index, target.length);
+      const inserted = [...target.slice(0, at), tab, ...target.slice(at)];
+      updatePane(toPane, () => ({ tabs: inserted, activeTabId: tab.id }));
+      if (fromPane !== toPane) {
+        if (rest.length) updatePane(fromPane, (p) => ({ tabs: rest, activeTabId: p.activeTabId === tabId ? rest[0].id : p.activeTabId }));
+        else {
+          const next = removePane(layout(), fromPane);
+          if (next) {
+            setLayout(next);
+            setPanes((m) => {
+              const copy = new Map(m);
+              copy.delete(fromPane);
+              return copy;
+            });
+          }
+        }
+      }
+      setActivePaneId(toPane);
+    });
+  }
+
+  interface PresetPane {
+    readonly tabs: readonly string[];
+    readonly active: number;
+  }
+  /** A saved arrangement of panes, tabs and folders. */
+  interface Preset {
+    readonly layout: LayoutNode;
+    readonly panes: Readonly<Record<string, PresetPane>>;
+  }
+
+  function snapshotLayout(): Preset {
+    const out: Record<string, PresetPane> = {};
+    for (const [id, p] of panes()) out[id] = { tabs: p.tabs.map((t) => t.path()), active: Math.max(0, p.tabs.findIndex((t) => t.id === p.activeTabId)) };
+    return { layout: layout(), panes: out };
+  }
+
+  function restoreLayout(preset: Preset) {
+    const old = allTabs();
+    const ids = new Map<string, string>();
+    const fresh = new Map<string, PaneState>();
+    for (const [id, p] of Object.entries(preset.panes)) {
+      if (p.tabs.length === 0) continue;
+      const nid = `pane-${nextPaneId++}`;
+      ids.set(id, nid);
+      const tabs = p.tabs.map((path) => createTab(path));
+      fresh.set(nid, { tabs, activeTabId: tabs[Math.min(p.active, tabs.length - 1)].id });
+    }
+    const remap = (n: LayoutNode): LayoutNode =>
+      n.kind === "leaf" ? leaf(ids.get(n.paneId) ?? n.paneId) : { ...n, children: n.children.map(remap) };
+    const next = remap(preset.layout);
+    if (leaves(next).some((id) => !fresh.has(id))) return;
+    batch(() => {
+      setPanes(fresh);
+      setLayout(next);
+      setActivePaneId(leaves(next)[0]);
+    });
+    old.forEach((t) => t.close());
+    for (const p of fresh.values()) p.tabs.forEach((t) => void t.navigate(t.path()));
+  }
+
   /** All tabs in every pane, for refreshing folders touched by an operation. */
   const allTabs = () => [...panes().values()].flatMap((p) => p.tabs);
 
@@ -148,6 +218,9 @@ export const workspace = createRoot(() => {
     newTab,
     closeTab,
     reopenTab,
+    moveTab,
+    snapshotLayout,
+    restoreLayout,
     selectTab,
     cycleTab,
     split,

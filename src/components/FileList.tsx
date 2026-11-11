@@ -10,10 +10,13 @@ import type { SortKey } from "../lib/sort";
 import { ops } from "../state/ops";
 import type { TabModel } from "../state/tab";
 import { ui, type MenuEntry } from "../state/ui";
+import { DENSITIES } from "../lib/themes";
+import { settings } from "../state/settings";
 import { iconFor } from "../state/icons";
 import { FileGlyph } from "./Icons";
 
-export const ROW_HEIGHT = 26;
+/** Row height in pixels, from the density setting. */
+const rowHeight = () => DENSITIES[settings.density()];
 const OVERSCAN = 6;
 const DRAG_MIME = "application/x-octopolis-paths";
 
@@ -33,6 +36,8 @@ const COLUMNS: { key: SortKey; label: string; align?: "end" }[] = [
 export interface ListHandle {
   ensureVisible: (pos: number) => void;
   pageRows: () => number;
+  /** Grid view only: items per row. */
+  columns?: () => number;
 }
 
 export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: ListHandle) => void }) {
@@ -42,14 +47,15 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
   const [dropTarget, setDropTarget] = createSignal<number | "list" | null>(null);
 
   const tab = () => props.tab;
+  const showCommitColumn = () => settings.showCommits() && !!tab().git();
   const view = () => tab().view();
-  const first = () => Math.max(0, Math.floor(scrollTop() / ROW_HEIGHT) - OVERSCAN);
-  const slotCount = () => Math.max(0, Math.min(view().length - first(), Math.ceil(height() / ROW_HEIGHT) + OVERSCAN * 2));
+  const first = () => Math.max(0, Math.floor(scrollTop() / rowHeight()) - OVERSCAN);
+  const slotCount = () => Math.max(0, Math.min(view().length - first(), Math.ceil(height() / rowHeight()) + OVERSCAN * 2));
   const slots = createMemo(() => Array.from({ length: slotCount() }, (_, i) => i));
 
   const ensureVisible = (pos: number) => {
-    const top = pos * ROW_HEIGHT;
-    const bottom = top + ROW_HEIGHT;
+    const top = pos * rowHeight();
+    const bottom = top + rowHeight();
     if (top < scroller.scrollTop) scroller.scrollTop = top;
     else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
   };
@@ -60,7 +66,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
     onCleanup(() => ro.disconnect());
     scroller.scrollTop = scrollMemory.get(tab()) ?? 0;
     setScrollTop(scroller.scrollTop);
-    props.onReady({ ensureVisible, pageRows: () => Math.floor(scroller.clientHeight / ROW_HEIGHT) });
+    props.onReady({ ensureVisible, pageRows: () => Math.floor(scroller.clientHeight / rowHeight()) });
   });
 
   // A new folder starts at the top; selections made by a load scroll into view.
@@ -85,17 +91,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
     t.setFocus(pos);
   };
 
-  const contextRow = (e: MouseEvent, pos: number | null) => {
-    e.preventDefault();
-    const t = tab();
-    if (pos !== null && !t.selection().has(view()[pos])) {
-      t.setSelection(new Set([view()[pos]]));
-      t.setAnchor(pos);
-      t.setFocus(pos);
-    }
-    if (pos === null) t.setSelection(new Set<number>());
-    ui.openMenu(e.clientX, e.clientY, menuFor(t, pos !== null));
-  };
+  const contextRow = (e: MouseEvent, pos: number | null) => contextMenu(tab(), e, pos);
 
   // ----- drag and drop -----
   const dragStart = (e: DragEvent, pos: number) => {
@@ -131,7 +127,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
   };
 
   return (
-    <div class="filelist" classList={{ active: props.active }}>
+    <div class="filelist" classList={{ active: props.active, "with-commits": showCommitColumn() }}>
       <div class="filelist-head" role="row">
         {COLUMNS.map((c) => (
           <button class={`col-head col-${c.key}`} classList={{ end: c.align === "end", sorted: tab().sort().key === c.key }} onClick={() => tab().sortBy(c.key)}>
@@ -141,6 +137,9 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
             </Show>
           </button>
         ))}
+        <Show when={showCommitColumn()}>
+          <div class="col-head col-commit">Last commit</div>
+        </Show>
       </div>
       <div
         ref={scroller}
@@ -159,7 +158,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
         onDragLeave={(e) => e.currentTarget === e.target && setDropTarget(null)}
         onDrop={drop}
       >
-        <div class="rows" style={{ height: `${view().length * ROW_HEIGHT}px` }}>
+        <div class="rows" style={{ height: `${view().length * rowHeight()}px` }}>
           <Index each={slots()}>
             {(slot) => {
               const pos = () => first() + slot();
@@ -173,7 +172,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                     class="row"
                     role="row"
                     draggable={tab().renaming() !== entry()}
-                    style={{ transform: `translateY(${pos() * ROW_HEIGHT}px)` }}
+                    style={{ transform: `translateY(${pos() * rowHeight()}px)` }}
                     classList={{
                       selected: tab().selection().has(entry()),
                       focused: props.active && tab().focus() === pos(),
@@ -195,13 +194,16 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                   >
                     <div class="cell name">
                       <RowIcon path={tab().pathOf(entry())} name={baseOf(name())} isDir={dir()} virtual={!!tab().archive()} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
-                      <Show when={tab().renaming() === entry()} fallback={<NameLabel name={name()} />}>
+                      <Show when={tab().renaming() === entry()} fallback={<><NameLabel name={name()} /><GitBadge tab={tab()} name={name()} /></>}>
                         <RenameInput name={baseOf(name())} isDir={dir()} onDone={(v) => (v === null ? tab().setRenaming(null) : void A.commitRename(tab(), entry(), v))} />
                       </Show>
                     </div>
                     <div class="cell muted col-modified">{formatDate(l().mtimes[entry()])}</div>
                     <div class="cell muted col-type">{typeLabel(baseOf(name()), dir())}</div>
                     <SizeCell tab={tab()} entry={entry()} name={name()} dir={dir()} />
+                    <Show when={showCommitColumn()}>
+                      <CommitCell tab={tab()} name={name()} />
+                    </Show>
                   </div>
                 </Show>
               );
@@ -212,6 +214,19 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
       </div>
     </div>
   );
+}
+
+/** Opens the curated context menu for a position (null: the background). */
+export function contextMenu(t: TabModel, e: MouseEvent, pos: number | null) {
+  e.preventDefault();
+  const v = t.view();
+  if (pos !== null && !t.selection().has(v[pos])) {
+    t.setSelection(new Set([v[pos]]));
+    t.setAnchor(pos);
+    t.setFocus(pos);
+  }
+  if (pos === null) t.setSelection(new Set<number>());
+  ui.openMenu(e.clientX, e.clientY, menuFor(t, pos !== null));
 }
 
 function ListState(props: { tab: TabModel }) {
@@ -277,7 +292,9 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         { label: "Copy path", shortcut: "Ctrl+Shift+C", run: () => void A.copyPaths(tab) },
         { label: "What is locking this?", run: () => A.whoLocks(tab) },
         ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : []),
+        { label: "Add to shelf", shortcut: "Ctrl+Shift+D", run: () => A.addToShelf(tab) },
         { label: "Show in Explorer", run: () => A.reveal(tab) },
+        { label: "More options (Windows menu)", shortcut: "Shift+F10", run: () => A.nativeContextMenu(tab) },
         "separator",
         { label: "Delete", shortcut: "Del", run: () => A.deleteSelection(tab, false) },
         { label: "Delete permanently", shortcut: "Shift+Del", danger: true, run: () => A.deleteSelection(tab, true) },
@@ -324,6 +341,36 @@ function SizeCell(props: { tab: TabModel; entry: number; name: string; dir: bool
         <span class="size-bar" style={{ width: `${(known()! / max()) * 100}%` }} />
       </Show>
       <span class="size-text">{props.dir ? (known() === undefined ? "" : formatSize(known()!)) : formatSize(props.tab.listing().sizes[props.entry])}</span>
+    </div>
+  );
+}
+
+const GIT_TITLES: Record<string, string> = { S: "Staged", M: "Modified", U: "Untracked", D: "Deleted", C: "Conflict", I: "Ignored" };
+
+function GitBadge(props: { tab: TabModel; name: string }) {
+  const status = () => props.tab.git()?.children[props.name.toLowerCase()];
+  return (
+    <Show when={status()}>
+      {(s) => <span class={`git git-${s()}`} title={GIT_TITLES[s()]}>{s()}</span>}
+    </Show>
+  );
+}
+
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+function ago(ms: number): string {
+  const days = (ms - Date.now()) / 86_400_000;
+  if (days > -1) return relative.format(Math.round(days * 24), "hour");
+  if (days > -30) return relative.format(Math.round(days), "day");
+  if (days > -365) return relative.format(Math.round(days / 30), "month");
+  return relative.format(Math.round(days / 365), "year");
+}
+
+function CommitCell(props: { tab: TabModel; name: string }) {
+  const c = () => props.tab.commits()?.[props.name.toLowerCase()];
+  return (
+    <div class="cell muted col-commit" title={c()?.author}>
+      {c() ? `${ago(c()!.timeMs)} · ${c()!.author}` : ""}
     </div>
   );
 }

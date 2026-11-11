@@ -1,6 +1,6 @@
 // One browsing tab: location, history, streamed listing, sort and selection.
 import { batch, createMemo, createRoot, createSignal } from "solid-js";
-import { cancelSearch, errorText, folderSizes, listDir, search as runSearchIpc, unwatchDir, watchDir, type SearchSummary } from "../lib/ipc";
+import { cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
@@ -54,6 +54,24 @@ export function createTab(initialPath: string) {
     /** Recursive subfolder sizes by lower-case name, once requested. */
     const [dirSizes, setDirSizes] = createSignal<ReadonlyMap<string, number> | null>(null);
     const [treemap, setTreemap] = createSignal(false);
+    const [git, setGit] = createSignal<GitInfo | null>(null);
+    const [commits, setCommits] = createSignal<Readonly<Record<string, CommitInfo>> | null>(null);
+    const [viewMode, setViewMode] = createSignal<"details" | "grid" | "columns">("details");
+
+    /** Refreshes Git badges for the folder (best effort, outside archives). */
+    function loadGit(dir: string, gen: number) {
+      if (archive()) return setGit(null);
+      gitStatus(dir).then(
+        (g) => gen === generation && setGit(g),
+        () => gen === generation && setGit(null),
+      );
+      if (settings.showCommits()) {
+        gitLastCommits(dir).then(
+          (c) => gen === generation && setCommits(c),
+          () => undefined,
+        );
+      }
+    }
     /** Folder-mode sort, restored when a search ends. */
     let folderSort: SortSpec = DEFAULT_SORT;
 
@@ -141,10 +159,12 @@ export function createTab(initialPath: string) {
           setListing(snapshot(builder));
           setStatus({ loading: false, error: null, elapsedMs: summary.elapsedMs });
           setArchive(summary.archive);
+          if (!sameDir) setCommits(null);
           if (explicit?.length) selectNames(explicit, listing());
           else restoreByName(names, focusName);
         });
         visits.visit(dir);
+        loadGit(dir, gen);
         if (!watchedPath || !samePath(watchedPath, dir)) {
           watchedPath = dir;
           // While search results are shown, the search index tracks changes instead.
@@ -294,6 +314,10 @@ export function createTab(initialPath: string) {
       setRenaming,
       navigate,
       search,
+      git,
+      commits,
+      viewMode,
+      setViewMode,
       archive,
       dirSizes,
       treemap,

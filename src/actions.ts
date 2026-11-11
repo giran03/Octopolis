@@ -1,10 +1,13 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
-import { createFolder, errorText, extractAndOpen, openPath, renameItem, revealInExplorer } from "./lib/ipc";
+import { createFolder, errorText, extractAndOpen, nativeMenu, openPath, renameItem, revealInExplorer } from "./lib/ipc";
 import { baseOf, isDir } from "./lib/listing";
 import { baseName, joinPath, sameVolume } from "./lib/paths";
 import { ops } from "./state/ops";
+import { loadJson, saveJson } from "./state/settings";
+import { shelf } from "./state/shelf";
 import type { TabModel } from "./state/tab";
 import { ui } from "./state/ui";
+import { workspace } from "./state/workspace";
 
 export const ARCHIVE_NAME = /\.(zip|jar|nupkg|vsix|apk|7z|tar|tgz|tbz2?|tar\.gz|tar\.bz2)$/i;
 
@@ -30,6 +33,13 @@ export function openEntry(tab: TabModel, entry: number) {
   if (isDir(l, entry) || ARCHIVE_NAME.test(l.names[entry])) return void tab.navigate(full);
   const open = tab.archive() ? extractAndOpen : openPath;
   open(full).catch((e) => ui.toast(`Couldn't open ${l.names[entry]}: ${errorText(e)}`));
+}
+
+/** Opens a path from a view that isn't index-based (Miller columns). */
+export function openFromPath(tab: TabModel, path: string) {
+  const open = tab.archive() ? extractAndOpen : openPath;
+  if (ARCHIVE_NAME.test(path)) return void tab.navigate(path);
+  open(path).catch((e) => ui.toast(errorText(e)));
 }
 
 export function openSelection(tab: TabModel) {
@@ -89,6 +99,50 @@ export async function commitRename(tab: TabModel, entry: number, newName: string
   } catch (e) {
     ui.toast(errorText(e));
   }
+}
+
+export function nativeContextMenu(tab: TabModel) {
+  const paths = targets(tab);
+  if (tab.archive()) return ui.toast("The Windows menu is not available inside archives.");
+  nativeMenu(paths.length ? paths : [tab.path()]).catch((e) => ui.toast(errorText(e)));
+}
+
+export function addToShelf(tab: TabModel) {
+  const paths = targets(tab);
+  if (paths.length) shelf.add(paths);
+}
+
+const PRESETS_KEY = "octopolis.presets.v1";
+type Presets = Record<string, ReturnType<typeof workspace.snapshotLayout>>;
+
+export function savePreset() {
+  ui.askText({
+    title: "Save workspace",
+    label: "Name",
+    onSubmit: (name) => {
+      saveJson(PRESETS_KEY, { ...loadJson<Presets>(PRESETS_KEY, {}), [name]: workspace.snapshotLayout() });
+      ui.toast(`Saved workspace "${name}"`);
+    },
+  });
+}
+
+export function openPresetMenu() {
+  const all = loadJson<Presets>(PRESETS_KEY, {});
+  const names = Object.keys(all);
+  if (names.length === 0) return ui.toast("No saved workspaces yet");
+  ui.openMenu(window.innerWidth / 2 - 110, 120, [
+    ...names.map((n) => ({ label: n, run: () => workspace.restoreLayout(all[n]) })),
+    "separator" as const,
+    ...names.map((n) => ({
+      label: `Delete "${n}"`,
+      danger: true,
+      run: () => {
+        const copy = { ...all };
+        delete copy[n];
+        saveJson(PRESETS_KEY, copy);
+      },
+    })),
+  ]);
 }
 
 export function pasteInto(tab: TabModel) {

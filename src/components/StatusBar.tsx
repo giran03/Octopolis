@@ -4,6 +4,7 @@ import { isDir } from "../lib/listing";
 import { ops } from "../state/ops";
 import { settings } from "../state/settings";
 import type { SearchState } from "../state/tab";
+import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
 import { IconEye, IconSidebar, IconSplitCol, IconSplitRow } from "./Icons";
 
@@ -46,7 +47,11 @@ export function StatusBar() {
           </>
         )}
       </Show>
+      <Show when={tab()?.git()?.branch}>
+        {(b) => <span class="git-branch" title="Git branch">⎇ {b()}</span>}
+      </Show>
       <span class="spacer" />
+      <button class="icon-btn" title="Settings (Ctrl+,)" onClick={() => ui.setSettingsOpen(true)}>⚙</button>
       <button class="icon-btn" classList={{ on: settings.showHidden() }} title="Show hidden items (Ctrl+H)" onClick={settings.toggleHidden}>
         <IconEye size={14} />
       </button>
