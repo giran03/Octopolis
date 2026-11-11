@@ -1,0 +1,37 @@
+# Private planning notes
+.docs/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+src-tauri/gen/
+release/
+*.exe
+*.msi
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editor and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Agent output
+.claude/
+graphify-out/
