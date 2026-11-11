@@ -45,6 +45,10 @@ export const ui = createRoot(() => {
   const [confirm, setConfirm] = createSignal<ConfirmState | null>(null);
   const [toasts, setToasts] = createSignal<readonly Toast[]>([]);
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
+  const [palette, setPalette] = createSignal<"go" | "commands" | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
+  /** Vim visual mode: movement extends the selection. */
+  const [visual, setVisual] = createSignal(false);
 
   const toast = (text: string) => {
     const key = toastKey++;
@@ -61,6 +65,15 @@ export const ui = createRoot(() => {
     closeConfirm: () => setConfirm(null),
     toasts,
     toast,
+    palette,
+    openPalette: (mode: "go" | "commands") => setPalette(mode),
+    closePalette: () => setPalette(null),
+    shortcutsOpen,
+    setShortcutsOpen,
+    visual,
+    setVisual,
+    /** True while a modal surface owns the keyboard. */
+    modalOpen: () => !!(menu() || confirm() || palette() || shortcutsOpen()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

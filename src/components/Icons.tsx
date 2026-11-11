@@ -18,6 +18,7 @@ export const IconPlus = (p: P) => svg(p, <path d="M8 3v10M3 8h10" {...stroke} />
 export const IconClose = (p: P) => svg(p, <path d="m4 4 8 8M12 4l-8 8" {...stroke} />);
 export const IconChevron = (p: P) => svg(p, <path d="m6 4 4 4-4 4" {...stroke} />);
 export const IconSearch = (p: P) => svg(p, <><circle cx="7" cy="7" r="4" {...stroke} /><path d="m10 10 3 3" {...stroke} /></>);
+export const IconLayers = (p: P) => svg(p, <path d="M8 2 2 5l6 3 6-3-6-3ZM2 8l6 3 6-3M2 11l6 3 6-3" {...stroke} />);
 export const IconSplitRow = (p: P) => svg(p, <><rect x="2" y="3" width="12" height="10" rx="1.5" {...stroke} /><path d="M8 3v10" {...stroke} /></>);
 export const IconSplitCol = (p: P) => svg(p, <><rect x="2" y="3" width="12" height="10" rx="1.5" {...stroke} /><path d="M2 8h12" {...stroke} /></>);
 export const IconEye = (p: P) => svg(p, <><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" {...stroke} /><circle cx="8" cy="8" r="2" {...stroke} /></>);

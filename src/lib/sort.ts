@@ -1,7 +1,8 @@
-import { isDir, isHidden, type Listing } from "./listing";
+import { baseOf, isDir, isHidden, type Listing } from "./listing";
 import { extensionOf } from "./paths";
 
-export type SortKey = "name" | "modified" | "type" | "size";
+/** "relevance" keeps the order the listing arrived in (search ranking). */
+export type SortKey = "name" | "modified" | "type" | "size" | "relevance";
 export interface SortSpec {
   readonly key: SortKey;
   /** 1 ascending, -1 descending. */
@@ -33,8 +34,9 @@ export function buildView(l: Listing, opts: ViewOptions): Uint32Array {
   }
 
   const { key, dir } = opts.sort;
+  if (key === "relevance") return Uint32Array.from(picked);
   const byName = (a: number, b: number) => collator.compare(l.names[a], l.names[b]);
-  const exts = key === "type" ? picked.map((i) => (isDir(l, i) ? "" : extensionOf(l.names[i]))) : null;
+  const exts = key === "type" ? picked.map((i) => (isDir(l, i) ? "" : extensionOf(baseOf(l.names[i])))) : null;
   const extOf = new Map<number, string>();
   if (exts) picked.forEach((i, n) => extOf.set(i, exts[n]));
 

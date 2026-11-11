@@ -2,6 +2,7 @@
 
 mod listing;
 mod ops_cmd;
+mod search_cmd;
 mod system;
 mod watch;
 
@@ -16,7 +17,10 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ops_cmd::OpsState::default())
         .manage(watch::WatchState::default())
+        .manage(search_cmd::SearchState::default())
         .invoke_handler(tauri::generate_handler![
+            search_cmd::search,
+            search_cmd::cancel_search,
             listing::list_dir,
             listing::resolve_path,
             ops_cmd::start_op,

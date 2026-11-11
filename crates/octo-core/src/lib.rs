@@ -7,6 +7,7 @@ pub mod enumerate;
 pub mod error;
 pub mod names;
 pub mod ops;
+pub mod search;
 pub mod shell;
 
 pub use entry::{Entry, EntryKind, RawEntry};

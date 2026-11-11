@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+jiff = "0.2.42"
+nucleo-matcher = "0.3.1"
+rayon = "1.12.0"
+regex = "1.13.1"
 thiserror = "2.0.21"
 trash = "5.3.0"
 
@@ -13,7 +17,10 @@ trash = "5.3.0"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
+    "Win32_Security",
     "Win32_System_Diagnostics_Debug",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }

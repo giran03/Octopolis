@@ -3,7 +3,7 @@
 import { createEffect, createMemo, createSignal, Index, on, onCleanup, onMount, Show } from "solid-js";
 import * as A from "../actions";
 import { categoryOf, formatDate, formatSize, typeLabel } from "../lib/format";
-import { ATTR_REPARSE, isDir, isHidden } from "../lib/listing";
+import { ATTR_REPARSE, baseOf, dirOf, isDir, isHidden } from "../lib/listing";
 import { joinPath, sameVolume, stemLength } from "../lib/paths";
 import { selectAt } from "../lib/selection";
 import type { SortKey } from "../lib/sort";
@@ -191,13 +191,13 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                     }}
                   >
                     <div class="cell name">
-                      <FileGlyph category={categoryOf(name(), dir())} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
-                      <Show when={tab().renaming() === entry()} fallback={<span class="label">{name()}</span>}>
-                        <RenameInput name={name()} isDir={dir()} onDone={(v) => (v === null ? tab().setRenaming(null) : void A.commitRename(tab(), entry(), v))} />
+                      <FileGlyph category={categoryOf(baseOf(name()), dir())} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
+                      <Show when={tab().renaming() === entry()} fallback={<NameLabel name={name()} />}>
+                        <RenameInput name={baseOf(name())} isDir={dir()} onDone={(v) => (v === null ? tab().setRenaming(null) : void A.commitRename(tab(), entry(), v))} />
                       </Show>
                     </div>
                     <div class="cell muted col-modified">{formatDate(l().mtimes[entry()])}</div>
-                    <div class="cell muted col-type">{typeLabel(name(), dir())}</div>
+                    <div class="cell muted col-type">{typeLabel(baseOf(name()), dir())}</div>
                     <div class="cell end muted num">{dir() ? "" : formatSize(l().sizes[entry()])}</div>
                   </div>
                 </Show>
@@ -285,4 +285,14 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         { label: "Open in Explorer", run: () => A.reveal(tab, tab.path()) },
       ];
   return items;
+}
+
+/** A plain name, or for search results the name plus its folder, dimmed. */
+function NameLabel(props: { name: string }) {
+  return (
+    <span class="label">
+      {baseOf(props.name)}
+      <Show when={dirOf(props.name)}>{(d) => <span class="label-dir">{d()}</span>}</Show>
+    </span>
+  );
 }

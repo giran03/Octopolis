@@ -82,8 +82,24 @@ export function isDir(l: Listing, i: number): boolean {
   return l.kinds[i] === KIND_DIR;
 }
 
+/**
+ * Hidden by attribute, or a dot-name. Search results carry relative paths
+ * ("src\.git\config"), so any dot-folder along the path hides the entry too.
+ */
 export function isHidden(l: Listing, i: number): boolean {
-  return (l.attrs[i] & ATTR_HIDDEN) !== 0 || l.names[i].startsWith(".");
+  const name = l.names[i];
+  return (l.attrs[i] & ATTR_HIDDEN) !== 0 || name.startsWith(".") || name.includes("\\.");
+}
+
+/** Last segment of a listing name (search results are relative paths). */
+export function baseOf(name: string): string {
+  return name.slice(name.lastIndexOf("\\") + 1);
+}
+
+/** Folder part of a relative listing name, or "" for a plain name. */
+export function dirOf(name: string): string {
+  const at = name.lastIndexOf("\\");
+  return at < 0 ? "" : name.slice(0, at);
 }
 
 /** Finds an entry index by name (case-insensitive, like NTFS). */

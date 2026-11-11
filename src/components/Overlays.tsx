@@ -5,6 +5,8 @@ import { baseName } from "../lib/paths";
 import { ops, type OpView } from "../state/ops";
 import { ui, type MenuEntry, type MenuItem, type MenuState } from "../state/ui";
 import { IconClose } from "./Icons";
+import { Palette } from "./Palette";
+import { Shortcuts } from "./Shortcuts";
 
 export function Overlays() {
   return (
@@ -14,6 +16,13 @@ export function Overlays() {
         {(m) => <ContextMenu menu={m} />}
       </Show>
       <ConfirmDialog />
+      {/* Keyed on the mode so switching Ctrl+P / Ctrl+Shift+P restarts the input. */}
+      <Show when={ui.palette()} keyed>
+        {(_mode) => <Palette />}
+      </Show>
+      <Show when={ui.shortcutsOpen()}>
+        <Shortcuts />
+      </Show>
       <div class="toasts" role="status" aria-live="polite">
         <For each={ui.toasts()}>{(t) => <div class="toast">{t.text}</div>}</For>
       </div>

@@ -19,3 +19,10 @@
 - Keyboard navigation, type-to-find, and shortcuts for tabs (Ctrl+T, Ctrl+W, Ctrl+Tab) and panes (Ctrl+\, F6, Tab).
 - Show or hide hidden files (Ctrl+H) and toggle the sidebar (Ctrl+B).
 - Dark and light themes that follow Windows.
+- Search in subfolders (Ctrl+Shift+F): fuzzy matching as you type, results ranked by relevance and shown with their folder.
+- Search filters: `ext:pdf,docx`, `size:>100mb`, `dm:today` / `dm:week` / `dm:2026-01-01..2026-03-31`, `re:` for regular expressions and `type:file` / `type:dir`.
+- Flat view (Ctrl+Shift+E) lists every file in all subfolders in one sortable list.
+- Command palette: Ctrl+P jumps to folders you use often and recently, or to a typed path; Ctrl+Shift+P runs any command.
+- Keyboard shortcuts editor (Ctrl+K Ctrl+S): change any shortcut, including two-step shortcuts.
+- Optional Vim keys: h j k l, gg, G, yy, dd, p, v for visual selection, / to filter.
+- Reopen the last closed tab with Ctrl+Shift+T.

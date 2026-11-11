@@ -1,6 +1,6 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
 import { createFolder, errorText, openPath, renameItem, revealInExplorer } from "./lib/ipc";
-import { isDir } from "./lib/listing";
+import { baseOf, isDir } from "./lib/listing";
 import { baseName, joinPath, sameVolume } from "./lib/paths";
 import { ops } from "./state/ops";
 import type { TabModel } from "./state/tab";
@@ -62,12 +62,14 @@ export function startRename(tab: TabModel) {
 export async function commitRename(tab: TabModel, entry: number, newName: string) {
   tab.setRenaming(null);
   const l = tab.listing();
+  // Search results are relative paths; only the last segment is renamed.
   const old = l.names[entry];
   const name = newName.trim();
-  if (!name || name === old) return;
+  if (!name || name === baseOf(old)) return;
   try {
     await renameItem(joinPath(l.path, old), name);
-    await tab.navigate(tab.path(), [name]);
+    if (tab.search()) await tab.refresh();
+    else await tab.navigate(tab.path(), [name]);
   } catch (e) {
     ui.toast(errorText(e));
   }

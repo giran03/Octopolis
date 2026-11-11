@@ -1,10 +1,22 @@
 // One browsing tab: location, history, streamed listing, sort and selection.
 import { batch, createMemo, createRoot, createSignal } from "solid-js";
-import { errorText, listDir, unwatchDir, watchDir } from "../lib/ipc";
+import { cancelSearch, errorText, listDir, search as runSearchIpc, unwatchDir, watchDir, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
+import { history as visits } from "./history";
 import { settings } from "./settings";
+
+/** A recursive search (or flat view, when the query is empty) under the tab's folder. */
+export interface SearchState {
+  readonly query: string;
+  /** Items scanned so far while the index is being built, else null. */
+  readonly indexing: number | null;
+  readonly summary: SearchSummary | null;
+  readonly error: string | null;
+}
+
+const SEARCH_SORT: SortSpec = { key: "relevance", dir: 1 };
 
 let nextTabId = 1;
 
@@ -36,8 +48,13 @@ export function createTab(initialPath: string) {
     const [focus, setFocus] = createSignal(0);
     const [anchor, setAnchor] = createSignal(0);
     const [renaming, setRenaming] = createSignal<number | null>(null);
+    const [search, setSearch] = createSignal<SearchState | null>(null);
+    /** Folder-mode sort, restored when a search ends. */
+    let folderSort: SortSpec = DEFAULT_SORT;
 
-    const view = createMemo(() => buildView(listing(), { sort: sort(), showHidden: settings.showHidden(), filter: filter() }));
+    const view = createMemo(() =>
+      buildView(listing(), { sort: sort(), showHidden: settings.showHidden(), filter: search() ? "" : filter() }),
+    );
     let generation = 0;
     let watchedPath: string | null = null;
     /**
@@ -118,9 +135,11 @@ export function createTab(initialPath: string) {
           if (explicit?.length) selectNames(explicit, listing());
           else restoreByName(names, focusName);
         });
+        visits.visit(dir);
         if (!watchedPath || !samePath(watchedPath, dir)) {
           watchedPath = dir;
-          watchDir(id, dir, () => void refresh()).catch(() => (watchedPath = null));
+          // While search results are shown, the search index tracks changes instead.
+          watchDir(id, dir, () => void (search() ? undefined : refresh())).catch(() => (watchedPath = null));
         }
       } catch (e) {
         if (gen !== generation) return;
@@ -133,7 +152,70 @@ export function createTab(initialPath: string) {
       return [...selection()].filter((i) => i < l.count).map((i) => l.names[i]);
     }
 
+    /** Leaves search mode without reloading (callers load what they need). */
+    function dropSearch() {
+      if (!search()) return;
+      void cancelSearch(id).catch(() => undefined);
+      batch(() => {
+        setSearch(null);
+        setSort(folderSort);
+        setListing(emptyListing(path()));
+        setSelection(new Set<number>());
+      });
+    }
+
+    /** Searches the tab's folder tree; an empty query lists everything (flat view). */
+    async function runSearch(query: string, rebuild = false) {
+      const gen = ++generation;
+      const root = path();
+      const builder = createBuilder(root);
+      batch(() => {
+        if (!search()) {
+          folderSort = sort();
+          setSort(SEARCH_SORT);
+        }
+        setSearch((s) => ({ query, indexing: null, summary: s?.summary ?? null, error: null }));
+        setRenaming(null);
+        setStatus({ loading: true, error: null, elapsedMs: null });
+      });
+      try {
+        const summary = await runSearchIpc(
+          id,
+          root,
+          query,
+          rebuild,
+          (buf) => (gen === generation ? decodeBatch(buf, builder) : true),
+          (scanned) => gen === generation && setSearch((s) => s && { ...s, indexing: scanned }),
+        );
+        if (gen !== generation) return;
+        batch(() => {
+          // Results keep the old list on screen until the new one is ready.
+          setListing(snapshot(builder));
+          setSelection(new Set<number>());
+          setFocus(0);
+          setAnchor(0);
+          setSearch({ query, indexing: null, summary, error: null });
+          setStatus({ loading: false, error: null, elapsedMs: summary.elapsedMs });
+        });
+      } catch (e) {
+        if (gen !== generation) return;
+        const msg = errorText(e);
+        if (msg === "cancelled") return;
+        batch(() => {
+          setSearch((s) => s && { ...s, indexing: null, error: msg });
+          setStatus({ loading: false, error: null, elapsedMs: null });
+        });
+      }
+    }
+
+    function exitSearch() {
+      if (!search()) return;
+      dropSearch();
+      void load(path());
+    }
+
     function navigate(dir: string, select?: readonly string[]): Promise<void> {
+      dropSearch();
       if (samePath(dir, path())) return load(dir, select);
       setHistory((h) => ({ entries: [...h.entries.slice(0, h.index + 1), dir], index: h.index + 1 }));
       return load(dir, select ?? []);
@@ -143,6 +225,7 @@ export function createTab(initialPath: string) {
       const h = history();
       const index = h.index + step;
       if (index < 0 || index >= h.entries.length) return;
+      dropSearch();
       // Going back selects the folder we came out of, like Explorer.
       const leaving = path();
       setHistory({ ...h, index });
@@ -156,11 +239,16 @@ export function createTab(initialPath: string) {
       if (parent) navigate(parent, [baseName(path())]);
     }
 
-    const refresh = () => load(path());
+    /** Reloads the folder, or re-runs the search with a fresh index. */
+    const refresh = () => {
+      const s = search();
+      return s ? runSearch(s.query, true) : load(path());
+    };
 
     function close() {
       generation++;
       void unwatchDir(id).catch(() => undefined);
+      void cancelSearch(id).catch(() => undefined);
       dispose();
     }
 
@@ -184,6 +272,9 @@ export function createTab(initialPath: string) {
       setAnchor,
       setRenaming,
       navigate,
+      search,
+      runSearch,
+      exitSearch,
       back: () => go(-1),
       forward: () => go(1),
       canBack: () => history().index > 0,

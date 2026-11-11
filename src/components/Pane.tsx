@@ -6,7 +6,7 @@ import type { TabModel } from "../state/tab";
 import { ui } from "../state/ui";
 import { workspace, type PaneModel } from "../state/workspace";
 import { FileList, type ListHandle } from "./FileList";
-import { IconBack, IconChevron, IconClose, IconForward, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
+import { IconBack, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
 
 /** List handles per tab, used by keyboard navigation to scroll and page. */
 export const listHandles = new WeakMap<TabModel, ListHandle>();
@@ -90,27 +90,61 @@ function Toolbar(props: { paneId: string; tab: TabModel }) {
         <IconRefresh />
       </button>
       <PathBar tab={props.tab} editing={editing()} setEditing={setEditing} />
-      <label class="filter">
-        <IconSearch size={14} />
-        <input
-          ref={filterInput}
-          placeholder="Filter"
-          value={props.tab.filter()}
-          spellcheck={false}
-          onInput={(e) => props.tab.setFilter(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              props.tab.setFilter("");
-              e.currentTarget.blur();
-            }
-            if (e.key === "Enter" || e.key === "ArrowDown") e.currentTarget.blur();
-            e.stopPropagation();
-          }}
-        />
-      </label>
+      <SearchBox tab={props.tab} ref={(el) => (filterInput = el)} />
     </div>
   );
 }
+
+const SEARCH_DEBOUNCE_MS = 150;
+
+/** Filters this folder, or (scope "subfolders") searches the whole tree below it. */
+function SearchBox(props: { tab: TabModel; ref: (el: HTMLInputElement) => void }) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deep = () => props.tab.search() !== null;
+  const value = () => (deep() ? props.tab.search()!.query : props.tab.filter());
+  const onInput = (v: string) => {
+    if (!deep()) return props.tab.setFilter(v);
+    clearTimeout(timer);
+    timer = setTimeout(() => void props.tab.runSearch(v), SEARCH_DEBOUNCE_MS);
+  };
+  const toggleScope = () => {
+    if (deep()) props.tab.exitSearch();
+    else {
+      const q = props.tab.filter();
+      props.tab.setFilter("");
+      void props.tab.runSearch(q);
+    }
+  };
+  return (
+    <div class="search" classList={{ deep: deep(), invalid: !!props.tab.search()?.error }}>
+      <button
+        class="scope-btn"
+        title={deep() ? "Searching subfolders — click to filter this folder only" : "Filtering this folder — click to search subfolders (Ctrl+Shift+F)"}
+        onClick={toggleScope}
+      >
+        {deep() ? <IconLayers size={14} /> : <IconSearch size={14} />}
+      </button>
+      <input
+        ref={props.ref}
+        placeholder={deep() ? "Search subfolders  ext: size: dm: re:" : "Filter"}
+        value={value()}
+        spellcheck={false}
+        onInput={(e) => onInput(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            if (deep()) props.tab.exitSearch();
+            else props.tab.setFilter("");
+            e.currentTarget.blur();
+          }
+          if (e.key === "Enter" || e.key === "ArrowDown") e.currentTarget.blur();
+        }}
+      />
+      <Show when={props.tab.search()?.error}>{(err) => <span class="search-error" role="alert">{err()}</span>}</Show>
+    </div>
+  );
+}
+
 
 function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boolean) => void }) {
   let input: HTMLInputElement | undefined;

@@ -35,6 +35,54 @@ export function listDir(path: string, onBatch: (buf: ArrayBuffer) => boolean): P
   });
 }
 
+export interface SearchSummary {
+  matched: number;
+  shown: number;
+  indexed: number;
+  mode: "usn" | "walk";
+  indexMs: number | null;
+  elapsedMs: number;
+}
+
+/**
+ * Searches `root` recursively. Results arrive as listing batches whose names
+ * are paths relative to `root`; `onProgress` reports items scanned while the
+ * index is being built. Waits for the final batch, like `listDir`.
+ */
+export function search(
+  tabId: string,
+  root: string,
+  query: string,
+  rebuild: boolean,
+  onBatch: (buf: ArrayBuffer) => boolean,
+  onProgress: (scanned: number) => void,
+): Promise<SearchSummary> {
+  return new Promise((resolve, reject) => {
+    let summary: SearchSummary | null = null;
+    let finalSeen = false;
+    const settle = () => summary && finalSeen && resolve(summary);
+    const batches = new Channel<ArrayBuffer>();
+    batches.onmessage = (buf) => {
+      try {
+        if (onBatch(buf)) {
+          finalSeen = true;
+          settle();
+        }
+      } catch (e) {
+        reject(e);
+      }
+    };
+    const progress = new Channel<number>();
+    progress.onmessage = onProgress;
+    invoke<SearchSummary>("search", { tabId, root, query, rebuild, onBatch: batches, onProgress: progress }).then((s) => {
+      summary = s;
+      settle();
+    }, reject);
+  });
+}
+
+export const cancelSearch = (tabId: string) => invoke<void>("cancel_search", { tabId });
+
 export interface Resolved {
   dir: string;
   select: string | null;

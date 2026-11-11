@@ -66,12 +66,23 @@ export const workspace = createRoot(() => {
     setActivePaneId(paneId);
   }
 
+  /** Paths of recently closed tabs, newest last, for "Reopen closed tab". */
+  const closedPaths: string[] = [];
+  const MAX_CLOSED = 20;
+
+  function reopenTab() {
+    const path = closedPaths.pop();
+    if (path) newTab(activePaneId(), path);
+  }
+
   function closeTab(paneId: string, tabId: string) {
     const p = state(paneId);
     if (!p) return;
     if (p.tabs.length === 1) return closePane(paneId);
     const at = p.tabs.findIndex((t) => t.id === tabId);
     const tab = p.tabs[at];
+    if (tab) closedPaths.push(tab.path());
+    if (closedPaths.length > MAX_CLOSED) closedPaths.shift();
     const rest = p.tabs.filter((t) => t.id !== tabId);
     const nextActive = p.activeTabId === tabId ? rest[Math.min(at, rest.length - 1)].id : p.activeTabId;
     updatePane(paneId, () => ({ tabs: rest, activeTabId: nextActive }));
@@ -136,6 +147,7 @@ export const workspace = createRoot(() => {
     init,
     newTab,
     closeTab,
+    reopenTab,
     selectTab,
     cycleTab,
     split,
