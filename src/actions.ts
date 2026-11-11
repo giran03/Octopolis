@@ -1,7 +1,7 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
 import { createFolder, errorText, extractAndOpen, nativeMenu, openPath, renameItem, revealInExplorer } from "./lib/ipc";
 import { baseOf, isDir } from "./lib/listing";
-import { baseName, joinPath, sameVolume } from "./lib/paths";
+import { baseName, joinPath, parentPath, sameVolume } from "./lib/paths";
 import { ops } from "./state/ops";
 import { loadJson, saveJson } from "./state/settings";
 import { shelf } from "./state/shelf";
@@ -163,7 +163,7 @@ export function extractHere(tab: TabModel) {
   const paths = targets(tab);
   const inside = tab.archive();
   if (inside) {
-    const dest = inside.slice(0, inside.lastIndexOf("\\")) || inside;
+    const dest = parentPath(inside) ?? inside;
     return void ops.run({ kind: "extract", archive: inside, items: paths.map((p) => p.slice(inside.length + 1)), dest }, `Extracting ${paths.length} item${paths.length === 1 ? "" : "s"}`);
   }
   ui.toast("Open the archive, select items, then extract them");

@@ -209,10 +209,19 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
   let timer: ReturnType<typeof setTimeout> | undefined;
   const [suggestions, setSuggestions] = createSignal<readonly string[]>([]);
   const [hot, setHot] = createSignal(-1);
+  let suggestToken = 0;
+
+  const endSuggestions = () => {
+    suggestToken++;
+    clearTimeout(timer);
+    setSuggestions([]);
+    setHot(-1);
+  };
 
   /** Offers subfolders of the typed parent, then frequent folders that match. */
   function suggest(text: string) {
     clearTimeout(timer);
+    const mine = ++suggestToken;
     timer = setTimeout(async () => {
       const value = text.replace(/\//g, "\\");
       const at = value.lastIndexOf("\\");
@@ -220,6 +229,7 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
       const partial = at >= 0 ? value.slice(at + 1) : value;
       let names: string[] = [];
       if (parent) names = await subfolders(parent).catch(() => []);
+      if (mine !== suggestToken) return; // a newer keystroke took over
       const local = fuzzyRank(partial, names, (n) => n).map((r) => joinPath(parent, r.item));
       const frequent = fuzzyRank(value, history.top(100).map((v) => v.path), (p) => p).map((r) => r.item);
       setSuggestions([...new Set([...local, ...frequent])].slice(0, MAX_SUGGESTIONS));
@@ -237,6 +247,7 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
   const submit = async (value: string) => {
     try {
       const r = await resolvePath(value);
+      endSuggestions();
       props.setEditing(false);
       await props.tab.navigate(r.dir, r.select ? [r.select] : undefined);
     } catch (e) {
@@ -297,9 +308,15 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
               e.currentTarget.value = pick.endsWith("\\") ? pick : `${pick}\\`;
               suggest(e.currentTarget.value);
             } else if (e.key === "Enter") void submit(hot() >= 0 ? list[hot()] : e.currentTarget.value);
-            else if (e.key === "Escape") props.setEditing(false);
+            else if (e.key === "Escape") {
+              endSuggestions();
+              props.setEditing(false);
+            }
           }}
-          onBlur={() => props.setEditing(false)}
+          onBlur={() => {
+            endSuggestions();
+            props.setEditing(false);
+          }}
         />
       </Show>
       <Show when={props.editing && suggestions().length > 0}>

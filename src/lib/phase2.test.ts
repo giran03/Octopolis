@@ -84,6 +84,12 @@ describe("keymap", () => {
     expect(eventToKey(ev("G", { shift: true }, "KeyG"))).toBe("shift+g");
   });
 
+  it("follows the keyboard layout, using the physical key only as a fallback", () => {
+    expect(eventToKey(ev("z", { ctrl: true }, "KeyW"))).toBe("ctrl+z"); // AZERTY
+    expect(eventToKey(ev("я", { ctrl: true }, "KeyZ"))).toBe("ctrl+z"); // Cyrillic
+    expect(eventToKey(ev("&", { ctrl: true }, "Digit1"))).toBe("ctrl+1"); // AZERTY digit row
+  });
+
   it("formats keys for display", () => {
     expect(formatKeys("ctrl+shift+p")).toBe("Ctrl+Shift+P");
     expect(formatKeys("ctrl+k ctrl+s")).toBe("Ctrl+K Ctrl+S");

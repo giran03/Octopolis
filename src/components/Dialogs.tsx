@@ -25,7 +25,7 @@ export function BatchRename() {
   const [manual, setManual] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
 
-  const [tags] = createResource(() => fileTags(paths));
+  const [tags] = createResource(() => fileTags(paths).catch(() => []));
   const items = createMemo<RenameItem[]>(() =>
     entries.map((e, i) => ({ name: baseOf(l.names[e]), isDir: isDir(l, e), modifiedMs: l.mtimes[e], tags: tags()?.[i] ?? {} })),
   );
@@ -108,7 +108,7 @@ export function LockHunter(props: { paths: readonly string[] }) {
 
   async function kill(pid: number) {
     try {
-      await killProcess(pid);
+      await killProcess(pid, [...props.paths]);
       ui.toast(`Ended process ${pid}`);
     } catch (e) {
       ui.toast(`Couldn't end it: ${errorText(e)}`);

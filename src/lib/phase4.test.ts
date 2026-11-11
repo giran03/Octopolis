@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_THEMES, isColor, parseTheme } from "./themes";
 import { filterMenu } from "./menu";
+import { psCdCommand } from "./paths";
+
+describe("terminal folder sync", () => {
+  it("quotes paths so a folder name cannot run commands", () => {
+    expect(psCdCommand("C:\\a")).toBe("Set-Location -LiteralPath 'C:\\a'\r");
+    expect(psCdCommand("C:\\it's")).toBe("Set-Location -LiteralPath 'C:\\it''s'\r");
+    expect(psCdCommand("C:\\x\u2019; calc; \u2018")).toBe("Set-Location -LiteralPath 'C:\\x\u2019\u2019; calc; \u2018\u2018'\r");
+  });
+});
 
 describe("themes", () => {
   it("accepts plain colors and rejects anything else", () => {

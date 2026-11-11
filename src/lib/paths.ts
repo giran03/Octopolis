@@ -70,6 +70,14 @@ export function extensionOf(name: string): string {
   return i > 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
+/**
+ * PowerShell command that changes folder. PowerShell treats the typographic
+ * quotes as single quotes too, so all of them must be doubled.
+ */
+export function psCdCommand(path: string): string {
+  return `Set-Location -LiteralPath '${path.replace(/['\u2018\u2019\u201A\u201B]/g, "$&$&")}'\r`;
+}
+
 /** Length of the name without its extension, for selecting it on rename. */
 export function stemLength(name: string, isDir: boolean): number {
   if (isDir) return name.length;

@@ -243,7 +243,9 @@ pub fn read(archive: &Path, inner: &str, max: usize) -> Result<Vec<u8>> {
 /// escape its destination (`..`, roots, drive prefixes).
 fn safe_relative(rel: &str) -> Option<PathBuf> {
     let p = Path::new(rel);
-    p.components().all(|c| matches!(c, Component::Normal(_))).then(|| p.to_path_buf())
+    // A colon would write an NTFS alternate data stream.
+    let safe = !rel.contains(':') && p.components().all(|c| matches!(c, Component::Normal(_)));
+    safe.then(|| p.to_path_buf())
 }
 
 #[derive(Debug, Default)]
@@ -252,6 +254,12 @@ pub struct ExtractReport {
     pub bytes: u64,
     pub created: Vec<PathBuf>,
     pub errors: Vec<(String, String)>,
+}
+
+/// The part of `path` below `root`: "" for the root itself, None if outside.
+fn below<'a>(path: &'a str, root: &str) -> Option<&'a str> {
+    let rest = path.strip_prefix(root)?;
+    if rest.is_empty() { Some("") } else { rest.strip_prefix('\\') }
 }
 
 /// Extracts the given items (files or folders, as inner paths) into `dest`.
@@ -273,28 +281,33 @@ pub fn extract(
             report.errors.push((item.clone(), "not found in the archive".into()));
             continue;
         };
+        // An item inside another selected folder comes along with that folder.
+        if roots.iter().any(|(r, _)| below(&entry.path, r).is_some()) || items.iter().any(|o| norm(o).len() < item.len() && below(&item, &norm(o)).is_some()) {
+            continue;
+        }
         let target = unique_path(dest, entry.name(), entry.is_dir);
+        if roots.iter().any(|(_, t)| *t == target) {
+            report.errors.push((item.clone(), "another selected item has the same name".into()));
+            continue;
+        }
         if entry.is_dir {
             std::fs::create_dir_all(&target).map_err(|e| Error::io(&target, e))?;
         }
         report.created.push(target.clone());
-        roots.push((item.to_lowercase(), target));
+        roots.push((entry.path.clone(), target));
     }
-    let total: u64 = all
-        .iter()
-        .filter(|e| !e.is_dir && roots.iter().any(|(r, _)| e.path.to_lowercase() == *r || e.path.to_lowercase().starts_with(&format!("{r}\\"))))
-        .map(|e| e.size)
-        .sum();
+    let total: u64 = all.iter().filter(|e| !e.is_dir && roots.iter().any(|(r, _)| below(&e.path, r).is_some())).map(|e| e.size).sum();
 
     for_each(archive, |e, r| {
+        while cancel.is_paused() && !cancel.is_cancelled() {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+        }
         if cancel.is_cancelled() {
             return false;
         }
-        let lower = e.path.to_lowercase();
-        let Some((root, target)) = roots.iter().find(|(root, _)| lower == *root || lower.starts_with(&format!("{root}\\"))) else {
+        let Some((rel, target)) = roots.iter().find_map(|(root, target)| below(&e.path, root).map(|rel| (rel, target))) else {
             return true;
         };
-        let rel = &e.path[root.len()..].trim_start_matches('\\');
         let Some(rel) = safe_relative(rel) else {
             report.errors.push((e.path.clone(), "unsafe path skipped".into()));
             return true;
@@ -436,6 +449,23 @@ mod tests {
         assert!(safe_relative(r"a\..\..\evil.txt").is_none());
         assert!(safe_relative(r"C:\Windows\evil.dll").is_none());
         assert!(safe_relative(r"\rooted").is_none());
+        assert!(safe_relative("file.txt:stream").is_none(), "alternate data streams");
+    }
+
+    #[test]
+    fn extract_handles_non_ascii_names_and_nested_selections() {
+        let tmp = tempfile::tempdir().unwrap();
+        let z = tmp.path().join("a.zip");
+        // The dotted capital I gets longer when lower-cased.
+        make_zip(&z, &[("\u{130}\u{130}/\u{e9}.txt", b"x"), ("\u{130}\u{130}/b.txt", b"y")]);
+        let out = tmp.path().join("out");
+        fs_dir(&out);
+        let dir = "\u{130}\u{130}".to_string();
+        let r = extract(&z, &[dir.clone(), format!("{dir}\\b.txt")], &out, &CancelToken::default(), |_, _| {}).unwrap();
+        assert!(r.errors.is_empty(), "{:?}", r.errors);
+        assert_eq!(r.files, 2);
+        assert_eq!(r.created, vec![out.join(&dir)], "the nested item comes with its folder");
+        assert_eq!(std::fs::read(out.join(&dir).join("b.txt")).unwrap(), b"y");
     }
 
     #[test]

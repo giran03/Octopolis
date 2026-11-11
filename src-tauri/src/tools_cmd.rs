@@ -52,6 +52,15 @@ fn read_head(path: &Path, max: usize) -> Result<(Vec<u8>, u64), String> {
     Ok((buf, size))
 }
 
+/// Size of a real file or of a file inside an archive, without reading it.
+fn file_size(path: &Path) -> Result<u64, String> {
+    if let Some((file, inner)) = archive::split_path(path).filter(|(_, i)| !i.is_empty()) {
+        let all = archive::entries(&file).map_err(|e| e.to_string())?;
+        return all.iter().find(|e| e.path.eq_ignore_ascii_case(&inner)).map(|e| e.size).ok_or_else(|| "Not found in the archive".to_string());
+    }
+    std::fs::metadata(path).map(|m| m.len()).map_err(|e| e.to_string())
+}
+
 fn build_preview(path: &Path) -> Result<PreviewDto, String> {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let kind = preview::classify(&name);
@@ -110,11 +119,10 @@ pub async fn preview_file(path: PathBuf) -> Result<PreviewDto, String> {
 #[tauri::command]
 pub async fn read_bytes(path: PathBuf) -> Result<Response, String> {
     crate::off_main(move || {
-        let (bytes, size) = read_head(&path, MEDIA_LIMIT as usize)?;
-        if size > MEDIA_LIMIT {
+        if file_size(&path)? > MEDIA_LIMIT {
             return Err("This file is too large to preview".to_string());
         }
-        Ok(Response::new(bytes))
+        Ok(Response::new(read_head(&path, MEDIA_LIMIT as usize)?.0))
     })
     .await
 }
@@ -142,8 +150,16 @@ pub async fn who_locks(paths: Vec<PathBuf>) -> Result<Vec<LockerDto>, String> {
 }
 
 #[tauri::command]
-pub async fn kill_process(pid: u32) -> Result<(), String> {
-    crate::off_main(move || lock::kill(pid).map_err(|e| e.to_string())).await
+pub async fn kill_process(pid: u32, paths: Vec<PathBuf>) -> Result<(), String> {
+    crate::off_main(move || {
+        // Only a process that holds these files right now may be ended.
+        let lockers = lock::who_locks(&paths).map_err(|e| e.to_string())?;
+        if !lockers.iter().any(|l| l.pid == pid) {
+            return Err("That program is no longer locking these files".to_string());
+        }
+        lock::kill(pid).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Template tags (`exif:date`, `id3:artist`, …) for each file.
@@ -193,6 +209,9 @@ pub async fn folder_sizes(app: tauri::AppHandle, tab_id: String, dir: String, on
 pub async fn extract_and_open(path: PathBuf) -> Result<(), String> {
     crate::off_main(move || {
         let (file, inner) = archive::split_path(&path).ok_or("That file is not inside an archive")?;
+        if file_size(&path)? > MEDIA_LIMIT {
+            return Err("This file is too large to open from the archive. Extract it first.".to_string());
+        }
         let bytes = archive::read(&file, &inner, MEDIA_LIMIT as usize).map_err(|e| e.to_string())?;
         let name = path.file_name().ok_or("That file has no name")?;
         let stamp = blake3::hash(path.to_string_lossy().as_bytes()).to_hex();
@@ -247,6 +266,10 @@ pub async fn git_last_commits(dir: PathBuf) -> Result<HashMap<String, CommitDto>
 /// menus need that thread's message loop.
 #[tauri::command]
 pub fn native_menu(window: tauri::WebviewWindow, paths: Vec<PathBuf>) -> Result<(), String> {
+    let parent = |p: &PathBuf| p.parent().map(|d| d.to_string_lossy().to_lowercase());
+    if paths.iter().any(|p| parent(p) != paths.first().and_then(parent)) {
+        return Err("The Windows menu needs items from a single folder".to_string());
+    }
     let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
     window
         .run_on_main_thread(move || {

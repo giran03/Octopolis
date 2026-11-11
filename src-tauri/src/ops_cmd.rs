@@ -126,7 +126,8 @@ fn queue() -> &'static Sender<Job> {
             .name("octo-transfer-queue".into())
             .spawn(move || {
                 while let Ok(job) = rx.recv() {
-                    job();
+                    // One failing transfer must not stop the ones behind it.
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
                 }
             })
             .expect("spawning the transfer queue thread");

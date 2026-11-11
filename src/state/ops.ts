@@ -24,6 +24,17 @@ export interface OpView {
   readonly errors: readonly { path: string; message: string }[];
 }
 
+export interface OpOutcome {
+  readonly errors: readonly { path: string; message: string }[];
+  readonly cancelled: boolean;
+}
+
+/** Turns a finished operation's problems into a thrown error. */
+function assertClean(o: OpOutcome) {
+  if (o.cancelled) throw new Error("it was cancelled");
+  if (o.errors.length) throw new Error(o.errors[0].message);
+}
+
 export interface Clip {
   readonly mode: "copy" | "cut";
   readonly paths: readonly string[];
@@ -90,7 +101,12 @@ export const ops = createRoot(() => {
     }
   }
 
-  async function run(request: OpRequest, label: string, remember = true) {
+  /** Runs an operation; resolves with its problems once it has finished. */
+  function run(request: OpRequest, label: string, remember = true): Promise<OpOutcome> {
+    return new Promise((finish) => void startRun(request, label, remember, finish));
+  }
+
+  async function startRun(request: OpRequest, label: string, remember: boolean, finish: (o: OpOutcome) => void) {
     const key = nextKey++;
     setList((l) => [
       ...l,
@@ -106,6 +122,7 @@ export const ops = createRoot(() => {
       if (remember) recordFinished(request, label, e);
       refreshAffected(request, e.created);
       if (e.errors.length === 0) setTimeout(() => dismiss(key), DONE_LINGER_MS);
+      finish({ errors: e.errors, cancelled: e.cancelled });
     };
     const transfer = request.kind === "copy" || request.kind === "move";
     const options: OpOptions = { conflict: "keepBoth", verify: transfer && settings.verifyCopies(), limitBps: transfer ? settings.speedLimit() : null };
@@ -113,7 +130,9 @@ export const ops = createRoot(() => {
       const id = await startOp(request, options, onEvent);
       patch(key, (o) => ({ ...o, id }));
     } catch (e) {
-      patch(key, (o) => ({ ...o, state: "finished", errors: [{ path: "", message: errorText(e) }] }));
+      const errors = [{ path: "", message: errorText(e) }];
+      patch(key, (o) => ({ ...o, state: "finished", errors }));
+      finish({ errors, cancelled: false });
     }
   }
 
@@ -140,15 +159,26 @@ export const ops = createRoot(() => {
 
   async function perform(step: Step) {
     switch (step.type) {
-      case "relocate":
-        return run({ kind: "relocate", pairs: step.pairs.map(([a, b]) => [a, b] as [string, string]) }, "Moving items back", false);
+      case "relocate": {
+        const pairs = step.pairs.map(([a, b]) => [a, b] as [string, string]);
+        // Renames in one folder may swap names or differ only by case; the
+        // batch renamer handles both, a plain move refuses them.
+        if (pairs.every(([a, b]) => samePath(parentPath(a) ?? a, parentPath(b) ?? b))) {
+          await ipc.batchRename(pairs.map(([a, b]) => [a, baseName(b)]));
+          return refreshDirs(pairs.map(([a]) => parentPath(a)));
+        }
+        return assertClean(await run({ kind: "relocate", pairs }, "Moving items back", false));
+      }
       case "recycle":
-        return run({ kind: "delete", paths: [...step.paths], permanent: false }, `Recycling ${describe(step.paths)}`, false);
+        return assertClean(await run({ kind: "delete", paths: [...step.paths], permanent: false }, `Recycling ${describe(step.paths)}`, false));
       case "copy":
-        return run({ kind: "copy", sources: [...step.sources], dest: step.dest }, `Copying ${describe(step.sources)}`, false);
-      case "restore":
-        await ipc.restoreRecycled([...step.paths]);
-        return refreshDirs(step.paths.map(parentPath));
+        return assertClean(await run({ kind: "copy", sources: [...step.sources], dest: step.dest }, `Copying ${describe(step.sources)}`, false));
+      case "restore": {
+        const restored = await ipc.restoreRecycled([...step.paths]);
+        refreshDirs(step.paths.map(parentPath));
+        if (restored < step.paths.length) throw new Error("some items are no longer in the Recycle Bin");
+        return;
+      }
       case "removeEmpty":
         await ipc.removeEmptyDir(step.path);
         return refreshDirs([parentPath(step.path)]);
@@ -160,11 +190,13 @@ export const ops = createRoot(() => {
 
   async function travel(popped: ReturnType<typeof popUndo>, step: (a: UndoAction) => Step, verb: string) {
     if (!popped) return ui.toast(`Nothing to ${verb.toLowerCase()}`);
+    const before = stacks();
     batch(() => setStacks(popped.stacks));
     try {
       await perform(step(popped.action));
       ui.toast(`${verb}: ${popped.action.label}`);
     } catch (e) {
+      setStacks(before); // the action still stands, so it stays undoable
       ui.toast(`Couldn't ${verb.toLowerCase()}: ${errorText(e)}`);
     }
   }

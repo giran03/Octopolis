@@ -1,6 +1,8 @@
 // The undo model: what each file action did, and the step that reverses or
 // repeats it. Permanent deletes are never recorded because they can't be undone.
 
+import { parentPath } from "./paths";
+
 export type Pair = readonly [from: string, to: string];
 
 export type UndoAction =
@@ -17,7 +19,6 @@ export type Step =
   | { readonly type: "createFolder"; readonly path: string }
   | { readonly type: "copy"; readonly sources: readonly string[]; readonly dest: string };
 
-const parentOf = (p: string) => p.slice(0, Math.max(p.lastIndexOf("\\"), 2));
 
 export function undoStep(a: UndoAction): Step {
   switch (a.kind) {
@@ -37,7 +38,7 @@ export function redoStep(a: UndoAction): Step {
     case "move":
       return { type: "relocate", pairs: a.pairs };
     case "copy":
-      return { type: "copy", sources: a.pairs.map(([from]) => from), dest: parentOf(a.pairs[0][1]) };
+      return { type: "copy", sources: a.pairs.map(([from]) => from), dest: parentPath(a.pairs[0][1]) ?? a.pairs[0][1] };
     case "newFolder":
       return { type: "createFolder", path: a.path };
     case "recycle":

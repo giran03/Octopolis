@@ -334,11 +334,10 @@ function RowIcon(props: { path: string; name: string; isDir: boolean; virtual: b
 /** File size, or a folder's computed size with a proportional bar. */
 function SizeCell(props: { tab: TabModel; entry: number; name: string; dir: boolean }) {
   const known = () => (props.dir ? props.tab.dirSizes()?.get(props.name.toLowerCase()) : undefined);
-  const max = () => Math.max(1, ...(props.tab.dirSizes()?.values() ?? []));
   return (
     <div class="cell end muted num size-cell">
       <Show when={known() !== undefined}>
-        <span class="size-bar" style={{ width: `${(known()! / max()) * 100}%` }} />
+        <span class="size-bar" style={{ width: `${(known()! / props.tab.dirSizeMax()) * 100}%` }} />
       </Show>
       <span class="size-text">{props.dir ? (known() === undefined ? "" : formatSize(known()!)) : formatSize(props.tab.listing().sizes[props.entry])}</span>
     </div>

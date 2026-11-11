@@ -169,7 +169,7 @@ export interface Locker {
   kind: string;
 }
 export const whoLocks = (paths: string[]) => invoke<Locker[]>("who_locks", { paths });
-export const killProcess = (pid: number) => invoke<void>("kill_process", { pid });
+export const killProcess = (pid: number, paths: string[]) => invoke<void>("kill_process", { pid, paths });
 export const fileTags = (paths: string[]) => invoke<Record<string, string>[]>("file_tags", { paths });
 
 export interface FolderSizeInfo {

@@ -7,8 +7,8 @@ import { workspace } from "../state/workspace";
 import { IconDrive, IconHome, IconStar } from "./Icons";
 
 export function Sidebar() {
-  const [folders] = createResource(knownFolders);
-  const [drives, { refetch }] = createResource(listDrives);
+  const [folders] = createResource(() => knownFolders().catch(() => []));
+  const [drives, { refetch }] = createResource(() => listDrives().catch(() => []));
 
   onMount(() => {
     // Drives come and go (USB sticks); recheck when the window regains focus.

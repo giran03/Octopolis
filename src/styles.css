@@ -1864,3 +1864,11 @@ button.crumb-sep:hover { background: var(--surface-3); color: var(--text); }
 
 .menu-item:hover .menu-pin, .menu-pin.on { opacity: 1; }
 .menu-pin.on { color: var(--accent); }
+
+.crash {
+  max-width: 520px;
+  margin: 15vh auto;
+  padding: 24px;
+  background: var(--surface-2);
+  border-radius: 12px;
+}

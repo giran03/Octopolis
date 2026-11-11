@@ -161,31 +161,50 @@ const CELL_H = 128;
 const THUMB_PX = 96;
 const OVERSCAN_ROWS = 1;
 const MAX_THUMBS = 400;
+/** Thumbnail URLs, oldest first. Visible cells stay recent, so they are never evicted. */
 const thumbs = new Map<string, string>();
+const pendingThumbs = new Map<string, Promise<string | null>>();
 
-function GridThumb(props: { path: string; virtual: boolean; name: string; dir: boolean }) {
+function loadThumb(key: string, path: string): Promise<string | null> {
+  const known = thumbs.get(key);
+  if (known) {
+    thumbs.delete(key);
+    thumbs.set(key, known); // mark as recently used
+    return Promise.resolve(known);
+  }
+  let pending = pendingThumbs.get(key);
+  if (!pending) {
+    pending = thumbnail(path, THUMB_PX, false)
+      .then(
+        (b) => {
+          if (thumbs.size >= MAX_THUMBS) {
+            const oldest = thumbs.keys().next().value as string;
+            URL.revokeObjectURL(thumbs.get(oldest)!);
+            thumbs.delete(oldest);
+          }
+          const u = URL.createObjectURL(new Blob([b], { type: "image/png" }));
+          thumbs.set(key, u);
+          return u;
+        },
+        () => null,
+      )
+      .finally(() => pendingThumbs.delete(key));
+    pendingThumbs.set(key, pending);
+  }
+  return pending;
+}
+
+function GridThumb(props: { path: string; modified: number; virtual: boolean; name: string; dir: boolean }) {
   const [url, setUrl] = createSignal<string | null>(null);
+  const key = () => `${props.path}|${props.modified}`;
   createEffect(
-    on(
-      () => props.path,
-      (path) => {
-        setUrl(thumbs.get(path) ?? null);
-        if (props.virtual || thumbs.has(path)) return;
-        thumbnail(path, THUMB_PX, false).then(
-          (b) => {
-            if (thumbs.size >= MAX_THUMBS) {
-              const oldest = thumbs.keys().next().value as string;
-              URL.revokeObjectURL(thumbs.get(oldest)!);
-              thumbs.delete(oldest);
-            }
-            const u = URL.createObjectURL(new Blob([b], { type: "image/png" }));
-            thumbs.set(path, u);
-            if (props.path === path) setUrl(u);
-          },
-          () => undefined,
-        );
-      },
-    ),
+    on(key, (k) => {
+      setUrl(null);
+      if (props.virtual) return;
+      void loadThumb(k, props.path).then((u) => {
+        if (key() === k) setUrl(u);
+      });
+    }),
   );
   return (
     <div class="grid-thumb">
@@ -254,7 +273,7 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
                   }}
                   title={l().names[entry()]}
                 >
-                  <GridThumb path={props.tab.pathOf(entry())} virtual={!!props.tab.archive()} name={l().names[entry()]} dir={isDir(l(), entry())} />
+                  <GridThumb path={props.tab.pathOf(entry())} modified={l().mtimes[entry()]} virtual={!!props.tab.archive()} name={l().names[entry()]} dir={isDir(l(), entry())} />
                   <span class="grid-name">{baseOf(l().names[entry()])}</span>
                 </div>
               </Show>
@@ -268,9 +287,14 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
 
 const MILLER_ROW_LIMIT = 3000;
 
-async function readFolder(path: string): Promise<Listing> {
+/** A folder's listing, or null if it can't be read. */
+async function readFolder(path: string): Promise<Listing | null> {
   const b = createBuilder(path);
-  await listDir(path, (buf) => decodeBatch(buf, b));
+  try {
+    await listDir(path, (buf) => decodeBatch(buf, b));
+  } catch {
+    return null;
+  }
   return snapshot(b);
 }
 
@@ -286,7 +310,7 @@ function MillerColumn(props: { path: string; selected: string | null; onPick: (p
   const [listing] = createResource(() => props.path, readFolder);
   return (
     <div class="miller-col">
-      <Show when={listing()} fallback={<p class="muted small miller-msg">{listing.error ? "Can't read this folder" : "Loading…"}</p>}>
+      <Show when={listing()} fallback={<p class="muted small miller-msg">{listing.loading ? "Loading…" : "Can't read this folder"}</p>}>
         {(l) => (
           <For each={sortedEntries(l())}>
             {(i) => {

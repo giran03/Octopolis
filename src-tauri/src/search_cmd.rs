@@ -83,7 +83,7 @@ pub async fn search(
     crate::off_main(move || {
         let started = Instant::now();
         let slot = slot_for(&app, &root)?;
-        let (built, index_ms) = ensure_index(&slot, &root, rebuild, &cancel, &on_progress)?;
+        let (built, index_ms) = ensure_index(&slot, &root, rebuild, &on_progress)?;
         let result = rank::run(&built.index, &q, RESULT_LIMIT, &cancel);
         if cancel.is_cancelled() {
             return Err("cancelled".into());
@@ -144,7 +144,6 @@ fn ensure_index(
     slot: &Slot,
     root: &Path,
     rebuild: bool,
-    cancel: &CancelToken,
     on_progress: &Channel<u64>,
 ) -> Result<(Arc<Built>, Option<f64>), String> {
     // Holding the lock while building makes concurrent searches on the same
@@ -156,7 +155,13 @@ fn ensure_index(
             return Ok((b.clone(), None));
         }
     }
+    // Watch first and clear the flag first, so changes during the build count.
+    start_watcher(slot, root);
+    slot.stale.store(false, Ordering::Relaxed);
     let started = Instant::now();
+    // The build serves every search on this root, so a newer keystroke
+    // cancelling an older search must not abort it.
+    let build_token = CancelToken::default();
     let scanned = AtomicU64::new(0);
     let done = AtomicBool::new(false);
     let result = std::thread::scope(|s| {
@@ -166,15 +171,13 @@ fn ensure_index(
                 std::thread::sleep(PROGRESS_EVERY);
             }
         });
-        let r = search::build_index(root, cancel, &scanned);
+        let r = search::build_index(root, &build_token, &scanned);
         done.store(true, Ordering::Relaxed);
         r
     });
     let (index, mode) = result.map_err(|e| e.to_string())?;
     let fresh = Arc::new(Built { index, mode, built_at: Instant::now() });
     *built = Some(fresh.clone());
-    slot.stale.store(false, Ordering::Relaxed);
-    start_watcher(slot, root);
     Ok((fresh, Some(started.elapsed().as_secs_f64() * 1000.0)))
 }
 

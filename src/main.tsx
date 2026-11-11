@@ -1,3 +1,4 @@
+import { ErrorBoundary } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import "./styles.css";
@@ -23,4 +24,19 @@ if (import.meta.env.PROD) {
   );
 }
 
-render(() => <App />, document.getElementById("root")!);
+render(
+  () => (
+    <ErrorBoundary
+      fallback={(err, reset) => (
+        <div class="crash">
+          <h2>Something went wrong</h2>
+          <p>{String(err)}</p>
+          <button class="btn primary" onClick={reset}>Try again</button>
+        </div>
+      )}
+    >
+      <App />
+    </ErrorBoundary>
+  ),
+  document.getElementById("root")!,
+);

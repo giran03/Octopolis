@@ -19,7 +19,11 @@ const NAMED: Record<string, string> = { " ": "space", "+": "plus" };
 export function eventToKey(e: KeyLike): string | null {
   if (MODIFIER_KEYS.has(e.key)) return null;
   let key: string;
-  if (e.code === "Backslash" || e.code === "IntlBackslash") key = "\\";
+  // The character typed decides the shortcut, so Ctrl+Z is Z on AZERTY too.
+  // The physical key is only a fallback for layouts without that character.
+  if (/^[a-z0-9]$/i.test(e.key)) key = e.key.toLowerCase();
+  else if (e.key === "\\" || e.key === "|") key = "\\";
+  else if (e.code === "Backslash" || e.code === "IntlBackslash") key = "\\";
   else if (e.code?.startsWith("Key") && e.code.length === 4) key = e.code.slice(3).toLowerCase();
   else if (e.code?.startsWith("Digit") && e.code.length === 6) key = e.code.slice(5);
   else key = NAMED[e.key] ?? e.key.toLowerCase();

@@ -54,6 +54,11 @@ export function createTab(initialPath: string) {
     /** Recursive subfolder sizes by lower-case name, once requested. */
     const [dirSizes, setDirSizes] = createSignal<ReadonlyMap<string, number> | null>(null);
     const [treemap, setTreemap] = createSignal(false);
+    const dirSizeMax = createMemo(() => {
+      let max = 1;
+      for (const v of dirSizes()?.values() ?? []) if (v > max) max = v;
+      return max;
+    });
     const [git, setGit] = createSignal<GitInfo | null>(null);
     const [commits, setCommits] = createSignal<Readonly<Record<string, CommitInfo>> | null>(null);
     const [viewMode, setViewMode] = createSignal<"details" | "grid" | "columns">("details");
@@ -320,6 +325,7 @@ export function createTab(initialPath: string) {
       setViewMode,
       archive,
       dirSizes,
+      dirSizeMax,
       treemap,
       setTreemap,
       computeSizes,

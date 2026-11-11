@@ -55,6 +55,7 @@ describe("undo model", () => {
     const copy: UndoAction = { kind: "copy", label: "Copy", pairs: [["C:\\a\\x", "C:\\b\\x"]] };
     expect(undoStep(copy)).toEqual({ type: "recycle", paths: ["C:\\b\\x"] });
     expect(redoStep(copy)).toEqual({ type: "copy", sources: ["C:\\a\\x"], dest: "C:\\b" });
+    expect(redoStep({ kind: "copy", label: "", pairs: [["D:\\x", "C:\\x"]] })).toEqual({ type: "copy", sources: ["D:\\x"], dest: "C:\\" });
     expect(undoStep({ kind: "recycle", label: "", paths: ["C:\\f"] })).toEqual({ type: "restore", paths: ["C:\\f"] });
     expect(undoStep({ kind: "newFolder", label: "", path: "C:\\n" })).toEqual({ type: "removeEmpty", path: "C:\\n" });
   });
