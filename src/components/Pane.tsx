@@ -1,11 +1,14 @@
 // One pane: tab strip, navigation toolbar with path bar and filter, file list.
 import { createEffect, createSignal, For, on, Show } from "solid-js";
+import * as A from "../actions";
 import { errorText, listDir, resolvePath } from "../lib/ipc";
 import { fuzzyRank } from "../lib/fuzzy";
 import { createBuilder, decodeBatch, isDir, snapshot } from "../lib/listing";
-import { breadcrumbs, joinPath } from "../lib/paths";
+import { baseName, breadcrumbs, joinPath, samePath, sameVolume } from "../lib/paths";
+import { cancelSpring, DRAG_MIME, dragState, springLoad } from "../state/drag";
 import { history } from "../state/history";
 import type { TabModel } from "../state/tab";
+import { TAB_COLORS } from "../lib/session";
 import { ui } from "../state/ui";
 import { workspace, type PaneModel } from "../state/workspace";
 import { contextMenu, FileList, type ListHandle } from "./FileList";
@@ -51,7 +54,12 @@ export function Pane(props: { pane: PaneModel }) {
                 />
               </Show>
               <Show when={t.viewMode() === "columns"}>
-                <MillerView tab={t} />
+                <MillerView
+                  tab={t}
+                  active={active()}
+                  onReady={(pageRows, ensureVisible) => listHandles.set(t, { pageRows, ensureVisible })}
+                  onMenu={(e, pos) => contextMenu(t, e, pos)}
+                />
               </Show>
             </Show>
           </>
@@ -61,14 +69,79 @@ export function Pane(props: { pane: PaneModel }) {
   );
 }
 
+/** A ghost tab showing where a dropped folder will open. */
+const COLOR_LABELS: Record<(typeof TAB_COLORS)[number], string> = { red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", blue: "Blue", purple: "Purple" };
+
+/** Right-click a tab: pin, color, duplicate, close others. */
+function tabMenu(e: MouseEvent, paneId: string, tabId: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  const meta = workspace.tabMeta(tabId);
+  const tab = workspace.paneModel(paneId).tabs().find((t) => t.id === tabId);
+  ui.openMenu(e.clientX, e.clientY, [
+    { label: meta.pinned ? "Unpin tab" : "Pin tab", run: () => workspace.togglePin(paneId, tabId) },
+    { label: "Duplicate tab", run: () => tab && workspace.newTab(paneId, tab.path()) },
+    "separator",
+    ...TAB_COLORS.map((c) => ({ label: `${meta.color === c ? "✓ " : "    "}${COLOR_LABELS[c]}`, run: () => workspace.setTabColor(tabId, meta.color === c ? null : c) })),
+    ...(meta.color ? [{ label: "    No color", run: () => workspace.setTabColor(tabId, null) }] : []),
+    "separator",
+    { label: "Close other tabs", run: () => workspace.closeOthers(paneId, tabId) },
+    { label: "Close tab", shortcut: "Ctrl+W", run: () => workspace.closeTab(paneId, tabId) },
+  ]);
+}
+
+function TabSkeleton(props: { label: string; onOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void }) {
+  return (
+    <div class="tab tab-skeleton" aria-hidden="true" onDragOver={props.onOver} onDrop={props.onDrop}>
+      <span class="tab-title">{props.label}</span>
+    </div>
+  );
+}
+
 function TabStrip(props: { pane: PaneModel }) {
+  // Folders dragged from a list or the sidebar open in new tabs when dropped here.
+  // `slot` is the index a new tab would take, or null when nothing droppable is over the strip.
+  const [slot, setSlot] = createSignal<number | null>(null);
+  const folderDrag = (e: DragEvent) => !!e.dataTransfer && !e.dataTransfer.types.includes(TAB_MIME) && dragState.dirs.length > 0;
+  const overFolders = (e: DragEvent, index: number) => {
+    if (!folderDrag(e)) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer!.dropEffect = "copy";
+    setSlot(index);
+    return true;
+  };
+  const overTab = (e: DragEvent, i: number) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return overFolders(e, e.clientX < r.left + r.width / 2 ? i : i + 1);
+  };
+  const skeletonLabel = () => (dragState.dirs.length > 1 ? `${dragState.dirs.length} folders` : baseName(dragState.dirs[0] ?? "") || dragState.dirs[0] || "");
+  const dropFolders = (e: DragEvent, index: number) => {
+    if (!folderDrag(e)) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    setSlot(null);
+    [...dragState.dirs].forEach((dir, n) => {
+      workspace.newTab(props.pane.id, dir);
+      workspace.moveTab(props.pane.id, props.pane.activeTabId(), props.pane.id, index + n);
+    });
+    return true;
+  };
   return (
     <div
       class="tabstrip"
       role="tablist"
+      onDragLeave={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        if (e.clientX <= r.left || e.clientX >= r.right || e.clientY <= r.top || e.clientY >= r.bottom) setSlot(null);
+      }}
       onDblClick={(e) => e.target === e.currentTarget && workspace.newTab(props.pane.id)}
-      onDragOver={(e) => e.dataTransfer?.types.includes(TAB_MIME) && e.preventDefault()}
+      onDragOver={(e) => {
+        if (overFolders(e, props.pane.tabs().length)) return;
+        if (e.dataTransfer?.types.includes(TAB_MIME)) e.preventDefault();
+      }}
       onDrop={(e) => {
+        if (dropFolders(e, slot() ?? props.pane.tabs().length)) return;
         const raw = e.dataTransfer?.getData(TAB_MIME);
         if (!raw) return;
         e.preventDefault();
@@ -77,7 +150,11 @@ function TabStrip(props: { pane: PaneModel }) {
       }}
     >
       <For each={props.pane.tabs()}>
-        {(t) => (
+        {(t, i) => (
+          <>
+          <Show when={slot() === i()}>
+            <TabSkeleton label={skeletonLabel()} onOver={(e) => overFolders(e, i())} onDrop={(e) => dropFolders(e, i())} />
+          </Show>
           <div
             class="tab"
             role="tab"
@@ -86,8 +163,15 @@ function TabStrip(props: { pane: PaneModel }) {
               e.dataTransfer!.setData(TAB_MIME, JSON.stringify({ pane: props.pane.id, tab: t.id }));
               e.dataTransfer!.effectAllowed = "move";
             }}
-            onDragOver={(e) => e.dataTransfer?.types.includes(TAB_MIME) && e.preventDefault()}
+            onDragOver={(e) => {
+              // Resting a file drag on a tab switches to it, so the drop can land in that folder.
+              if (e.dataTransfer?.types.includes(DRAG_MIME) && props.pane.activeTabId() !== t.id) springLoad(`tab:${t.id}`, () => workspace.selectTab(props.pane.id, t.id));
+              if (overTab(e, props.pane.tabs().indexOf(t))) return;
+              if (e.dataTransfer?.types.includes(TAB_MIME)) e.preventDefault();
+            }}
+            onDragLeave={() => cancelSpring()}
             onDrop={(e) => {
+              if (dropFolders(e, slot() ?? props.pane.tabs().indexOf(t) + 1)) return;
               const raw = e.dataTransfer?.getData(TAB_MIME);
               if (!raw) return;
               e.preventDefault();
@@ -96,8 +180,10 @@ function TabStrip(props: { pane: PaneModel }) {
               workspace.moveTab(pane, tab, props.pane.id, props.pane.tabs().indexOf(t));
             }}
             aria-selected={props.pane.activeTabId() === t.id}
-            classList={{ current: props.pane.activeTabId() === t.id }}
-            title={t.path()}
+            classList={{ current: props.pane.activeTabId() === t.id, pinned: workspace.tabMeta(t.id).pinned, colored: !!workspace.tabMeta(t.id).color }}
+            style={workspace.tabMeta(t.id).color ? { "--tab-color": `var(--tab-${workspace.tabMeta(t.id).color})` } : undefined}
+            title={workspace.tabMeta(t.id).pinned ? `${t.title()} — ${t.path()}` : t.path()}
+            onContextMenu={(e) => tabMenu(e, props.pane.id, t.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();
               else workspace.selectTab(props.pane.id, t.id);
@@ -105,6 +191,7 @@ function TabStrip(props: { pane: PaneModel }) {
             onAuxClick={(e) => e.button === 1 && workspace.closeTab(props.pane.id, t.id)}
           >
             <span class="tab-title">{t.title()}</span>
+            <Show when={!workspace.tabMeta(t.id).pinned}>
             <button
               class="tab-close"
               aria-label="Close tab"
@@ -113,9 +200,14 @@ function TabStrip(props: { pane: PaneModel }) {
             >
               <IconClose size={12} />
             </button>
+            </Show>
           </div>
+          </>
         )}
       </For>
+      <Show when={slot() === props.pane.tabs().length}>
+        <TabSkeleton label={skeletonLabel()} onOver={(e) => overFolders(e, props.pane.tabs().length)} onDrop={(e) => dropFolders(e, props.pane.tabs().length)} />
+      </Show>
       <button class="icon-btn tab-new" title="New tab (Ctrl+T)" onClick={() => workspace.newTab(props.pane.id)}>
         <IconPlus size={14} />
       </button>
@@ -184,7 +276,7 @@ function SearchBox(props: { tab: TabModel; ref: (el: HTMLInputElement) => void }
       </button>
       <input
         ref={props.ref}
-        placeholder={deep() ? "Search subfolders  ext: size: dm: re:" : "Filter"}
+        placeholder={deep() ? "Search subfolders  ext: size: dm: re: content:" : "Filter"}
         value={value()}
         spellcheck={false}
         onInput={(e) => onInput(e.currentTarget.value)}
@@ -271,7 +363,29 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
                       <IconChevron size={12} />
                     </button>
                   </Show>
-                  <button class="crumb" onClick={() => void props.tab.navigate(c.path)}>
+                  <button
+                    class="crumb"
+                    onClick={(e) => (e.ctrlKey ? A.openInNewTab(c.path, !e.shiftKey) : void props.tab.navigate(c.path))}
+                    onMouseDown={(e) => {
+                      if (e.button !== 1) return;
+                      e.preventDefault();
+                      A.openInNewTab(c.path, !e.shiftKey);
+                    }}
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer?.types.includes(DRAG_MIME) || dragState.paths.some((p) => samePath(p, c.path))) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = e.ctrlKey || dragState.paths.some((p) => !sameVolume(p, c.path)) ? "copy" : "move";
+                      if (!samePath(c.path, props.tab.path())) springLoad(`crumb:${c.path}`, () => void props.tab.navigate(c.path));
+                    }}
+                    onDragLeave={() => cancelSpring()}
+                    onDrop={(e) => {
+                      if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      cancelSpring();
+                      A.dropPaths(dragState.paths, c.path, e.ctrlKey, dragState.archive, !!props.tab.archive() && samePath(c.path, props.tab.path()));
+                    }}
+                  >
                     {c.label}
                   </button>
                 </>

@@ -48,6 +48,23 @@ pub struct SearchState {
     running: Mutex<HashMap<String, CancelToken>>,
 }
 
+impl SearchState {
+    pub fn cached_count(&self) -> usize {
+        self.slots.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    pub fn clear_cache(&self) {
+        if let Ok(mut running) = self.running.lock() {
+            for (_, tok) in running.drain() {
+                tok.cancel();
+            }
+        }
+        if let Ok(mut slots) = self.slots.lock() {
+            slots.clear();
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchSummary {
@@ -71,7 +88,11 @@ pub async fn search(
     on_batch: Channel<InvokeResponseBody>,
     on_progress: Channel<u64>,
 ) -> Result<SearchSummary, String> {
-    let q = query::parse(&query).map_err(|e| e.to_string())?;
+    let mut q = query::parse(&query).map_err(|e| e.to_string())?;
+    // Tags live in their own index, outside the folder index.
+    if let Some(tag) = q.tag.clone() {
+        q.tagged = Some(std::sync::Arc::new(crate::tools_cmd::with_tags(&app, |t| (t.keys_with_tag(&tag), false))?));
+    }
     let cancel = CancelToken::default();
     {
         let state = app.state::<SearchState>();

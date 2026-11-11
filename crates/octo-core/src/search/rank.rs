@@ -30,6 +30,18 @@ impl SearchResult {
     }
 }
 
+/// OneDrive online-only files: reading them would download them.
+const ATTR_RECALL: u32 = 0x0040_0000 | 0x0004_0000 | 0x1000;
+
+/// The content filter reads files, so it runs after every cheap filter.
+fn passes_content(ix: &Index, q: &Query, i: usize, needle: &super::content::Needle) -> bool {
+    let _ = q;
+    ix.kinds[i] == EntryKind::File
+        && ix.attrs[i] & ATTR_RECALL == 0
+        && (ix.sizes[i] == u64::MAX || ix.sizes[i] <= super::content::MAX_FILE_BYTES)
+        && needle.found_in(&ix.full_path(i as u32))
+}
+
 fn passes_filters(ix: &Index, q: &Query, i: usize) -> bool {
     if let Some(kind) = q.kind
         && ix.kinds[i] != kind
@@ -62,15 +74,23 @@ fn passes_filters(ix: &Index, q: &Query, i: usize) -> bool {
     {
         return false;
     }
+    if q.tag.is_some() {
+        let Some(set) = &q.tagged else { return false };
+        if set.is_empty() || !set.contains(&ix.full_path(i as u32).to_string_lossy().to_lowercase()) {
+            return false;
+        }
+    }
     true
 }
 
 /// Runs `q` against `ix`, returning at most `limit` hits.
 pub fn run(ix: &Index, q: &Query, limit: usize, cancel: &CancelToken) -> SearchResult {
     let text = q.text.trim();
+    let needle = q.content.as_deref().map(super::content::Needle::new);
+    let passes = |i: usize| !cancel.is_cancelled() && passes_filters(ix, q, i) && needle.as_ref().is_none_or(|n| passes_content(ix, q, i, n));
     if text.is_empty() {
         // Flat view / pure filter: keep tree order.
-        let all: Vec<u32> = (0..ix.len()).into_par_iter().filter(|&i| passes_filters(ix, q, i)).map(|i| i as u32).collect();
+        let all: Vec<u32> = (0..ix.len()).into_par_iter().filter(|&i| passes(i)).map(|i| i as u32).collect();
         let matched = all.len();
         let hits = all.into_iter().take(limit).map(|index| Hit { index, score: 0 }).collect();
         return SearchResult { hits, matched };
@@ -94,7 +114,14 @@ pub fn run(ix: &Index, q: &Query, limit: usize, cancel: &CancelToken) -> SearchR
                 } else {
                     &ix.names[i]
                 };
-                pattern.score(Utf32Str::new(hay, buf), matcher).map(|score| Hit { index: i as u32, score })
+                let score = pattern.score(Utf32Str::new(hay, buf), matcher)?;
+                // Only names that match are worth opening to look inside.
+                if let Some(n) = &needle
+                    && !passes_content(ix, q, i, n)
+                {
+                    return None;
+                }
+                Some(Hit { index: i as u32, score })
             },
         )
         .flatten()

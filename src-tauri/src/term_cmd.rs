@@ -33,11 +33,32 @@ fn size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows: rows.max(2), cols: cols.max(2), pixel_width: 0, pixel_height: 0 }
 }
 
+/// Builds the shell command: "pwsh", "cmd", or PowerShell for anything else.
+fn shell_command(shell: Option<&str>) -> CommandBuilder {
+    match shell.map(str::to_ascii_lowercase).as_deref() {
+        Some("cmd") => {
+            let mut cmd = CommandBuilder::new("cmd.exe");
+            // Same OSC 9;9 cwd report as the PowerShell prompt, via PROMPT.
+            cmd.env("PROMPT", "$E]9;9;$P$E\\$P$G");
+            cmd
+        }
+        Some("pwsh") => {
+            let mut cmd = CommandBuilder::new("pwsh.exe");
+            cmd.args(["-NoLogo", "-NoExit", "-Command", PROMPT]);
+            cmd
+        }
+        _ => {
+            let mut cmd = CommandBuilder::new("powershell.exe");
+            cmd.args(["-NoLogo", "-NoExit", "-Command", PROMPT]);
+            cmd
+        }
+    }
+}
+
 #[tauri::command]
-pub fn term_start(state: State<'_, TermState>, cwd: String, cols: u16, rows: u16, on_data: Channel<InvokeResponseBody>) -> Result<u64, String> {
+pub fn term_start(state: State<'_, TermState>, cwd: String, cols: u16, rows: u16, shell: Option<String>, on_data: Channel<InvokeResponseBody>) -> Result<u64, String> {
     let pair = native_pty_system().openpty(size(cols, rows)).map_err(|e| e.to_string())?;
-    let mut cmd = CommandBuilder::new("powershell.exe");
-    cmd.args(["-NoLogo", "-NoExit", "-Command", PROMPT]);
+    let mut cmd = shell_command(shell.as_deref());
     if std::path::Path::new(&cwd).is_dir() {
         cmd.cwd(&cwd);
     }

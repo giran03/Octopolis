@@ -17,6 +17,10 @@ pub enum Kind {
     Model,
     Archive,
     Binary,
+    /// TrueType, OpenType and web fonts.
+    Font,
+    /// CSV, TSV and JSON Lines, shown as a table.
+    Table,
 }
 
 impl Kind {
@@ -33,6 +37,8 @@ impl Kind {
             Kind::Model => "model",
             Kind::Archive => "archive",
             Kind::Binary => "binary",
+            Kind::Font => "font",
+            Kind::Table => "table",
         }
     }
 }
@@ -62,7 +68,7 @@ pub fn classify(name: &str) -> Kind {
         "go" => Kind::Code("go"),
         "cs" => Kind::Code("c_sharp"),
         "java" => Kind::Code("java"),
-        "txt" | "log" | "ini" | "cfg" | "conf" | "toml" | "yaml" | "yml" | "xml" | "csv" | "tsv" | "bat" | "cmd" | "ps1" | "sql" | "env"
+        "txt" | "log" | "ini" | "cfg" | "conf" | "toml" | "yaml" | "yml" | "xml" | "bat" | "cmd" | "ps1" | "sql" | "env"
         | "gitignore" | "lock" | "svelte" | "vue" | "lua" | "rb" | "php" | "kt" | "swift" => Kind::Text,
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" | "avif" => Kind::Image,
         "svg" => Kind::Svg,
@@ -70,6 +76,8 @@ pub fn classify(name: &str) -> Kind {
         "mp3" | "wav" | "flac" | "ogg" | "m4a" | "aac" | "opus" => Kind::Audio,
         "mp4" | "webm" | "mov" | "m4v" | "mkv" => Kind::Video,
         "obj" | "stl" => Kind::Model,
+        "ttf" | "otf" | "woff" | "woff2" => Kind::Font,
+        "csv" | "tsv" | "tab" | "jsonl" | "ndjson" => Kind::Table,
         "" => Kind::Text, // README, LICENSE, Makefile…
         _ => Kind::Binary,
     }
@@ -96,6 +104,37 @@ pub fn decode_text(bytes: &[u8]) -> String {
         [0xFE, 0xFF, rest @ ..] => utf16(true, rest),
         _ => String::from_utf8_lossy(bytes).into_owned(),
     }
+}
+
+/// Encoding, line endings and line count of a text file's first block.
+/// `bytes` is what was read, `text` its decoded form.
+pub fn text_details(bytes: &[u8], text: &str, truncated: bool) -> Vec<(String, String)> {
+    // A read cut mid-character still counts as UTF-8.
+    let utf8 = std::str::from_utf8(bytes).is_ok() || truncated && std::str::from_utf8(&bytes[..bytes.len().saturating_sub(3)]).is_ok();
+    let encoding = match bytes {
+        [0xEF, 0xBB, 0xBF, ..] => "UTF-8 with BOM",
+        [0xFF, 0xFE, ..] => "UTF-16 LE",
+        [0xFE, 0xFF, ..] => "UTF-16 BE",
+        _ if utf8 && bytes.is_ascii() => "ASCII",
+        _ if utf8 => "UTF-8",
+        _ => "Unknown (shown as UTF-8)",
+    };
+    let crlf = text.matches("\r\n").count();
+    let lf = text.matches('\n').count() - crlf;
+    let cr = text.matches('\r').count() - crlf;
+    let endings = match (crlf > 0, lf > 0, cr > 0) {
+        (false, false, false) => "None",
+        (true, false, false) => "Windows (CRLF)",
+        (false, true, false) => "Unix (LF)",
+        (false, false, true) => "Classic Mac (CR)",
+        _ => "Mixed",
+    };
+    let mut lines = crlf + lf + cr;
+    if !text.is_empty() && !text.ends_with('\n') && !text.ends_with('\r') {
+        lines += 1;
+    }
+    let lines = if truncated { format!("{lines}+ (start of file)") } else { lines.to_string() };
+    vec![("Encoding".into(), encoding.into()), ("Line endings".into(), endings.into()), ("Lines".into(), lines)]
 }
 
 /// Classic hex dump: offset, 16 bytes in hex, printable ASCII.
@@ -140,6 +179,28 @@ mod tests {
         assert!(!looks_binary(&[0xFF, 0xFE, b'h', 0]));
         assert!(looks_binary(b"MZ\x90\x00\x03"));
         assert!(!looks_binary("plain ünïcode".as_bytes()));
+    }
+
+    #[test]
+    fn classifies_fonts_and_tables() {
+        assert_eq!(classify("Inter.woff2"), Kind::Font);
+        assert_eq!(classify("data.CSV"), Kind::Table);
+        assert_eq!(classify("log.jsonl"), Kind::Table);
+    }
+
+    #[test]
+    fn reports_encoding_line_endings_and_lines() {
+        let get = |d: &[(String, String)], k: &str| d.iter().find(|(n, _)| n == k).unwrap().1.clone();
+        let d = text_details(b"a\r\nb\r\n", "a\r\nb\r\n", false);
+        assert_eq!(get(&d, "Encoding"), "ASCII");
+        assert_eq!(get(&d, "Line endings"), "Windows (CRLF)");
+        assert_eq!(get(&d, "Lines"), "2");
+        let d = text_details("é\nx\r\ny".as_bytes(), "é\nx\r\ny", false);
+        assert_eq!(get(&d, "Encoding"), "UTF-8");
+        assert_eq!(get(&d, "Line endings"), "Mixed");
+        assert_eq!(get(&d, "Lines"), "3");
+        assert_eq!(get(&text_details(&[0xEF, 0xBB, 0xBF, b'a'], "a", false), "Encoding"), "UTF-8 with BOM");
+        assert_eq!(get(&text_details(&[0xE9, b'a'], "\u{FFFD}a", false), "Encoding"), "Unknown (shown as UTF-8)");
     }
 
     #[test]

@@ -22,8 +22,11 @@ function encode(names: string[]): ArrayBuffer {
   return buf;
 }
 
+const cachedSizes = new Map<string, { name: string; bytes: number; files: number; stale: boolean }[]>();
+
 vi.mock("../lib/ipc", () => ({
   errorText: (e: unknown) => String(e),
+  cachedFolderSizes: async (path: string) => cachedSizes.get(path) ?? [],
   folderSizes: async () => undefined,
   gitStatus: async () => null,
   gitLastCommits: async () => ({}),
@@ -46,6 +49,7 @@ const selectedNames = (t: ReturnType<typeof createTab>) => [...t.selection()].ma
 
 beforeEach(() => {
   dirs.clear();
+  cachedSizes.clear();
   gates.length = 0;
   holdNextLoad = false;
 });
@@ -115,5 +119,29 @@ describe("tab refresh", () => {
     tab.selectNames(["x"]);
     await tab.navigate("C:\\b");
     expect(tab.selection().size).toBe(0);
+  });
+
+  it("shows cached folder sizes immediately before listing completes and remembers them in session", async () => {
+    dirs.set("C:\\cached", ["docs"]);
+    cachedSizes.set("C:\\cached", [{ name: "docs", bytes: 4096, files: 3, stale: true }]);
+    const tab = createTab("C:\\other");
+    await tab.navigate("C:\\other");
+
+    holdNextLoad = true;
+    const pending = tab.navigate("C:\\cached");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(tab.dirSizes()?.get("docs")).toBe(4096);
+
+    gates.forEach((g) => g());
+    await pending;
+
+    // Leaving and returning restores sizes synchronously on navigation.
+    await tab.navigate("C:\\other");
+    cachedSizes.delete("C:\\cached");
+    holdNextLoad = true;
+    const revisit = tab.navigate("C:\\cached");
+    expect(tab.dirSizes()?.get("docs")).toBe(4096);
+    gates.forEach((g) => g());
+    await revisit;
   });
 });

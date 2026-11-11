@@ -9,7 +9,7 @@ import { ui } from "../state/ui";
 
 const CHORD_WAIT_MS = 900;
 
-export function Shortcuts() {
+export function ShortcutsPanel() {
   const [filter, setFilter] = createSignal("");
   const [recording, setRecording] = createSignal<string | null>(null);
   const [captured, setCaptured] = createSignal<string[]>([]);
@@ -30,12 +30,10 @@ export function Shortcuts() {
   };
 
   const onKey = (e: KeyboardEvent) => {
-    e.stopPropagation();
     const id = recording();
-    if (!id) {
-      if (e.key === "Escape") ui.setShortcutsOpen(false);
-      return;
-    }
+    if (!id) return;
+    // Only while recording a key: otherwise Esc and Tab keep working for the modal.
+    e.stopPropagation();
     e.preventDefault();
     if (e.key === "Escape") {
       setRecording(null);
@@ -53,20 +51,12 @@ export function Shortcuts() {
   };
 
   return (
-    <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && ui.setShortcutsOpen(false)}>
-      <div class="dialog shortcuts" role="dialog" aria-label="Keyboard shortcuts" onKeyDown={onKey}>
-        <div class="shortcuts-head">
-          <h2>Keyboard shortcuts</h2>
-          <label class="check">
-            <input type="checkbox" checked={settings.vimMode()} onChange={() => settings.toggleVim()} /> Vim keys
-          </label>
-        </div>
+    <div class="shortcuts-panel" onKeyDown={onKey}>
         <input
           class="text-input"
           placeholder="Filter commands"
           value={filter()}
-          ref={(el) => queueMicrotask(() => el.focus())}
-          onInput={(e) => setFilter(e.currentTarget.value)}
+                    onInput={(e) => setFilter(e.currentTarget.value)}
         />
         <div class="shortcuts-list">
           <For each={visible()}>
@@ -104,7 +94,6 @@ export function Shortcuts() {
             )}
           </For>
         </div>
-      </div>
     </div>
   );
 }

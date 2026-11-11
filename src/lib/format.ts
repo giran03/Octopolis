@@ -1,4 +1,5 @@
-import { extensionOf } from "./paths";
+import { fileIconSpec } from "./fileicons";
+import { baseName, extensionOf, isRoot } from "./paths";
 
 const UNITS = ["KB", "MB", "GB", "TB", "PB"];
 
@@ -32,6 +33,16 @@ export function formatCount(n: number, noun: string): string {
   return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
 
+/** Formats duration in seconds cleanly as `M:SS` or `H:MM:SS`. */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export type FileCategory = "folder" | "code" | "image" | "audio" | "video" | "archive" | "doc" | "exe" | "file";
 
 const CATEGORIES: Record<string, FileCategory> = {};
@@ -47,4 +58,13 @@ register("exe", "exe msi dll appx msix lnk");
 export function categoryOf(name: string, isDir: boolean): FileCategory {
   if (isDir) return "folder";
   return CATEGORIES[extensionOf(name)] ?? "file";
+}
+
+/** Infers whether a path string (e.g. from GoTo history) points to a directory rather than a known file type. */
+export function inferPathIsDir(path: string, knownDirs?: ReadonlySet<string>): boolean {
+  const norm = path.trim().replace(/\//g, "\\");
+  if (!norm || norm.endsWith("\\") || isRoot(norm)) return true;
+  if (knownDirs?.has(norm.toLowerCase())) return true;
+  const name = baseName(norm);
+  return fileIconSpec(name) === null && categoryOf(name, false) === "file";
 }

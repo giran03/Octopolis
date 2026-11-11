@@ -39,6 +39,10 @@ export const keybindings = createRoot(() => {
   return {
     register: (list: readonly Bindable[]) => setCommands(list),
     keysFor,
+    keysForId: (id: string): readonly string[] => {
+      const cmd = commands().find((c) => c.id === id);
+      return cmd ? keysFor(cmd) : [];
+    },
     isCustom: (id: string) => id in overrides(),
     /** Matcher for keys typed while a text field has focus. */
     globalMatcher: build(true),
@@ -50,6 +54,8 @@ export const keybindings = createRoot(() => {
       delete copy[id];
       save(copy);
     },
+    resetAll: () => save({}),
+    customCount: () => Object.keys(overrides()).length,
     /** Which other command already uses this sequence, if any. */
     conflict: (seq: string, exceptId: string) => commands().find((c) => c.id !== exceptId && keysFor(c).includes(seq))?.id,
   };

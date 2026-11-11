@@ -1,6 +1,7 @@
 // Panes (each with tabs) arranged in a split layout tree.
 import { batch, createRoot, createSignal, type Accessor } from "solid-js";
 import { leaf, leaves, removePane, resizeSplit, splitPane, type Direction, type LayoutNode } from "../lib/layout";
+import type { Preset, PresetPane } from "../lib/session";
 import { createTab, type TabModel } from "./tab";
 
 export interface PaneModel {
@@ -10,6 +11,12 @@ export interface PaneModel {
   /** Undefined only before the workspace is initialised. */
   readonly activeTab: Accessor<TabModel | undefined>;
 }
+
+export interface TabMeta {
+  readonly pinned: boolean;
+  readonly color: string | null;
+}
+const NO_META: TabMeta = { pinned: false, color: null };
 
 interface PaneState {
   tabs: readonly TabModel[];
@@ -22,6 +29,12 @@ export const workspace = createRoot(() => {
   const [panes, setPanes] = createSignal<ReadonlyMap<string, PaneState>>(new Map());
   const [layout, setLayout] = createSignal<LayoutNode>(leaf("none"));
   const [activePaneId, setActivePaneId] = createSignal("none");
+  /** Pinned state and color of each tab, by tab id. */
+  const [tabMeta, setTabMeta] = createSignal<ReadonlyMap<string, TabMeta>>(new Map());
+  const metaOf = (tabId: string): TabMeta => tabMeta().get(tabId) ?? NO_META;
+  const setMeta = (tabId: string, patch: Partial<TabMeta>) => setTabMeta((m) => new Map(m).set(tabId, { ...metaOf(tabId), ...patch }));
+  /** Pinned tabs first, keeping each group's order. */
+  const pinnedFirst = (tabs: readonly TabModel[]) => [...tabs.filter((t) => metaOf(t.id).pinned), ...tabs.filter((t) => !metaOf(t.id).pinned)];
 
   const state = (paneId: string) => panes().get(paneId);
   const updatePane = (paneId: string, fn: (p: PaneState) => PaneState) =>
@@ -59,9 +72,14 @@ export const workspace = createRoot(() => {
   const activePane = () => paneModel(activePaneId());
   const activeTab = () => activePane().activeTab();
 
-  function newTab(paneId = activePaneId(), path = activeTab()?.path() ?? "C:\\") {
+  /** Opens a tab; a background tab goes right after the current one and doesn't take focus. */
+  function newTab(paneId = activePaneId(), path = activeTab()?.path() ?? "C:\\", background = false) {
     const tab = createTab(path);
-    updatePane(paneId, (p) => ({ tabs: [...p.tabs, tab], activeTabId: tab.id }));
+    updatePane(paneId, (p) => {
+      if (!background) return { tabs: [...p.tabs, tab], activeTabId: tab.id };
+      const at = p.tabs.findIndex((t) => t.id === p.activeTabId) + 1;
+      return { ...p, tabs: [...p.tabs.slice(0, at), tab, ...p.tabs.slice(at)] };
+    });
     tab.navigate(path);
     setActivePaneId(paneId);
   }
@@ -163,23 +181,33 @@ export const workspace = createRoot(() => {
     });
   }
 
-  interface PresetPane {
-    readonly tabs: readonly string[];
-    readonly active: number;
-  }
-  /** A saved arrangement of panes, tabs and folders. */
-  interface Preset {
-    readonly layout: LayoutNode;
-    readonly panes: Readonly<Record<string, PresetPane>>;
-  }
-
   function snapshotLayout(): Preset {
     const out: Record<string, PresetPane> = {};
-    for (const [id, p] of panes()) out[id] = { tabs: p.tabs.map((t) => t.path()), active: Math.max(0, p.tabs.findIndex((t) => t.id === p.activeTabId)) };
+    for (const [id, p] of panes()) {
+      out[id] = {
+        tabs: p.tabs.map((t) => t.path()),
+        active: Math.max(0, p.tabs.findIndex((t) => t.id === p.activeTabId)),
+        pinned: p.tabs.map((t) => metaOf(t.id).pinned),
+        colors: p.tabs.map((t) => metaOf(t.id).color),
+      };
+    }
     return { layout: layout(), panes: out };
   }
 
-  function restoreLayout(preset: Preset) {
+  function togglePin(paneId: string, tabId: string) {
+    setMeta(tabId, { pinned: !metaOf(tabId).pinned });
+    updatePane(paneId, (p) => ({ ...p, tabs: pinnedFirst(p.tabs) }));
+  }
+
+  /** Closes every tab in the pane except `tabId` and pinned tabs. */
+  function closeOthers(paneId: string, tabId: string) {
+    const p = state(paneId);
+    if (!p) return;
+    for (const t of p.tabs) if (t.id !== tabId && !metaOf(t.id).pinned) closeTab(paneId, t.id);
+  }
+
+  /** Replaces every pane with the preset's. False (and nothing changes) if the preset is unusable. */
+  function restoreLayout(preset: Preset): boolean {
     const old = allTabs();
     const ids = new Map<string, string>();
     const fresh = new Map<string, PaneState>();
@@ -188,12 +216,16 @@ export const workspace = createRoot(() => {
       const nid = `pane-${nextPaneId++}`;
       ids.set(id, nid);
       const tabs = p.tabs.map((path) => createTab(path));
-      fresh.set(nid, { tabs, activeTabId: tabs[Math.min(p.active, tabs.length - 1)].id });
+      tabs.forEach((t, i) => setMeta(t.id, { pinned: p.pinned?.[i] ?? false, color: p.colors?.[i] ?? null }));
+      fresh.set(nid, { tabs: pinnedFirst(tabs), activeTabId: tabs[Math.min(p.active, tabs.length - 1)].id });
     }
     const remap = (n: LayoutNode): LayoutNode =>
       n.kind === "leaf" ? leaf(ids.get(n.paneId) ?? n.paneId) : { ...n, children: n.children.map(remap) };
     const next = remap(preset.layout);
-    if (leaves(next).some((id) => !fresh.has(id))) return;
+    if (leaves(next).some((id) => !fresh.has(id))) {
+      for (const p of fresh.values()) p.tabs.forEach((t) => t.close());
+      return false;
+    }
     batch(() => {
       setPanes(fresh);
       setLayout(next);
@@ -201,6 +233,7 @@ export const workspace = createRoot(() => {
     });
     old.forEach((t) => t.close());
     for (const p of fresh.values()) p.tabs.forEach((t) => void t.navigate(t.path()));
+    return true;
   }
 
   /** All tabs in every pane, for refreshing folders touched by an operation. */
@@ -221,6 +254,10 @@ export const workspace = createRoot(() => {
     moveTab,
     snapshotLayout,
     restoreLayout,
+    tabMeta: metaOf,
+    togglePin,
+    setTabColor: (tabId: string, color: string | null) => setMeta(tabId, { color }),
+    closeOthers,
     selectTab,
     cycleTab,
     split,

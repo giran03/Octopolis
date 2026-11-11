@@ -5,6 +5,15 @@ import { baseOf, isDir } from "../lib/listing";
 import { planRenames, renderAll, DEFAULT_SPEC, type CaseMode, type RenameItem, type RenameRow } from "../lib/rename";
 import { ops } from "../state/ops";
 import { ui } from "../state/ui";
+import { IconForward } from "./Icons";
+import { Select, type Option } from "./Select";
+
+const CASE_OPTIONS: readonly Option<CaseMode>[] = [
+  { value: "keep", label: "Keep" },
+  { value: "lower", label: "lower case" },
+  { value: "upper", label: "UPPER CASE" },
+  { value: "title", label: "Title Case" },
+];
 import { workspace } from "../state/workspace";
 
 const STATUS_TEXT: Record<RenameRow["status"], string> = { unchanged: "No change", ok: "Ready", conflict: "Conflict", invalid: "Invalid" };
@@ -52,6 +61,7 @@ export function BatchRename() {
     try {
       const done = await batchRename(changes);
       ops.record({ kind: "move", label: `Batch rename of ${done.length} items`, pairs: done });
+      ops.undoToast(`Renamed ${done.length} item${done.length === 1 ? "" : "s"}`);
       ui.setBatchRenameOpen(false);
       await tab.navigate(tab.path(), changes.map(([, n]) => n));
     } catch (e) {
@@ -71,9 +81,7 @@ export function BatchRename() {
           <label>Find<input class="text-input" spellcheck={false} value={find()} onInput={(e) => (setFind(e.currentTarget.value), reset())} /></label>
           <label>Replace with<input class="text-input" spellcheck={false} value={replace()} onInput={(e) => (setReplace(e.currentTarget.value), reset())} /></label>
           <label>Case
-            <select class="text-input" value={caseMode()} onChange={(e) => (setCaseMode(e.currentTarget.value as CaseMode), reset())}>
-              <option value="keep">Keep</option><option value="lower">lower case</option><option value="upper">UPPER CASE</option><option value="title">Title Case</option>
-            </select>
+            <Select label="Case" value={caseMode()} options={CASE_OPTIONS} onChange={(v) => (setCaseMode(v), reset())} />
           </label>
           <label class="check"><input type="checkbox" checked={regex()} onChange={(e) => (setRegex(e.currentTarget.checked), reset())} /> Regular expression ($1, $2)</label>
         </div>
@@ -85,8 +93,8 @@ export function BatchRename() {
           <div class="rename-preview" role="table" aria-label="Preview">
             <For each={rows()}>
               {(r) => (
-                <div class={`rename-row ${r.status}`} title={r.reason}>
-                  <span class="old">{r.oldName}</span><span class="arrow">→</span><span class="new">{r.newName}</span><span class="status">{r.reason ?? STATUS_TEXT[r.status]}</span>
+                <div class={`rename-row ${r.status}`} data-tooltip={r.reason} data-tooltip-truncated=".status">
+                  <span class="old">{r.oldName}</span><span class="arrow"><IconForward size={11} /></span><span class="new">{r.newName}</span><span class="status">{r.reason ?? STATUS_TEXT[r.status]}</span>
                 </div>
               )}
             </For>

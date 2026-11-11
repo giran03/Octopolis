@@ -1,141 +1,25 @@
-// Portal Dropzone shelf, settings dialog, text prompt, grid and Miller views.
-import { createEffect, createMemo, createResource, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
+// Text prompt, grid and Miller views.
+import { createEffect, createMemo, createResource, createSignal, Index, on, onCleanup, onMount, Show } from "solid-js";
 import * as A from "../actions";
 import { formatSize } from "../lib/format";
 import { listDir, thumbnail } from "../lib/ipc";
 import { baseOf, createBuilder, decodeBatch, isDir, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath } from "../lib/paths";
-import { selectAt } from "../lib/selection";
-import { BUILT_IN_THEMES, DENSITIES, parseTheme, type Density } from "../lib/themes";
+import { cloudState } from "../lib/listing";
+import { cellsInRect, selectAt } from "../lib/selection";
+import { DENSITIES } from "../lib/themes";
+import { createMarquee } from "./marquee";
 import { settings } from "../state/settings";
-import { shelf } from "../state/shelf";
 import type { TabModel } from "../state/tab";
+import { FileIcon } from "./Icons";
 import { ui } from "../state/ui";
-import { workspace } from "../state/workspace";
-import { IconClose } from "./Icons";
 
-const DRAG_MIME = "application/x-octopolis-paths";
-
-export function Shelf() {
-  const dest = () => workspace.activeTab()?.path() ?? "";
-  const [over, setOver] = createSignal(false);
-  return (
-    <div
-      class="shelf"
-      classList={{ open: shelf.open(), over: over() }}
-      onDragOver={(e) => {
-        if (e.dataTransfer?.types.includes(DRAG_MIME)) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.dataTransfer.dropEffect = "copy";
-          setOver(true);
-        }
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        setOver(false);
-        const raw = e.dataTransfer?.getData(DRAG_MIME);
-        if (!raw) return;
-        e.preventDefault();
-        e.stopPropagation();
-        shelf.add(JSON.parse(raw) as string[]);
-      }}
-    >
-      <button class="shelf-tab" title="Shelf (Ctrl+Shift+D adds the selection)" onClick={() => shelf.setOpen(!shelf.open())}>
-        Shelf <span class="shelf-count">{shelf.items().length}</span>
-      </button>
-      <Show when={shelf.open()}>
-        <div class="shelf-body">
-          <div class="shelf-list">
-            <For each={shelf.items()} fallback={<p class="muted small">Drag files here from any folder.</p>}>
-              {(p) => (
-                <div class="shelf-item" title={p}>
-                  <span>{baseName(p)}</span>
-                  <button class="icon-btn" aria-label={`Remove ${baseName(p)}`} onClick={() => shelf.remove(p)}>
-                    <IconClose size={11} />
-                  </button>
-                </div>
-              )}
-            </For>
-          </div>
-          <div class="shelf-actions">
-            <button class="btn small" disabled={!shelf.items().length} onClick={() => shelf.deliver("copy", dest())}>Copy here</button>
-            <button class="btn small" disabled={!shelf.items().length} onClick={() => shelf.deliver("move", dest())}>Move here</button>
-            <button class="btn small" disabled={!shelf.items().length} onClick={shelf.clear}>Clear</button>
-          </div>
-        </div>
-      </Show>
-    </div>
-  );
-}
-
-export function SettingsDialog() {
-  const [json, setJson] = createSignal("");
-  const close = () => ui.setSettingsOpen(false);
-  const importTheme = () => {
-    try {
-      const t = parseTheme(json());
-      settings.setCustomTheme(t);
-      settings.setTheme(t.name);
-      setJson("");
-      ui.toast(`Theme "${t.name}" applied`);
-    } catch (e) {
-      ui.toast(e instanceof Error ? e.message : String(e));
-    }
-  };
-  const themes = () => [...BUILT_IN_THEMES, ...(settings.customTheme() ? [settings.customTheme()!] : [])];
-  return (
-    <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="dialog settings" role="dialog" aria-label="Settings" onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") close(); }}>
-        <h2>Settings</h2>
-        <div class="settings-grid">
-          <label>Theme
-            <select class="text-input" value={settings.theme()} onChange={(e) => settings.setTheme(e.currentTarget.value)}>
-              <option value="System">Follow Windows</option>
-              <For each={themes()}>{(t) => <option value={t.name}>{t.name}</option>}</For>
-            </select>
-          </label>
-          <label>Accent color
-            <span class="row-inline">
-              <input type="color" value={settings.accent() ?? "#6d8cff"} onInput={(e) => settings.setAccent(e.currentTarget.value)} />
-              <button class="btn small" onClick={() => settings.setAccent(null)}>Theme default</button>
-            </span>
-          </label>
-          <label>Text size
-            <input type="range" min="85" max="130" step="5" value={settings.uiScale()} onInput={(e) => settings.setUiScale(Number(e.currentTarget.value))} />
-          </label>
-          <label>List density
-            <select class="text-input" value={settings.density()} onChange={(e) => settings.setDensity(e.currentTarget.value as Density)}>
-              <For each={Object.keys(DENSITIES)}>{(d) => <option value={d}>{d[0].toUpperCase() + d.slice(1)}</option>}</For>
-            </select>
-          </label>
-          <label>Transfer speed limit
-            <select class="text-input" value={String(settings.speedLimit() ?? "")} onChange={(e) => settings.setSpeedLimit(e.currentTarget.value ? Number(e.currentTarget.value) : null)}>
-              <option value="">Unlimited</option>
-              <For each={[10, 50, 100, 500]}>{(mb) => <option value={String(mb * 1048576)}>{mb} MB/s</option>}</For>
-            </select>
-          </label>
-          <div class="settings-checks">
-            <label class="check"><input type="checkbox" checked={settings.verifyCopies()} onChange={settings.toggleVerify} /> Verify copies with checksums</label>
-            <label class="check"><input type="checkbox" checked={settings.showCommits()} onChange={settings.toggleCommits} /> Show last commit column in Git folders</label>
-            <label class="check"><input type="checkbox" checked={settings.vimMode()} onChange={settings.toggleVim} /> Vim keys</label>
-          </div>
-        </div>
-        <label class="settings-import">Import a theme (JSON with "name", "scheme" and "tokens")
-          <textarea class="text-input" rows="3" spellcheck={false} value={json()} onInput={(e) => setJson(e.currentTarget.value)} />
-        </label>
-        <div class="dialog-actions">
-          <button class="btn" disabled={!json().trim()} onClick={importTheme}>Import theme</button>
-          <button class="btn primary" onClick={close}>Done</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function PromptDialog(props: { title: string; label: string; onSubmit: (value: string) => void }) {
+export function PromptDialog(props: { title: string; label: string; initial?: string; submitLabel?: string; onSubmit: (value: string) => void }) {
   let input!: HTMLInputElement;
-  onMount(() => input.focus());
+  onMount(() => {
+    input.focus();
+    input.select();
+  });
   const submit = () => {
     const v = input.value.trim();
     if (!v) return;
@@ -146,10 +30,10 @@ export function PromptDialog(props: { title: string; label: string; onSubmit: (v
     <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && ui.closePrompt()}>
       <div class="dialog" role="dialog" aria-label={props.title} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") ui.closePrompt(); if (e.key === "Enter") submit(); }}>
         <h2>{props.title}</h2>
-        <label class="settings-import">{props.label}<input ref={input} class="text-input" spellcheck={false} /></label>
+        <label class="settings-import">{props.label}<input ref={input} class="text-input" spellcheck={false} value={props.initial ?? ""} /></label>
         <div class="dialog-actions">
           <button class="btn" onClick={() => ui.closePrompt()}>Cancel</button>
-          <button class="btn primary" onClick={submit}>Save</button>
+          <button class="btn primary" onClick={submit}>{props.submitLabel ?? "Save"}</button>
         </div>
       </div>
     </div>
@@ -165,7 +49,15 @@ const MAX_THUMBS = 400;
 const thumbs = new Map<string, string>();
 const pendingThumbs = new Map<string, Promise<string | null>>();
 
+export const gridThumbCount = () => thumbs.size;
+export function clearGridThumbs() {
+  for (const url of thumbs.values()) URL.revokeObjectURL(url);
+  thumbs.clear();
+  pendingThumbs.clear();
+}
+
 function loadThumb(key: string, path: string): Promise<string | null> {
+  if (!settings.showThumbnails()) return Promise.resolve(null);
   const known = thumbs.get(key);
   if (known) {
     thumbs.delete(key);
@@ -194,13 +86,14 @@ function loadThumb(key: string, path: string): Promise<string | null> {
   return pending;
 }
 
-function GridThumb(props: { path: string; modified: number; virtual: boolean; name: string; dir: boolean }) {
+function GridThumb(props: { path: string; modified: number; virtual: boolean; name: string; dir: boolean; online?: boolean }) {
   const [url, setUrl] = createSignal<string | null>(null);
   const key = () => `${props.path}|${props.modified}`;
   createEffect(
     on(key, (k) => {
       setUrl(null);
-      if (props.virtual) return;
+      // Reading an online-only file would download it just to draw a thumbnail.
+      if (props.virtual || props.online) return;
       void loadThumb(k, props.path).then((u) => {
         if (key() === k) setUrl(u);
       });
@@ -208,7 +101,7 @@ function GridThumb(props: { path: string; modified: number; virtual: boolean; na
   );
   return (
     <div class="grid-thumb">
-      <Show when={url()} fallback={<span class="grid-fallback">{props.dir ? "📁" : "📄"}</span>}>
+      <Show when={url()} fallback={<span class="grid-fallback"><FileIcon name={props.name} isDir={props.dir} size={40} /></span>}>
         {(u) => <img src={u()} alt="" draggable={false} />}
       </Show>
     </div>
@@ -244,6 +137,14 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
     props.onReady(columns, ensureVisible, () => Math.max(1, Math.floor(scroller.clientHeight / CELL_H)) * columns());
   });
 
+  // Drag a box on empty space between tiles to select them. The grid has 6px of padding.
+  const PAD = 6;
+  const marquee = createMarquee({
+    scroller: () => scroller,
+    tab: () => props.tab,
+    positionsFor: (x1, y1, x2, y2) => cellsInRect(view().length, columns(), CELL, CELL_H, x1 - PAD, y1 - PAD, x2 - PAD, y2 - PAD),
+  });
+
   const click = (e: MouseEvent, pos: number) => {
     const t = props.tab;
     const r = selectAt(view(), t.selection(), t.anchor(), pos, { ctrl: e.ctrlKey, shift: e.shiftKey });
@@ -253,8 +154,23 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
   };
 
   return (
-    <div ref={scroller} class="grid-view" onScroll={() => setScrollTop(scroller.scrollTop)} onContextMenu={(e) => props.onMenu(e, null)}>
+    <div
+      ref={scroller}
+      class="grid-view"
+      onScroll={() => setScrollTop(scroller.scrollTop)}
+      onContextMenu={(e) => props.onMenu(e, null)}
+      onMouseDown={(e) => {
+        const bg = e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("grid-rows");
+        if (!bg || e.button !== 0) return;
+        if (!e.ctrlKey && !e.shiftKey) props.tab.setSelection(new Set<number>());
+        e.preventDefault();
+        marquee.start(e);
+      }}
+    >
       <div class="grid-rows" style={{ height: `${rows() * CELL_H}px` }}>
+        <Show when={marquee.box()}>
+          {(b) => <div class="marquee" style={{ left: `${b().left - PAD}px`, top: `${b().top - PAD}px`, width: `${b().width}px`, height: `${b().height}px` }} />}
+        </Show>
         <Index each={positions()}>
           {(pos) => {
             const entry = () => view()[pos()];
@@ -265,15 +181,22 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
                   class="grid-cell"
                   classList={{ selected: props.tab.selection().has(entry()), focused: props.active && props.tab.focus() === pos() }}
                   style={{ transform: `translate(${(pos() % columns()) * CELL}px, ${Math.floor(pos() / columns()) * CELL_H}px)` }}
-                  onMouseDown={(e) => e.button === 0 && click(e, pos())}
-                  onDblClick={() => A.openEntry(props.tab, entry())}
+                  onMouseDown={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      return A.openEntryInTab(props.tab, entry(), !e.shiftKey);
+                    }
+                    if (e.button === 0) click(e, pos());
+                  }}
+                  onDblClick={(e) => (e.ctrlKey ? A.openEntryInTab(props.tab, entry(), !e.shiftKey) : A.openEntry(props.tab, entry()))}
                   onContextMenu={(e) => {
                     e.stopPropagation();
                     props.onMenu(e, pos());
                   }}
-                  title={l().names[entry()]}
+                  data-tooltip={l().names[entry()]}
+                  data-tooltip-truncated={l().names[entry()].includes("\\") ? undefined : ".grid-name"}
                 >
-                  <GridThumb path={props.tab.pathOf(entry())} modified={l().mtimes[entry()]} virtual={!!props.tab.archive()} name={l().names[entry()]} dir={isDir(l(), entry())} />
+                  <GridThumb path={props.tab.pathOf(entry())} modified={l().mtimes[entry()]} virtual={!!props.tab.archive()} name={l().names[entry()]} dir={isDir(l(), entry())} online={cloudState(l().attrs[entry()]) === "online"} />
                   <span class="grid-name">{baseOf(l().names[entry()])}</span>
                 </div>
               </Show>
@@ -285,7 +208,8 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
   );
 }
 
-const MILLER_ROW_LIMIT = 3000;
+/** Parent columns list at most this many items (the current folder has no limit). */
+const MILLER_ROW_LIMIT = 50_000;
 
 /** A folder's listing, or null if it can't be read. */
 async function readFolder(path: string): Promise<Listing | null> {
@@ -306,61 +230,167 @@ function sortedEntries(l: Listing): number[] {
   return idx.slice(0, MILLER_ROW_LIMIT);
 }
 
-function MillerColumn(props: { path: string; selected: string | null; onPick: (path: string, dir: boolean) => void; onOpen: (path: string) => void }) {
-  const [listing] = createResource(() => props.path, readFolder);
+const MILLER_OVERSCAN = 10;
+
+interface MillerRowInfo {
+  readonly name: string;
+  readonly dir: boolean;
+  readonly size: number;
+  readonly selected: boolean;
+  readonly focused: boolean;
+}
+
+/** One virtualised column of rows. `scrollTo` is a row to keep in view. */
+function MillerRows(props: {
+  count: number;
+  row: (k: number) => MillerRowInfo;
+  label: string;
+  scrollTo?: number;
+  onDown: (k: number, e: MouseEvent) => void;
+  onOpen: (k: number, e: MouseEvent) => void;
+  onMenu?: (k: number | null, e: MouseEvent) => void;
+  onReady?: (pageRows: () => number, ensureVisible: (k: number) => void) => void;
+}) {
+  let el!: HTMLDivElement;
+  const [top, setTop] = createSignal(0);
+  const [height, setHeight] = createSignal(600);
+  const rowPx = () => DENSITIES[settings.density()];
+  const first = () => Math.max(0, Math.floor(top() / rowPx()) - MILLER_OVERSCAN);
+  const slots = createMemo(() => {
+    const n = Math.max(0, Math.min(props.count - first(), Math.ceil(height() / rowPx()) + MILLER_OVERSCAN * 2));
+    return Array.from({ length: n }, (_, i) => i);
+  });
+  const ensureVisible = (k: number) => {
+    if (!el || k < 0) return;
+    const y = k * rowPx();
+    if (y < el.scrollTop) el.scrollTop = y;
+    else if (y + rowPx() > el.scrollTop + el.clientHeight) el.scrollTop = y + rowPx() - el.clientHeight;
+  };
+  onMount(() => {
+    const ro = new ResizeObserver(() => setHeight(el.clientHeight));
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
+    props.onReady?.(() => Math.max(1, Math.floor(el.clientHeight / rowPx())), ensureVisible);
+  });
+  createEffect(on(() => props.scrollTo, (k) => k !== undefined && queueMicrotask(() => ensureVisible(k))));
   return (
-    <div class="miller-col">
-      <Show when={listing()} fallback={<p class="muted small miller-msg">{listing.loading ? "Loading…" : "Can't read this folder"}</p>}>
-        {(l) => (
-          <For each={sortedEntries(l())}>
-            {(i) => {
-              const full = joinPath(l().path, l().names[i]);
-              const dir = isDir(l(), i);
-              return (
-                <button
+    <div ref={el} class="miller-col" role="listbox" aria-label={props.label} onScroll={() => setTop(el.scrollTop)} onContextMenu={(e) => props.onMenu?.(null, e)}>
+      <div class="miller-rows" style={{ height: `${props.count * rowPx()}px` }}>
+        <Index each={slots()}>
+          {(slot) => {
+            const k = () => first() + slot();
+            const r = () => props.row(k());
+            return (
+              <Show when={k() < props.count}>
+                <div
                   class="miller-row"
-                  classList={{ selected: props.selected?.toLowerCase() === l().names[i].toLowerCase() }}
-                  onClick={() => props.onPick(full, dir)}
-                  onDblClick={() => props.onOpen(full)}
-                  title={l().names[i]}
+                  role="option"
+                  aria-selected={r().selected}
+                  classList={{ selected: r().selected, focused: r().focused }}
+                  style={{ transform: `translateY(${k() * rowPx()}px)` }}
+                  onMouseDown={(e) => e.button === 0 && props.onDown(k(), e)}
+                  onDblClick={(e) => props.onOpen(k(), e)}
+                  onContextMenu={(e) => {
+                    e.stopPropagation();
+                    props.onMenu?.(k(), e);
+                  }}
+                  data-tooltip={r().name}
+                  data-tooltip-truncated=".miller-name"
                 >
-                  <span class="miller-name">{l().names[i]}</span>
-                  <Show when={dir} fallback={<span class="muted small">{formatSize(l().sizes[i])}</span>}>
+                  <span class="miller-name">{r().name}</span>
+                  <Show when={r().dir} fallback={<span class="muted small">{formatSize(r().size)}</span>}>
                     <span class="muted">›</span>
                   </Show>
-                </button>
-              );
-            }}
-          </For>
-        )}
-      </Show>
+                </div>
+              </Show>
+            );
+          }}
+        </Index>
+      </div>
     </div>
   );
 }
 
-/** macOS-style columns: the current folder, its parents, and the next level. */
-export function MillerView(props: { tab: TabModel }) {
+/** A parent folder's column: click a folder to show it, a file to select it. */
+function MillerColumn(props: { path: string; selected: string | null; onPick: (path: string, dir: boolean) => void; onOpen: (path: string) => void }) {
+  const [listing] = createResource(() => props.path, readFolder);
+  return (
+    <Show when={listing()} fallback={<div class="miller-col"><p class="muted small miller-msg">{listing.loading ? "Loading…" : "Can't read this folder"}</p></div>}>
+      {(l) => {
+        const order = createMemo(() => sortedEntries(l()));
+        const pickedAt = () => {
+          const want = props.selected?.toLowerCase();
+          return want ? order().findIndex((i) => l().names[i].toLowerCase() === want) : -1;
+        };
+        const full = (k: number) => joinPath(l().path, l().names[order()[k]]);
+        return (
+          <MillerRows
+            count={order().length}
+            label={baseName(props.path) || props.path}
+            scrollTo={pickedAt()}
+            row={(k) => {
+              const i = order()[k];
+              return { name: l().names[i], dir: isDir(l(), i), size: l().sizes[i], selected: k === pickedAt(), focused: false };
+            }}
+            onDown={(k) => props.onPick(full(k), isDir(l(), order()[k]))}
+            onOpen={(k) => props.onOpen(full(k))}
+          />
+        );
+      }}
+    </Show>
+  );
+}
+
+/**
+ * macOS-style columns: two parent folders, then the current folder, which is
+ * the tab's own list (its sort, filter, selection and keys). Left goes up a
+ * folder and Right opens the focused one (see keys.ts).
+ */
+export function MillerView(props: {
+  tab: TabModel;
+  active: boolean;
+  onReady: (pageRows: () => number, ensureVisible: (pos: number) => void) => void;
+  onMenu: (e: MouseEvent, pos: number | null) => void;
+}) {
   let box!: HTMLDivElement;
-  const [preview, setPreview] = createSignal<string | null>(null);
-  const columns = createMemo(() => {
-    const chain = [props.tab.path()];
-    for (let p = parentPath(props.tab.path()); p && chain.length < 3; p = parentPath(p)) chain.unshift(p);
+  const parents = createMemo(() => {
+    const chain: string[] = [];
+    for (let p = parentPath(props.tab.path()); p && chain.length < 2; p = parentPath(p)) chain.unshift(p);
     return chain;
   });
-  createEffect(on(() => props.tab.path(), () => {
-    setPreview(null);
-    queueMicrotask(() => (box.scrollLeft = box.scrollWidth));
-  }));
+  createEffect(on(() => props.tab.path(), () => queueMicrotask(() => (box.scrollLeft = box.scrollWidth))));
   const pick = (path: string, dir: boolean) => {
-    if (dir) void props.tab.navigate(path);
-    else props.tab.selectNames([baseName(path)]);
+    if (dir) return void props.tab.navigate(path);
+    const parent = parentPath(path);
+    if (parent) void props.tab.navigate(parent, [baseName(path)]);
   };
-  const selectedIn = (i: number) => (columns()[i + 1] ? baseName(columns()[i + 1]) : (preview() ? baseName(preview()!) : null));
+  const view = () => props.tab.view();
+  const l = () => props.tab.listing();
+  const click = (pos: number, e: MouseEvent) => {
+    const t = props.tab;
+    const r = selectAt(view(), t.selection(), t.anchor(), pos, { ctrl: e.ctrlKey, shift: e.shiftKey });
+    t.setSelection(r.selection);
+    t.setAnchor(r.anchor);
+    t.setFocus(pos);
+  };
   return (
     <div ref={box} class="miller">
-      <Index each={columns()}>
-        {(c, i) => <MillerColumn path={c()} selected={selectedIn(i)} onPick={pick} onOpen={(p) => A.openFromPath(props.tab, p)} />}
+      <Index each={parents()}>
+        {(c, i) => <MillerColumn path={c()} selected={baseName(parents()[i + 1] ?? props.tab.path())} onPick={pick} onOpen={(p) => A.openFromPath(props.tab, p)} />}
       </Index>
+      <MillerRows
+        count={view().length}
+        label={baseName(props.tab.path()) || props.tab.path()}
+        scrollTo={props.tab.focus()}
+        row={(pos) => {
+          const e = view()[pos];
+          return { name: baseOf(l().names[e]), dir: isDir(l(), e), size: l().sizes[e], selected: props.tab.selection().has(e), focused: props.active && props.tab.focus() === pos };
+        }}
+        onDown={click}
+        onOpen={(pos, e) => (e.ctrlKey ? A.openEntryInTab(props.tab, view()[pos], !e.shiftKey) : A.openEntry(props.tab, view()[pos]))}
+        onMenu={(pos, e) => props.onMenu(e, pos)}
+        onReady={props.onReady}
+      />
     </div>
   );
 }

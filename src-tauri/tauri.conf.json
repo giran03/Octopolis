@@ -18,6 +18,8 @@
         "minWidth": 760,
         "minHeight": 480,
         "backgroundColor": "#101216",
+        "decorations": false,
+        "shadow": true,
         "dragDropEnabled": false
       }
     ],
@@ -36,7 +38,8 @@
     ],
     "windows": {
       "nsis": {
-        "compression": "lzma"
+        "compression": "lzma",
+        "installerHooks": "./windows/hooks.nsh"
       }
     }
   }

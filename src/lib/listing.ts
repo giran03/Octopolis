@@ -108,3 +108,24 @@ export function indexOfName(l: Listing, name: string): number {
   for (let i = 0; i < l.count; i++) if (l.names[i].toLowerCase() === want) return i;
   return -1;
 }
+
+/** Windows attributes cloud providers (OneDrive and others) set on synced files. */
+const ATTR_OFFLINE = 0x1000;
+const ATTR_RECALL_ON_OPEN = 0x40000;
+const ATTR_PINNED = 0x80000;
+const ATTR_UNPINNED = 0x100000;
+const ATTR_RECALL_ON_DATA_ACCESS = 0x400000;
+
+/**
+ * Where a synced file's contents are: "online" (opening it downloads it),
+ * "pinned" (always kept on this device), "local" (downloaded, can be freed),
+ * or null for ordinary files.
+ */
+export type CloudState = "online" | "pinned" | "local" | null;
+
+export function cloudState(attrs: number): CloudState {
+  if (attrs & (ATTR_RECALL_ON_DATA_ACCESS | ATTR_RECALL_ON_OPEN | ATTR_OFFLINE)) return "online";
+  if (attrs & ATTR_PINNED) return "pinned";
+  if (attrs & ATTR_UNPINNED) return "local";
+  return null;
+}

@@ -6,6 +6,7 @@
 //! result = rank::run(&index, &query, limit)
 //! ```
 
+pub mod content;
 pub mod index;
 pub mod query;
 pub mod rank;

@@ -9,6 +9,7 @@ export type UndoAction =
   | { readonly kind: "move"; readonly label: string; readonly pairs: readonly Pair[] }
   | { readonly kind: "copy"; readonly label: string; readonly pairs: readonly Pair[] }
   | { readonly kind: "newFolder"; readonly label: string; readonly path: string }
+  | { readonly kind: "newFile"; readonly label: string; readonly path: string }
   | { readonly kind: "recycle"; readonly label: string; readonly paths: readonly string[] };
 
 export type Step =
@@ -17,6 +18,7 @@ export type Step =
   | { readonly type: "restore"; readonly paths: readonly string[] }
   | { readonly type: "removeEmpty"; readonly path: string }
   | { readonly type: "createFolder"; readonly path: string }
+  | { readonly type: "createFile"; readonly path: string }
   | { readonly type: "copy"; readonly sources: readonly string[]; readonly dest: string };
 
 
@@ -28,6 +30,9 @@ export function undoStep(a: UndoAction): Step {
       return { type: "recycle", paths: a.pairs.map(([, to]) => to) };
     case "newFolder":
       return { type: "removeEmpty", path: a.path };
+    case "newFile":
+      // The file may have been edited since, so it goes to the Recycle Bin rather than away.
+      return { type: "recycle", paths: [a.path] };
     case "recycle":
       return { type: "restore", paths: a.paths };
   }
@@ -41,6 +46,8 @@ export function redoStep(a: UndoAction): Step {
       return { type: "copy", sources: a.pairs.map(([from]) => from), dest: parentPath(a.pairs[0][1]) ?? a.pairs[0][1] };
     case "newFolder":
       return { type: "createFolder", path: a.path };
+    case "newFile":
+      return { type: "createFile", path: a.path };
     case "recycle":
       return { type: "recycle", paths: a.paths };
   }

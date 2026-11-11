@@ -58,6 +58,8 @@ describe("undo model", () => {
     expect(redoStep({ kind: "copy", label: "", pairs: [["D:\\x", "C:\\x"]] })).toEqual({ type: "copy", sources: ["D:\\x"], dest: "C:\\" });
     expect(undoStep({ kind: "recycle", label: "", paths: ["C:\\f"] })).toEqual({ type: "restore", paths: ["C:\\f"] });
     expect(undoStep({ kind: "newFolder", label: "", path: "C:\\n" })).toEqual({ type: "removeEmpty", path: "C:\\n" });
+    expect(undoStep({ kind: "newFile", label: "", path: "C:\\f.txt" })).toEqual({ type: "recycle", paths: ["C:\\f.txt"] });
+    expect(redoStep({ kind: "newFile", label: "", path: "C:\\f.txt" })).toEqual({ type: "createFile", path: "C:\\f.txt" });
   });
 
   it("walks the stacks and clears redo on a new action", () => {

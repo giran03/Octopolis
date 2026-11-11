@@ -6,7 +6,7 @@ import { settings } from "../state/settings";
 import type { SearchState } from "../state/tab";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
-import { IconEye, IconSidebar, IconSplitCol, IconSplitRow } from "./Icons";
+import { IconBranch, IconEye, IconSettings, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow } from "./Icons";
 
 export function StatusBar() {
   const tab = () => workspace.activeTab();
@@ -48,15 +48,24 @@ export function StatusBar() {
         )}
       </Show>
       <Show when={tab()?.git()?.branch}>
-        {(b) => <span class="git-branch" title="Git branch">⎇ {b()}</span>}
+        {(b) => <span class="git-branch" title="Git branch"><IconBranch size={12} /> {b()}</span>}
       </Show>
       <span class="spacer" />
-      <button class="icon-btn" title="Settings (Ctrl+,)" onClick={() => ui.setSettingsOpen(true)}>⚙</button>
+      <button class="icon-btn" title="Settings (Ctrl+,)" onClick={() => ui.openSettings()}><IconSettings size={14} /></button>
       <button class="icon-btn" classList={{ on: settings.showHidden() }} title="Show hidden items (Ctrl+H)" onClick={settings.toggleHidden}>
         <IconEye size={14} />
       </button>
-      <button class="icon-btn" classList={{ on: settings.sidebarOpen() }} title="Sidebar (Ctrl+B)" onClick={settings.toggleSidebar}>
-        <IconSidebar size={14} />
+      <button
+        class="icon-btn"
+        classList={{ on: settings.sidebarOpen() }}
+        aria-label={settings.sidebarOpen() ? "Collapse sidebar" : "Expand sidebar"}
+        aria-pressed={settings.sidebarOpen()}
+        title={settings.sidebarOpen() ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"}
+        onClick={settings.toggleSidebar}
+      >
+        <Show when={settings.sidebarOpen()} fallback={<IconSidebar size={14} />}>
+          <IconSidebarClose size={14} />
+        </Show>
       </button>
       <button class="icon-btn" title="Split right (Ctrl+\)" onClick={() => workspace.split("row")}>
         <IconSplitRow size={14} />

@@ -18,12 +18,19 @@ export interface ViewOptions {
   readonly showHidden: boolean;
   /** Case-insensitive substring filter on names (empty = no filter). */
   readonly filter?: string;
+  /** Recursive folder sizes by lower-case name; folders sort by these when known. */
+  readonly dirSizes?: ReadonlyMap<string, number> | null;
 }
 
 /**
  * Builds the visible order: an array of entry indices, folders first, sorted
  * by the chosen column with the name as a tie-breaker.
  */
+/** A folder's computed size, or -1 while unknown (so unknown folders group together). */
+function folderSize(l: Listing, i: number, opts: ViewOptions): number {
+  return opts.dirSizes?.get(l.names[i].toLowerCase()) ?? -1;
+}
+
 export function buildView(l: Listing, opts: ViewOptions): Uint32Array {
   const needle = opts.filter?.trim().toLowerCase() ?? "";
   const picked: number[] = [];
@@ -49,7 +56,7 @@ export function buildView(l: Listing, opts: ViewOptions): Uint32Array {
         c = l.mtimes[a] - l.mtimes[b];
         break;
       case "size":
-        c = da ? 0 : l.sizes[a] - l.sizes[b];
+        c = da ? folderSize(l, a, opts) - folderSize(l, b, opts) : l.sizes[a] - l.sizes[b];
         break;
       case "type":
         c = collator.compare(extOf.get(a)!, extOf.get(b)!);

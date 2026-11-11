@@ -10,6 +10,8 @@
 //! | `size:` | `size:>100mb`, `size:<=4k`, `size:1mb..2gb` |
 //! | `dm:` | `dm:today`, `dm:yesterday`, `dm:week`, `dm:month`, `dm:year`, `dm:2026-11-01`, `dm:>2026-01-01`, `dm:2026-01-01..2026-03-31` |
 //! | `re:` | `re:^invoice_\d+`, `re:"two words"` |
+//! | `tag:` | `tag:work`, `tag:red` (tags and color labels) |
+//! | `content:` | `content:TODO`, `content:"connection refused"` (text inside files) |
 //!
 //! Values with spaces go in double quotes.
 
@@ -34,11 +36,17 @@ pub struct Query {
     /// Inclusive lower and exclusive upper modified time (Unix ms).
     pub modified: Option<(i64, i64)>,
     pub regex: Option<Regex>,
+    /// Text that must appear inside the file (case-insensitive).
+    pub content: Option<String>,
+    /// Tag the item must carry. The caller fills `tagged` with the lower-case
+    /// paths that have it (tags live outside the index).
+    pub tag: Option<String>,
+    pub tagged: Option<std::sync::Arc<std::collections::HashSet<String>>>,
 }
 
 impl Query {
     pub fn has_filters(&self) -> bool {
-        !self.exts.is_empty() || self.kind.is_some() || self.size.is_some() || self.modified.is_some() || self.regex.is_some()
+        !self.exts.is_empty() || self.kind.is_some() || self.size.is_some() || self.modified.is_some() || self.regex.is_some() || self.content.is_some() || self.tag.is_some()
     }
 }
 
@@ -64,6 +72,8 @@ pub fn parse_at(input: &str, now: &Zoned) -> Result<Query, QueryError> {
             "size" => q.size = Some(parse_size_filter(value)?),
             "dm" => q.modified = Some(parse_date_filter(value, now)?),
             "re" => q.regex = Some(Regex::new(value).map_err(|e| QueryError(format!("re: {}", first_line(&e.to_string()))))?),
+            "content" => q.content = Some(value.to_string()),
+            "tag" => q.tag = Some(value.to_string()),
             _ => unreachable!("is_filter checked the key"),
         }
     }
@@ -72,7 +82,7 @@ pub fn parse_at(input: &str, now: &Zoned) -> Result<Query, QueryError> {
 }
 
 fn is_filter(key: &str) -> bool {
-    matches!(key.to_ascii_lowercase().as_str(), "ext" | "type" | "size" | "dm" | "re")
+    matches!(key.to_ascii_lowercase().as_str(), "ext" | "type" | "size" | "dm" | "re" | "content" | "tag")
 }
 
 fn first_line(s: &str) -> &str {

@@ -59,3 +59,77 @@ describe("curated context menu", () => {
     expect(out).toEqual([{ label: "A" }, "separator", { label: "B" }]);
   });
 });
+
+import { recentVisits, recordVisit } from "./frecency";
+import { clampSidebarWidth, isPinned, movePin, renamePin, togglePin } from "./sidebar";
+
+describe("sidebar pins", () => {
+  it("toggles a pin case-insensitively and labels it by folder name", () => {
+    const pinned = togglePin([], "C:\\Work\\Docs");
+    expect(pinned).toEqual([{ path: "C:\\Work\\Docs", label: "Docs" }]);
+    expect(isPinned(pinned, "c:\\work\\docs\\")).toBe(true);
+    expect(togglePin(pinned, "c:\\work\\docs")).toEqual([]);
+  });
+
+  it("moves pins and stops at the ends", () => {
+    const pins = ["C:\\a", "C:\\b", "C:\\c"].reduce((acc, p) => togglePin(acc, p), [] as ReturnType<typeof togglePin>);
+    expect(movePin(pins, "C:\\c", -1).map((p) => p.label)).toEqual(["a", "c", "b"]);
+    expect(movePin(pins, "C:\\a", -1).map((p) => p.label)).toEqual(["a", "b", "c"]);
+    expect(movePin(pins, "C:\\c", 1).map((p) => p.label)).toEqual(["a", "b", "c"]);
+  });
+
+  it("renames a pin and falls back to the folder name when blank", () => {
+    const pins = togglePin([], "C:\\Work\\Docs");
+    expect(renamePin(pins, "C:\\Work\\Docs", " Papers ")[0].label).toBe("Papers");
+    expect(renamePin(pins, "C:\\Work\\Docs", "  ")[0].label).toBe("Docs");
+  });
+
+  it("clamps the sidebar width", () => {
+    expect(clampSidebarWidth(50)).toBe(188);
+    expect(clampSidebarWidth(900)).toBe(380);
+    expect(clampSidebarWidth(250.4)).toBe(250);
+  });
+});
+
+describe("recent folders", () => {
+  it("orders by last visit, not by visit count", () => {
+    let db = recordVisit({}, "C:\\often", 1000);
+    db = recordVisit(db, "C:\\often", 1001);
+    db = recordVisit(db, "C:\\latest", 5000);
+    expect(recentVisits(db, 5).map((r) => r.path)).toEqual(["C:\\latest", "C:\\often"]);
+  });
+});
+
+import { insertPins, reorderPin } from "./sidebar";
+describe("pin drag and drop", () => {
+  const pins = ["a", "b", "c"].map((n) => ({ path: `C:\\${n}`, label: n }));
+  const labels = (p: readonly { label: string }[]) => p.map((x) => x.label);
+  it("reorders before a given index", () => {
+    expect(labels(reorderPin(pins, "C:\\a", 3))).toEqual(["b", "c", "a"]);
+    expect(labels(reorderPin(pins, "C:\\c", 0))).toEqual(["c", "a", "b"]);
+    expect(labels(reorderPin(pins, "C:\\a", 1))).toEqual(["a", "b", "c"]);
+  });
+  it("inserts new pins and skips duplicates", () => {
+    expect(labels(insertPins(pins, ["C:\\x", "C:\\b", "D:\\y"], 1))).toEqual(["a", "x", "y", "b", "c"]);
+  });
+});
+
+import { fileIconSpec, ICON_EXTENSIONS } from "./fileicons";
+
+describe("file type icons", () => {
+  it("knows supported types case-insensitively and ignores the rest", () => {
+    expect(fileIconSpec("main.RS")).toEqual({ code: "E943", tone: "rust" });
+    expect(fileIconSpec("report.final.pdf")?.tone).toBe("red");
+    expect(fileIconSpec("archive.tar.gz")?.code).toBe("E7B8");
+    expect(fileIconSpec("README")).toBeNull();
+    expect(fileIconSpec(".gitignore")).toBeNull();
+    expect(fileIconSpec("data.unknownext")).toBeNull();
+  });
+
+  it("gives every listed extension a real code point", () => {
+    for (const ext of ICON_EXTENSIONS) {
+      const spec = fileIconSpec(`x.${ext}`);
+      expect(spec?.code).toMatch(/^[0-9A-F]{4}$/);
+    }
+  });
+});

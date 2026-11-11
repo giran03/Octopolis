@@ -1,4 +1,5 @@
 // Pure list-selection and keyboard-navigation rules.
+import { extensionOf as fileExtension } from "./paths";
 
 export interface Mods {
   readonly ctrl: boolean;
@@ -33,6 +34,50 @@ export function selectAll(view: Uint32Array): ReadonlySet<number> {
   return new Set(view);
 }
 
+/** Every visible entry that isn't selected now. */
+export function invertSelection(view: Uint32Array, current: ReadonlySet<number>): ReadonlySet<number> {
+  const out = new Set<number>();
+  for (const e of view) if (!current.has(e)) out.add(e);
+  return out;
+}
+
+/** Visible entries whose name passes `test`. */
+export function selectWhere(view: Uint32Array, names: readonly string[], test: (name: string) => boolean): ReadonlySet<number> {
+  const out = new Set<number>();
+  for (const e of view) if (test(names[e])) out.add(e);
+  return out;
+}
+
+const baseOfName = (name: string) => name.slice(Math.max(name.lastIndexOf("\\"), name.lastIndexOf("/")) + 1);
+
+/** Lower-case extension of the last path segment, or "" for none (".gitignore" has none). */
+export const extensionOf = (name: string): string => fileExtension(baseOfName(name));
+
+function globToRegExp(glob: string): RegExp {
+  const body = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+  return new RegExp(`^${body}$`, "i");
+}
+
+/**
+ * Builds a name test from user text: `re:<regex>` for a regular expression,
+ * otherwise one or more `;`-separated wildcard patterns (`*.jpg; IMG_????.*`).
+ * A pattern without wildcards matches names containing it. Throws on a bad regex.
+ */
+export function namePattern(text: string): (name: string) => boolean {
+  const trimmed = text.trim();
+  if (trimmed.toLowerCase().startsWith("re:")) {
+    const re = new RegExp(trimmed.slice(3), "i");
+    return (name) => re.test(baseOfName(name));
+  }
+  const parts = trimmed
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => globToRegExp(/[*?]/.test(p) ? p : `*${p}*`));
+  if (parts.length === 0) return () => false;
+  return (name) => parts.some((re) => re.test(baseOfName(name)));
+}
+
 export type NavKey = "ArrowUp" | "ArrowDown" | "Home" | "End" | "PageUp" | "PageDown";
 export const NAV_KEYS: ReadonlySet<string> = new Set(["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
 
@@ -65,4 +110,38 @@ export function typeAhead(names: readonly string[], view: Uint32Array, from: num
     if (names[view[pos]].toLowerCase().startsWith(want)) return pos;
   }
   return -1;
+}
+
+/** View positions of list rows that a vertical band (content pixels) touches. */
+export function rowsInBand(length: number, rowHeight: number, y1: number, y2: number): [number, number] | null {
+  const top = Math.min(y1, y2);
+  const bottom = Math.max(y1, y2);
+  const first = Math.max(0, Math.floor(top / rowHeight));
+  const last = Math.min(length - 1, Math.floor((bottom - 0.001) / rowHeight));
+  return length === 0 || last < first ? null : [first, last];
+}
+
+/** View positions of grid cells (laid out `columns` per row) that a rectangle touches. */
+export function cellsInRect(length: number, columns: number, cellW: number, cellH: number, x1: number, y1: number, x2: number, y2: number): number[] {
+  const [left, right] = [Math.min(x1, x2), Math.max(x1, x2)];
+  const [top, bottom] = [Math.min(y1, y2), Math.max(y1, y2)];
+  const c0 = Math.max(0, Math.floor(left / cellW));
+  const c1 = Math.min(columns - 1, Math.floor((right - 0.001) / cellW));
+  const r0 = Math.max(0, Math.floor(top / cellH));
+  const r1 = Math.floor((bottom - 0.001) / cellH);
+  const out: number[] = [];
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const pos = r * columns + c;
+      if (pos < length) out.push(pos);
+    }
+  }
+  return out;
+}
+
+/** The selection while dragging a box: what was selected before (when adding) plus the boxed entries. */
+export function marqueeSelection(view: Uint32Array, base: ReadonlySet<number>, positions: readonly number[]): ReadonlySet<number> {
+  const out = new Set(base);
+  for (const p of positions) if (p >= 0 && p < view.length) out.add(view[p]);
+  return out;
 }

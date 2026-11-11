@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createBuilder, decodeBatch, indexOfName, snapshot, KIND_DIR, KIND_FILE, ATTR_HIDDEN } from "./listing";
 import { buildView, toggleSort, DEFAULT_SORT } from "./sort";
 import { baseName, breadcrumbs, isRoot, joinPath, parentPath, sameVolume, samePath, stemLength, extensionOf } from "./paths";
-import { formatSize, typeLabel, categoryOf } from "./format";
+import { formatDuration, formatSize, typeLabel, categoryOf } from "./format";
 import { leaf, leaves, removePane, resizeSplit, splitPane, type LayoutNode } from "./layout";
 
 interface FakeEntry {
@@ -72,6 +72,13 @@ describe("buildView", () => {
     { name: "b.md", size: 50, mtime: 9 },
   ]);
   const names = (v: Uint32Array) => Array.from(v, (i) => l.names[i]);
+
+  it("sorts folders by computed size", () => {
+    const dirSizes = new Map([["zeta", 900], ["alpha", 5]]);
+    const out = names(buildView(l, { sort: { key: "size", dir: -1 }, showHidden: false, dirSizes }));
+    expect(out.slice(0, 2)).toEqual(["Zeta", "alpha"]);
+    expect(out.slice(2)).toEqual(["file2.txt", "b.md", "file10.txt"]);
+  });
 
   it("puts folders first and sorts names naturally", () => {
     expect(names(buildView(l, { sort: DEFAULT_SORT, showHidden: false }))).toEqual(["alpha", "Zeta", "b.md", "file2.txt", "file10.txt"]);
@@ -185,5 +192,11 @@ describe("layout tree", () => {
     const clamped = resizeSplit(t, [], 0, 5);
     expect(clamped.kind === "split" && clamped.sizes[1]).toBeCloseTo(0.12);
     expect(sum(clamped)).toBeCloseTo(1);
+  });
+
+  it("formats media durations", () => {
+    expect(formatDuration(0)).toBe("");
+    expect(formatDuration(65)).toBe("1:05");
+    expect(formatDuration(3665)).toBe("1:01:05");
   });
 });

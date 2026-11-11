@@ -1,11 +1,16 @@
 // One browsing tab: location, history, streamed listing, sort and selection.
 import { batch, createMemo, createRoot, createSignal } from "solid-js";
-import { cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
+import { cachedFolderSizes, cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
+import { parseFolderViews, rememberView, viewFor, type FolderViews, type ViewMode } from "../lib/folderViews";
 import { history as visits } from "./history";
-import { settings } from "./settings";
+import { loadJson, saveJson, settings } from "./settings";
+
+const FOLDER_VIEWS_KEY = "octopolis.folderviews.v1";
+/** Each folder's last view and sort, shared by every tab. */
+let folderViews: FolderViews = parseFolderViews(loadJson<unknown>(FOLDER_VIEWS_KEY, []));
 
 /** A recursive search (or flat view, when the query is empty) under the tab's folder. */
 export interface SearchState {
@@ -17,6 +22,25 @@ export interface SearchState {
 }
 
 const SEARCH_SORT: SortSpec = { key: "relevance", dir: 1 };
+const MAX_SESSION_SIZE_DIRS = 250;
+/** In-memory session cache of subfolder sizes keyed by normalized parent folder path. */
+const sessionSizes = new Map<string, Map<string, number>>();
+
+export const sessionSizeCount = () => sessionSizes.size;
+export function clearSessionSizes() {
+  sessionSizes.clear();
+}
+const dirKey = (dir: string) => dir.replace(/[\\/]+$/, "").toLowerCase();
+
+function rememberSizes(dir: string, entries: ReadonlyMap<string, number>) {
+  const k = dirKey(dir);
+  sessionSizes.delete(k);
+  sessionSizes.set(k, new Map(entries));
+  if (sessionSizes.size > MAX_SESSION_SIZE_DIRS) {
+    const oldest = sessionSizes.keys().next().value;
+    if (oldest !== undefined) sessionSizes.delete(oldest);
+  }
+}
 
 let nextTabId = 1;
 
@@ -51,8 +75,12 @@ export function createTab(initialPath: string) {
     const [search, setSearch] = createSignal<SearchState | null>(null);
     /** The archive this folder is inside, if any (such folders are read-only). */
     const [archive, setArchive] = createSignal<string | null>(null);
-    /** Recursive subfolder sizes by lower-case name, once requested. */
+    /** Recursive subfolder sizes by lower-case name, once requested or cached. */
     const [dirSizes, setDirSizes] = createSignal<ReadonlyMap<string, number> | null>(null);
+    /** Folders whose size is remembered from earlier and is being checked again. */
+    const [staleSizes, setStaleSizes] = createSignal<ReadonlySet<string>>(new Set<string>());
+    /** True when live folder-size calculation/watching is active for the current folder. */
+    const [sizesLive, setSizesLive] = createSignal(false);
     const [treemap, setTreemap] = createSignal(false);
     const dirSizeMax = createMemo(() => {
       let max = 1;
@@ -61,7 +89,13 @@ export function createTab(initialPath: string) {
     });
     const [git, setGit] = createSignal<GitInfo | null>(null);
     const [commits, setCommits] = createSignal<Readonly<Record<string, CommitInfo>> | null>(null);
-    const [viewMode, setViewMode] = createSignal<"details" | "grid" | "columns">("details");
+    const [viewMode, setViewMode] = createSignal<ViewMode>("details");
+    /** Remembers this folder's view and sort, so it opens the same way next time. */
+    const rememberFolderView = () => {
+      if (search() || archive()) return;
+      folderViews = rememberView(folderViews, path(), { mode: viewMode(), sort: sort() });
+      saveJson(FOLDER_VIEWS_KEY, folderViews);
+    };
 
     /** Refreshes Git badges for the folder (best effort, outside archives). */
     function loadGit(dir: string, gen: number) {
@@ -80,11 +114,18 @@ export function createTab(initialPath: string) {
     /** Folder-mode sort, restored when a search ends. */
     let folderSort: SortSpec = DEFAULT_SORT;
 
-    const view = createMemo(() =>
-      buildView(listing(), { sort: sort(), showHidden: settings.showHidden(), filter: search() ? "" : filter() }),
-    );
+    const view = createMemo(() => {
+      const v = buildView(listing(), { sort: sort(), showHidden: settings.showHidden(), filter: search() ? "" : filter(), dirSizes: search() ? null : dirSizes() });
+      // Optionally leave out what Git ignores (build output, dependencies).
+      const g = settings.hideGitIgnored() && !search() ? git() : null;
+      if (!g) return v;
+      const l = listing();
+      return v.filter((e) => g.children[l.names[e].toLowerCase()] !== "I");
+    });
     let generation = 0;
     let watchedPath: string | null = null;
+    let sizesHidden = false;
+    let freshSizeNames = new Set<string>();
     /**
      * Names an explicit request (new folder, paste, rename, "go up") wants
      * selected. It survives a refresh that supersedes the request's load.
@@ -130,15 +171,31 @@ export function createTab(initialPath: string) {
       setStatus({ loading: true, error: null, elapsedMs: null });
       if (!sameDir) {
         pendingSelect = select ?? null;
+        sizesHidden = false;
+        freshSizeNames = new Set<string>();
+        const cached = sessionSizes.get(dirKey(dir));
         batch(() => {
           setListing(emptyListing(dir));
           setSelection(new Set<number>());
           setFocus(0);
           setRenaming(null);
-          setDirSizes(null);
+          setArchive(null);
+          setDirSizes(cached ? new Map(cached) : null);
+          setStaleSizes(new Set<string>());
+          setSizesLive(false);
           setTreemap(false);
+          // A folder opens the way it was last shown; others keep the tab's current view.
+          const remembered = viewFor(folderViews, dir);
+          if (remembered) {
+            setViewMode(remembered.mode);
+            setSort(remembered.sort);
+            folderSort = remembered.sort;
+          }
         });
         void folderSizes(id, "", () => undefined).catch(() => undefined);
+        // Show synced/cached folder sizes right away without waiting for listDir to finish.
+        void loadCachedSizes(dir, gen);
+        if (settings.autoFolderSizes()) computeSizes();
       }
       try {
         let firstPaint = !sameDir;
@@ -164,6 +221,12 @@ export function createTab(initialPath: string) {
           setListing(snapshot(builder));
           setStatus({ loading: false, error: null, elapsedMs: summary.elapsedMs });
           setArchive(summary.archive);
+          if (summary.archive) {
+            setDirSizes(null);
+            setStaleSizes(new Set<string>());
+            setSizesLive(false);
+            void folderSizes(id, "", () => undefined).catch(() => undefined);
+          }
           if (!sameDir) setCommits(null);
           if (explicit?.length) selectNames(explicit, listing());
           else restoreByName(names, focusName);
@@ -242,15 +305,92 @@ export function createTab(initialPath: string) {
       }
     }
 
-    /** Computes the recursive size of every subfolder, updating as each finishes. */
+    /** Applies any backend-indexed or disk-cached subfolder sizes without triggering a scan. */
+    async function loadCachedSizes(dir: string, gen: number) {
+      const list = await cachedFolderSizes(dir).catch(() => []);
+      if (gen !== generation || sizesHidden || !samePath(dir, path()) || archive() || search() || list.length === 0) return;
+      batch(() => {
+        const merged = new Map(dirSizes() ?? []);
+        let changed = false;
+        for (const s of list) {
+          const name = s.name.toLowerCase();
+          if (freshSizeNames.has(name)) continue;
+          if (merged.get(name) !== s.bytes) {
+            merged.set(name, s.bytes);
+            changed = true;
+          }
+        }
+        if (changed) {
+          setDirSizes(merged);
+          rememberSizes(dir, merged);
+        }
+        if (sizesLive()) {
+          setStaleSizes((prev) => {
+            let next: Set<string> | null = null;
+            for (const s of list) {
+              const name = s.name.toLowerCase();
+              if (s.stale && !freshSizeNames.has(name) && !prev.has(name)) {
+                next ??= new Set(prev);
+                next.add(name);
+              }
+            }
+            return next ?? prev;
+          });
+        }
+      });
+    }
+
+    /** Computes the recursive size of every subfolder, updating in batches as each finishes. */
     function computeSizes() {
       if (archive() || search()) return;
       const dir = path();
-      setDirSizes(new Map());
+      const gen = generation;
+      sizesHidden = false;
+      setSizesLive(true);
+      // Keep the numbers on screen: the engine answers at once with what it remembers (marked stale),
+      // then sends fresh values as each folder is checked and again whenever a file changes.
+      setDirSizes((m) => m ?? new Map());
+      const pendingSizes = new Map<string, number>();
+      const pendingStale = new Map<string, boolean>();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const flush = () => {
+        clearTimeout(timer);
+        timer = undefined;
+        if (gen !== generation || sizesHidden || !samePath(dir, path()) || pendingSizes.size === 0) {
+          pendingSizes.clear();
+          pendingStale.clear();
+          return;
+        }
+        const entries = [...pendingSizes];
+        const staleEntries = [...pendingStale];
+        pendingSizes.clear();
+        pendingStale.clear();
+        batch(() => {
+          const next = new Map(dirSizes() ?? []);
+          for (const [name, bytes] of entries) next.set(name, bytes);
+          setDirSizes(next);
+          rememberSizes(dir, next);
+          setStaleSizes((prev) => {
+            let nextStale: Set<string> | null = null;
+            for (const [name, stale] of staleEntries) {
+              if (prev.has(name) !== stale) {
+                nextStale ??= new Set(prev);
+                if (stale) nextStale.add(name);
+                else nextStale.delete(name);
+              }
+            }
+            return nextStale ?? prev;
+          });
+        });
+      };
       void folderSizes(id, dir, (s) => {
-        if (!samePath(dir, path())) return;
-        setDirSizes((m) => new Map(m ?? []).set(s.name.toLowerCase(), s.bytes));
-      }).catch(() => undefined);
+        if (gen !== generation || sizesHidden || !samePath(dir, path())) return;
+        const name = s.name.toLowerCase();
+        if (!s.stale) freshSizeNames.add(name);
+        pendingSizes.set(name, s.bytes);
+        pendingStale.set(name, s.stale);
+        if (!timer) timer = setTimeout(flush, 16);
+      }).then(flush, flush);
     }
 
     function exitSearch() {
@@ -322,15 +462,23 @@ export function createTab(initialPath: string) {
       git,
       commits,
       viewMode,
-      setViewMode,
+      setViewMode: (mode: ViewMode) => {
+        setViewMode(mode);
+        rememberFolderView();
+      },
       archive,
       dirSizes,
+      dirSizeStale: (name: string) => staleSizes().has(name.toLowerCase()),
       dirSizeMax,
+      sizesLive,
       treemap,
       setTreemap,
       computeSizes,
       clearSizes: () => {
+        sizesHidden = true;
+        setSizesLive(false);
         setDirSizes(null);
+        setStaleSizes(new Set<string>());
         void folderSizes(id, "", () => undefined).catch(() => undefined);
       },
       runSearch,
@@ -343,7 +491,10 @@ export function createTab(initialPath: string) {
       refresh,
       close,
       selectNames: (names: readonly string[]) => selectNames(names, listing()),
-      sortBy: (key: SortKey) => setSort((s) => toggleSort(s, key)),
+      sortBy: (key: SortKey) => {
+        setSort((s) => toggleSort(s, key));
+        rememberFolderView();
+      },
       selectedPaths: () => [...selection()].filter((i) => i < listing().count).map(pathOf),
       pathOf,
       title: () => baseName(path()) || path(),

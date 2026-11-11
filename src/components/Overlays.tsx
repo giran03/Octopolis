@@ -1,16 +1,24 @@
 // Floating UI: operations tray, context menu, confirmation dialog, toasts.
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { formatSize } from "../lib/format";
 import { baseName } from "../lib/paths";
 import { ops, type OpView } from "../state/ops";
 import { filterMenu } from "../lib/menu";
 import { settings } from "../state/settings";
 import { ui, type MenuEntry, type MenuItem, type MenuState } from "../state/ui";
+import { ConflictDialog } from "./ConflictDialog";
+import { DiskSpaceModal } from "./DiskSpaceModal";
+import { PropertiesDialog } from "./PropertiesDialog";
+import { RecycleBin } from "./RecycleBin";
+import { Duplicates } from "./Duplicates";
+import { TaggedList, TagsDialog } from "./Tags";
+import { ActionsEditor } from "./ActionsEditor";
+import { Cleanup } from "./Cleanup";
 import { BatchRename, LockHunter } from "./Dialogs";
-import { PromptDialog, SettingsDialog } from "./Extras";
-import { IconClose } from "./Icons";
+import { PromptDialog } from "./Extras";
+import { IconClose, IconStarFill } from "./Icons";
 import { Palette } from "./Palette";
-import { Shortcuts } from "./Shortcuts";
+import { SettingsModal } from "./settings/SettingsModal";
 
 export function Overlays() {
   return (
@@ -20,18 +28,42 @@ export function Overlays() {
         {(m) => <ContextMenu menu={m} />}
       </Show>
       <ConfirmDialog />
+      <Show when={ui.cleanupRoot()} keyed>
+        {(root) => <Cleanup root={root} />}
+      </Show>
+      <Show when={ui.actionsEditorOpen()}>
+        <ActionsEditor />
+      </Show>
+      <Show when={ui.tagPaths()} keyed>
+        {(paths) => <TagsDialog paths={paths} />}
+      </Show>
+      <Show when={ui.taggedView()} keyed>
+        {(tag) => <TaggedList tag={tag} />}
+      </Show>
+      <Show when={ui.duplicatesRoot()} keyed>
+        {(root) => <Duplicates root={root} />}
+      </Show>
+      <Show when={ui.recycleBinOpen()}>
+        <RecycleBin />
+      </Show>
+      <Show when={ui.diskSpaceRoot()} keyed>
+        {(root) => <DiskSpaceModal root={root} />}
+      </Show>
+      <Show when={ui.propertiesPaths()} keyed>
+        {(paths) => <PropertiesDialog paths={paths} />}
+      </Show>
+      <Show when={ui.conflictPrompt()} keyed>
+        {(p) => <ConflictDialog prompt={p} />}
+      </Show>
       {/* Keyed on the mode so switching Ctrl+P / Ctrl+Shift+P restarts the input. */}
       <Show when={ui.palette()} keyed>
         {(_mode) => <Palette />}
       </Show>
-      <Show when={ui.shortcutsOpen()}>
-        <Shortcuts />
-      </Show>
       <Show when={ui.settingsOpen()}>
-        <SettingsDialog />
+        <SettingsModal />
       </Show>
       <Show when={ui.prompt()} keyed>
-        {(p) => <PromptDialog title={p.title} label={p.label} onSubmit={p.onSubmit} />}
+        {(p) => <PromptDialog title={p.title} label={p.label} initial={p.initial} submitLabel={p.submitLabel} onSubmit={p.onSubmit} />}
       </Show>
       <Show when={ui.batchRenameOpen()}>
         <BatchRename />
@@ -40,7 +72,29 @@ export function Overlays() {
         {(paths) => <LockHunter paths={paths} />}
       </Show>
       <div class="toasts" role="status" aria-live="polite">
-        <For each={ui.toasts()}>{(t) => <div class="toast">{t.text}</div>}</For>
+        <For each={ui.toasts()}>
+          {(t) => (
+            <div class="toast">
+              <span>{t.text}</span>
+              <Show when={t.action}>
+                {(a) => (
+                  <button
+                    class="btn small toast-action"
+                    onClick={() => {
+                      ui.dismissToast(t.key);
+                      a().onClick();
+                    }}
+                  >
+                    <span>{a().label}</span>
+                    <Show when={a().shortcut}>
+                      <kbd>{a().shortcut}</kbd>
+                    </Show>
+                  </button>
+                )}
+              </Show>
+            </div>
+          )}
+        </For>
       </div>
     </>
   );
@@ -48,10 +102,22 @@ export function Overlays() {
 
 function OpsTray() {
   return (
-    <div class="ops-tray">
+    <div class="ops-tray" role="region" aria-label="File operations">
       <For each={ops.list()}>{(o) => <OpCard op={o} />}</For>
+      {/* Screen readers hear when a job starts and ends, not every progress tick. */}
+      <div class="sr-only" role="status" aria-live="polite">
+        <Index each={ops.list()}>{(o) => <p>{`${o().label}: ${spokenState(o())}`}</p>}</Index>
+      </div>
     </div>
   );
+}
+
+function spokenState(o: OpView): string {
+  if (o.state === "queued") return "waiting";
+  if (o.state === "paused") return "paused";
+  if (o.state !== "finished") return "started";
+  if (o.cancelled) return "cancelled";
+  return o.errors.length ? `finished with ${o.errors.length} problems` : "done";
 }
 
 function OpCard(props: { op: OpView }) {
@@ -96,7 +162,7 @@ function OpCard(props: { op: OpView }) {
           </button>
         </Show>
       </div>
-      <div class="progress" role="progressbar" aria-valuenow={Math.round(fraction() * 100)} aria-valuemin={0} aria-valuemax={100}>
+      <div class="progress" role="progressbar" aria-label={o().label} aria-valuenow={Math.round(fraction() * 100)} aria-valuemin={0} aria-valuemax={100}>
         <span style={{ width: `${(finished() && !o().cancelled ? 1 : fraction()) * 100}%` }} />
       </div>
       <div class="op-sub">
@@ -181,7 +247,10 @@ function ContextMenu(props: { menu: MenuState }) {
               onMouseEnter={() => setHot(i())}
               onClick={() => run(it)}
             >
-              <span>{it.label}</span>
+              <span class="menu-label">{it.label}</span>
+              <Show when={it.shortcut}>
+                <kbd>{it.shortcut}</kbd>
+              </Show>
               <span
                 class="menu-pin"
                 classList={{ on: pinned().has(it.label) }}
@@ -192,11 +261,8 @@ function ContextMenu(props: { menu: MenuState }) {
                   settings.togglePinned(it.label);
                 }}
               >
-                ★
+                <IconStarFill size={14} />
               </span>
-              <Show when={it.shortcut}>
-                <kbd>{it.shortcut}</kbd>
-              </Show>
             </button>
           )
         }

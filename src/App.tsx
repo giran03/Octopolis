@@ -1,16 +1,29 @@
-import { createEffect, onCleanup, onMount, Show } from "solid-js";
-import { Shelf } from "./components/Extras";
-import { Inspector } from "./components/Inspector";
+import { createEffect, lazy, onCleanup, onMount, Show } from "solid-js";
+import { Shelf } from "./components/Shelf";
+import { inspector } from "./state/inspector";
 import { Overlays } from "./components/Overlays";
 import { PaneTree } from "./components/PaneTree";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
-import { TerminalPanel } from "./components/Terminal";
-import { knownFolders } from "./lib/ipc";
+import { TitleBar } from "./components/TitleBar";
+import { TooltipLayer } from "./components/Tooltip";
+import { errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, startupPaths, type KnownFolder } from "./lib/ipc";
+import { classifyTarget } from "./lib/launch";
+import { samePath } from "./lib/paths";
+import { parsePreset } from "./lib/session";
 import { BUILT_IN_THEMES, DENSITIES, THEME_TOKENS } from "./lib/themes";
-import { onKeyDown } from "./keys";
-import { settings } from "./state/settings";
+import { onKeyDown, onMouseNav } from "./keys";
+import { loadJson, saveJson, settings } from "./state/settings";
+import { ops } from "./state/ops";
+import { sidebar } from "./state/sidebar";
+import { startVideoThumbPrefetch } from "./state/thumbs";
+import { ui } from "./state/ui";
+import { updater } from "./state/updater";
 import { workspace } from "./state/workspace";
+
+// Loaded on first use, so startup only parses what the first window needs.
+const Inspector = lazy(() => import("./components/Inspector").then((m) => ({ default: m.Inspector })));
+const TerminalPanel = lazy(() => import("./components/Terminal").then((m) => ({ default: m.TerminalPanel })));
 
 /** Applies the chosen theme, accent, text size and density to the page. */
 function applyTheme() {
@@ -27,24 +40,120 @@ function applyTheme() {
     root.style.removeProperty("color-scheme");
   }
   if (settings.accent()) root.style.setProperty("--accent", settings.accent()!);
+  root.dataset.density = settings.density();
+  root.classList.toggle("sidebar-names-only", settings.density() === "compact" || settings.sidebarNamesOnly());
   root.style.setProperty("--row", `${DENSITIES[settings.density()]}px`);
+  // The whole chrome (sidebar, tabs, toolbar, menus, status bar) follows the density, relative to "normal".
+  const scale = DENSITIES[settings.density()] / DENSITIES.normal;
+  root.style.setProperty("--d", String(scale));
+  root.style.setProperty("--ds", String(1 + (scale - 1) * 0.5));
   document.body.style.zoom = String(settings.uiScale() / 100);
+}
+
+const LAST_PATH_KEY = "octopolis.lastpath.v1";
+const SESSION_KEY = "octopolis.session.v1";
+
+/** Marks the page for reduced motion, from the user's choice or Windows' setting. */
+function applyMotion() {
+  const pref = settings.motion();
+  const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const apply = () => document.documentElement.classList.toggle("reduce-motion", pref === "reduce" || (pref === "system" && query.matches));
+  apply();
+  query.addEventListener("change", apply);
+  onCleanup(() => query.removeEventListener("change", apply));
+}
+
+let knownFolderPaths: readonly KnownFolder[] = [];
+let startFolder = "C:\\";
+
+/** Opens folders and files passed on the command line, each in a tab of its own. */
+async function openLaunchTargets(args: readonly string[]) {
+  for (const arg of args) {
+    const target = classifyTarget(arg);
+    if (target.kind === "explorer") {
+      openInExplorer(target.arg).catch((e) => ui.toast(errorText(e)));
+      continue;
+    }
+    const raw = target.kind === "path" ? target.path : target.id === "start" ? startFolder : knownFolderPaths.find((f) => f.id === target.id)?.path;
+    if (!raw) continue;
+    try {
+      const r = await resolvePath(raw);
+      const current = workspace.activeTab();
+      // Already showing that folder (e.g. Win+E on a fresh start): just select the item, if any.
+      if (current && samePath(current.path(), r.dir)) {
+        if (r.select) void current.navigate(r.dir, [r.select]);
+        continue;
+      }
+      workspace.newTab(workspace.activePaneId(), r.dir);
+      if (r.select) void workspace.activeTab()?.navigate(r.dir, [r.select]);
+    } catch (e) {
+      ui.toast(`Couldn't open ${raw}: ${errorText(e)}`);
+    }
+  }
 }
 
 export function App() {
   createEffect(applyTheme);
+  createEffect(applyMotion);
+  startVideoThumbPrefetch();
+  // Remember where the user was, for the "Where I left off" start option.
+  createEffect(() => {
+    const path = workspace.activeTab()?.path();
+    if (path) saveJson(LAST_PATH_KEY, path);
+  });
+  // ...and every pane and tab, so "Where I left off" brings the whole session back.
+  createEffect(() => {
+    if (workspace.activePaneId() === "none") return;
+    saveJson(SESSION_KEY, workspace.snapshotLayout());
+  });
+
+  // Startup budget: log when the first folder's rows are on screen.
+  let markedFirstRows = false;
+  createEffect(() => {
+    const s = workspace.activeTab()?.status();
+    if (markedFirstRows || !s || s.loading || s.elapsedMs === null) return;
+    markedFirstRows = true;
+    requestAnimationFrame(() => void startupMark("first rows").catch(() => undefined));
+  });
 
   onMount(async () => {
     window.addEventListener("keydown", onKeyDown);
     onCleanup(() => window.removeEventListener("keydown", onKeyDown));
-    const home = await knownFolders()
-      .then((f) => f.find((x) => x.id === "home")?.path)
-      .catch(() => undefined);
-    workspace.init(home ?? "C:\\");
+    // Files copied in Explorer or another app enable Paste here.
+    const onFocus = () => void ops.checkExternalClipboard();
+    window.addEventListener("focus", onFocus);
+    onCleanup(() => window.removeEventListener("focus", onFocus));
+    onFocus();
+    for (const type of ["mousedown", "mouseup"] as const) {
+      window.addEventListener(type, onMouseNav);
+      onCleanup(() => window.removeEventListener(type, onMouseNav));
+    }
+    // Later launches (a folder opened from the desktop, `octopolis D:\x`) arrive here as new tabs.
+    const unlisten = import("@tauri-apps/api/event")
+      .then(({ listen }) => listen<string[]>(OPEN_PATHS_EVENT, (e) => void openLaunchTargets(e.payload)))
+      .catch(() => null);
+    onCleanup(() => void unlisten.then((off) => off?.()));
+
+    const folders = await knownFolders().catch(() => [] as KnownFolder[]);
+    knownFolderPaths = folders;
+    const home = folders.find((x) => x.id === "home")?.path;
+    const choice = settings.startFolder();
+    const session = choice === "last" ? parsePreset(loadJson<unknown>(SESSION_KEY, null)) : null;
+    if (!session || !workspace.restoreLayout(session)) {
+      const start = choice === "custom" ? settings.startPath() : choice === "last" ? loadJson<string>(LAST_PATH_KEY, "") : "";
+      startFolder = start || home || "C:\\";
+      workspace.init(startFolder);
+    } else startFolder = home || "C:\\";
+    await openLaunchTargets(await startupPaths().catch(() => []));
+    updater.start();
   });
+  // Tray mode lives in the backend, which decides what closing the window does.
+  createEffect(() => void setKeepInTray(settings.keepInTray()).catch(() => undefined));
+  createEffect(() => void setSummon(settings.summonKey()).catch(() => undefined));
 
   return (
-    <div class="app" classList={{ "no-sidebar": !settings.sidebarOpen() }}>
+    <div class="app" classList={{ "no-sidebar": !settings.sidebarOpen() }} style={{ "--sidebar-w": `${sidebar.width()}px` }}>
+      <TitleBar />
       <Show when={settings.sidebarOpen()}>
         <Sidebar />
       </Show>
@@ -59,13 +168,14 @@ export function App() {
             <TerminalPanel />
           </Show>
         </div>
-        <Show when={settings.inspectorOpen()}>
+        <Show when={settings.inspectorOpen() || inspector.quickLook()}>
           <Inspector />
         </Show>
       </main>
       <StatusBar />
       <Shelf />
       <Overlays />
+      <TooltipLayer />
     </div>
   );
 }

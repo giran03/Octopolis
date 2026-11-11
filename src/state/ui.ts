@@ -1,5 +1,8 @@
 // Transient UI: context menu, confirmation dialog and toasts.
 import { createRoot, createSignal } from "solid-js";
+import type { NameConflict, Resolution } from "../lib/conflicts";
+
+export type SettingsTab = "general" | "appearance" | "shortcuts" | "advanced" | "updates" | "about";
 
 export interface MenuItem {
   readonly label: string;
@@ -27,12 +30,32 @@ export interface ConfirmState {
 export interface PromptState {
   readonly title: string;
   readonly label: string;
+  /** Text the field starts with (selected, so typing replaces it). */
+  readonly initial?: string;
+  readonly submitLabel?: string;
   readonly onSubmit: (value: string) => void;
+}
+
+/** A copy or move waiting for the user to decide about names already taken. */
+export interface ConflictPrompt {
+  readonly kind: "copy" | "move";
+  readonly dest: string;
+  readonly conflicts: readonly NameConflict[];
+  readonly total: number;
+  /** Per-item choices keyed by lower-case source path, plus the choice for the rest; null choices means cancelled. */
+  readonly onResolve: (choices: ReadonlyMap<string, Resolution> | null, fallback: Resolution) => void;
+}
+
+export interface ToastAction {
+  readonly label: string;
+  readonly shortcut?: string;
+  readonly onClick: () => void;
 }
 
 export interface Toast {
   readonly key: number;
   readonly text: string;
+  readonly action?: ToastAction;
 }
 
 /** Asks a pane to focus its path bar or its filter box. */
@@ -45,6 +68,7 @@ export interface FocusRequest {
 const TOAST_MS = 4000;
 let focusNonce = 1;
 let toastKey = 1;
+let lastSettingsTab: SettingsTab = "general";
 
 export const ui = createRoot(() => {
   const [menu, setMenu] = createSignal<MenuState | null>(null);
@@ -52,18 +76,33 @@ export const ui = createRoot(() => {
   const [toasts, setToasts] = createSignal<readonly Toast[]>([]);
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
   const [palette, setPalette] = createSignal<"go" | "commands" | null>(null);
-  const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   const [lockPaths, setLockPaths] = createSignal<readonly string[] | null>(null);
   const [batchRenameOpen, setBatchRenameOpen] = createSignal(false);
-  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [settingsTab, setSettingsTab] = createSignal<SettingsTab | null>(null);
   const [prompt, setPrompt] = createSignal<PromptState | null>(null);
+  const [conflictPrompt, setConflictPrompt] = createSignal<ConflictPrompt | null>(null);
+  const [propertiesPaths, setPropertiesPaths] = createSignal<readonly string[] | null>(null);
+  const [recycleBinOpen, setRecycleBinOpen] = createSignal(false);
+  /** The folder the duplicate finder is looking in, while it is open. */
+  const [duplicatesRoot, setDuplicatesRoot] = createSignal<string | null>(null);
+  /** Items whose tags are being edited. */
+  const [tagPaths, setTagPaths] = createSignal<readonly string[] | null>(null);
+  /** The tag whose items are listed. */
+  const [taggedView, setTaggedView] = createSignal<string | null>(null);
+  const [actionsEditorOpen, setActionsEditorOpen] = createSignal(false);
+  /** The folder the cleanup assistant is looking at, while it is open. */
+  const [cleanupRoot, setCleanupRoot] = createSignal<string | null>(null);
+  const [diskSpaceRoot, setDiskSpaceRoot] = createSignal<string | null>(null);
   /** Vim visual mode: movement extends the selection. */
   const [visual, setVisual] = createSignal(false);
 
-  const toast = (text: string) => {
+  const dismissToast = (key: number) => setToasts((t) => t.filter((x) => x.key !== key));
+
+  const toast = (text: string, action?: ToastAction, durationMs = TOAST_MS) => {
     const key = toastKey++;
-    setToasts((t) => [...t, { key, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.key !== key)), TOAST_MS);
+    setToasts((t) => [...t, { key, text, action }]);
+    setTimeout(() => dismissToast(key), durationMs);
+    return key;
   };
 
   return {
@@ -75,24 +114,50 @@ export const ui = createRoot(() => {
     closeConfirm: () => setConfirm(null),
     toasts,
     toast,
+    dismissToast,
     palette,
     openPalette: (mode: "go" | "commands") => setPalette(mode),
     closePalette: () => setPalette(null),
-    shortcutsOpen,
-    setShortcutsOpen,
     lockPaths,
     setLockPaths,
     batchRenameOpen,
     setBatchRenameOpen,
-    settingsOpen,
-    setSettingsOpen,
+    settingsTab,
+    settingsOpen: () => settingsTab() !== null,
+    /** Opens settings on `tab`, or on the tab that was open last. */
+    openSettings: (tab?: SettingsTab) => setSettingsTab(tab ?? lastSettingsTab),
+    closeSettings: () => setSettingsTab(null),
+    setSettingsTab: (tab: SettingsTab) => {
+      lastSettingsTab = tab;
+      setSettingsTab(tab);
+    },
     prompt,
+    conflictPrompt,
+    propertiesPaths,
+    setPropertiesPaths,
+    recycleBinOpen,
+    setRecycleBinOpen,
+    duplicatesRoot,
+    setDuplicatesRoot,
+    tagPaths,
+    setTagPaths,
+    taggedView,
+    setTaggedView,
+    actionsEditorOpen,
+    setActionsEditorOpen,
+    cleanupRoot,
+    setCleanupRoot,
+    diskSpaceRoot,
+    openDiskSpace: (root: string) => setDiskSpaceRoot(root),
+    closeDiskSpace: () => setDiskSpaceRoot(null),
+    askConflicts: (p: ConflictPrompt) => setConflictPrompt(p),
+    closeConflicts: () => setConflictPrompt(null),
     askText: (p: PromptState) => setPrompt(p),
     closePrompt: () => setPrompt(null),
     visual,
     setVisual,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || shortcutsOpen() || lockPaths() || batchRenameOpen() || settingsOpen() || prompt()),
+    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

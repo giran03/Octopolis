@@ -1,0 +1,295 @@
+/*
+ * Octopolis motion layer, ported from the CafeTako editor (Operate-mode rules): motion explains state,
+ * continuity or feedback and nothing else. Routine changes 120-260ms, exits faster than entrances, no
+ * page-load choreography. Loaded after styles.css so it refines the base rules; the reduced-motion block
+ * at the bottom keeps 80ms colour feedback and drops every movement.
+ */
+:root {
+  --m-fast: 120ms;
+  --m-base: 180ms;
+  --m-exit: 100ms;
+  --m-slide: 280ms;
+  --m-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --m-in: cubic-bezier(0.4, 0, 1, 1);
+  /* snappy spring: crisp, ~3% overshoot */
+  --m-spring: linear(0, 0.03 3.13%, 0.1 6.25%, 0.3 12.5%, 0.51 18.75%, 0.7 25%, 0.84 31.25%, 0.93 37.5%, 0.99 43.75%, 1.02 50%, 1.03 62.5%, 1.02 75%, 1);
+  /* critically damped, no overshoot */
+  --m-smooth: linear(0, 0.03 3.13%, 0.11 6.25%, 0.32 12.5%, 0.52 18.75%, 0.67 25%, 0.78 31.25%, 0.86 37.5%, 0.94 50%, 0.98 62.5%, 0.99 75%, 1);
+  /* the one authored moment */
+  --m-overshoot: linear(0, 0.02 1.56%, 0.07 3.13%, 0.23 6.25%, 0.65 12.5%, 0.83 15.63%, 0.97 18.75%, 1.07 21.88%, 1.13 25%, 1.15 28.13%, 1.14 31.25%, 1.09 37.5%, 0.99 50%, 0.98 62.5%, 1 75%, 1);
+}
+
+/* ---------- feedback: hover/focus colour and press ---------- */
+.btn,
+.icon-btn,
+.tb-btn,
+.tb-pill,
+.wc,
+.side-item,
+.tab,
+.tab-close,
+.crumb,
+.scope-btn,
+.col-head,
+.menu-item,
+.palette-row,
+.miller-row,
+.grid-cell,
+.row,
+.tile,
+.pathbar,
+.search,
+.text-input {
+  transition:
+    background-color var(--m-fast) ease-out,
+    border-color var(--m-fast) ease-out,
+    color var(--m-fast) ease-out,
+    box-shadow var(--m-fast) ease-out,
+    opacity var(--m-fast) ease-out;
+}
+
+.btn,
+.icon-btn,
+.tb-btn,
+.tb-pill {
+  transition:
+    background-color var(--m-fast) ease-out,
+    border-color var(--m-fast) ease-out,
+    color var(--m-fast) ease-out,
+    filter var(--m-fast) ease-out,
+    opacity var(--m-fast) ease-out,
+    transform var(--m-slide) var(--m-spring);
+}
+
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.tb-btn:active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: 50ms, 50ms, 50ms, 50ms, 50ms, 60ms;
+  transition-timing-function: ease-out;
+}
+
+.tb-pill:active {
+  transform: scale(0.985);
+  transition-duration: 50ms, 50ms, 50ms, 50ms, 50ms, 60ms;
+}
+
+/* ---------- overlays: enter from where they were opened ---------- */
+@keyframes m-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes m-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+@keyframes m-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes m-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes m-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+@keyframes m-settle-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.menu,
+.path-suggest,
+.search-error {
+  transform-origin: top left;
+  animation: m-pop-in var(--m-base) var(--m-out);
+}
+.palette,
+.dialog {
+  animation: m-modal-in var(--m-base) var(--m-out);
+}
+.scrim {
+  animation: m-fade-in var(--m-base) ease-out;
+}
+.toast,
+.op-card {
+  animation: m-rise-in var(--m-base) var(--m-out);
+}
+.inspector {
+  animation: m-slide-in var(--m-slide) var(--m-out);
+}
+.terminal {
+  animation: m-rise-in var(--m-slide) var(--m-out);
+}
+.inspector-body > * {
+  animation: m-settle-in var(--m-base) var(--m-out);
+}
+
+/* ---------- state: the one authored moment is a git badge landing in place ---------- */
+@keyframes m-settle {
+  from {
+    transform: scale(0.4);
+  }
+}
+.git {
+  animation: m-settle 420ms var(--m-overshoot);
+}
+
+/* ---------- loading: skeleton rows, not words in the middle of nothing ---------- */
+@keyframes m-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.skel {
+  position: absolute;
+  inset: 4px 8px auto;
+  display: grid;
+  pointer-events: none;
+}
+.skel-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, var(--w, 40%)) 1fr;
+  align-items: center;
+  gap: 10px;
+  height: var(--row);
+  padding: 0 16px;
+}
+.skel-row > span {
+  position: relative;
+  overflow: hidden;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+.skel-row > span:first-child {
+  height: 14px;
+  width: 16px;
+}
+.skel-row > span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--surface-3), transparent);
+  animation: m-sheen 1.4s ease-in-out infinite;
+}
+
+/* ---------- bars ease to their value ---------- */
+.usage > span {
+  transition: width var(--m-slide) var(--m-out);
+}
+.progress > span {
+  transition: width 160ms var(--m-out);
+}
+.size-bar {
+  transform-origin: right;
+  animation: m-grow var(--m-slide) var(--m-out);
+}
+@keyframes m-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ---------- tooltip (transitions.dev "Tooltip open/close") ---------- */
+:root {
+  --tt-in-dur: 150ms;
+  --tt-out-dur: 50ms;
+  --tt-scale: 0.98;
+  --tt-delay: 80ms;
+  --tt-move-dur: 160ms;
+  --tt-move-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.t-tt {
+  position: fixed;
+  z-index: 10000;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  max-width: min(260px, calc(100vw - 16px));
+  overflow: hidden;
+  translate: var(--tt-x, 0px) var(--tt-y, 0px);
+  scale: var(--tt-scale);
+  transform-origin: 50% 100%;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 6px rgb(0 0 0 / 0.18), 0 8px 24px rgb(0 0 0 / 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--tt-out-dur) ease-out,
+    scale var(--tt-out-dur) ease-out,
+    translate var(--tt-move-dur) var(--tt-move-ease),
+    width var(--tt-move-dur) var(--tt-move-ease);
+}
+.t-tt[data-show="true"] {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity var(--tt-in-dur) ease-out var(--tt-delay),
+    scale var(--tt-in-dur) ease-out var(--tt-delay),
+    translate var(--tt-move-dur) var(--tt-move-ease),
+    width var(--tt-move-dur) var(--tt-move-ease);
+}
+.t-tt,
+.t-tt * {
+  pointer-events: none !important;
+}
+.t-tt-text {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: start;
+}
+
+/* ---------- reduced motion: keep quick colour feedback, drop movement ---------- */
+/* Applied by the root class set in App.tsx (the Animations setting, or Windows when it is on "Follow Windows"). */
+:root.reduce-motion .menu,
+:root.reduce-motion .path-suggest,
+:root.reduce-motion .search-error,
+:root.reduce-motion .palette,
+:root.reduce-motion .dialog,
+:root.reduce-motion .scrim,
+:root.reduce-motion .toast,
+:root.reduce-motion .op-card,
+:root.reduce-motion .inspector,
+:root.reduce-motion .terminal,
+:root.reduce-motion .inspector-body > *,
+:root.reduce-motion .git,
+:root.reduce-motion .size-bar,
+:root.reduce-motion .skel-row > span::after {
+  animation: none !important;
+}
+:root.reduce-motion .btn,
+:root.reduce-motion .icon-btn,
+:root.reduce-motion .tb-btn,
+:root.reduce-motion .tb-pill {
+  transition: background-color 80ms ease-out, border-color 80ms ease-out, color 80ms ease-out !important;
+}
+:root.reduce-motion .t-tt {
+  transition: none !important;
+}

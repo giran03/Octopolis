@@ -5,7 +5,10 @@
 //! single items are collected and the operation carries on, so one locked file
 //! never aborts a whole transfer.
 
+mod conflicts;
+mod links;
 mod paths;
+mod recycle;
 mod remove;
 mod simple;
 mod transfer;
@@ -15,9 +18,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+pub use conflicts::{find_conflicts, NameConflict, Side};
+pub use links::{create_link, is_junction, LinkKind};
 pub use paths::is_within;
+pub use recycle::{empty_bin, list_bin, purge_from_bin, restore_from_bin, BinItem};
 pub use remove::restore_recycled;
-pub use simple::{batch_rename, create_folder, remove_empty_dir, rename};
+pub use simple::{batch_rename, create_file, create_folder, remove_empty_dir, rename};
 
 #[derive(Debug, Clone)]
 pub enum Operation {

@@ -53,3 +53,11 @@ export function topVisits(db: FrecencyDb, now: number, limit = 200): { path: str
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }
+
+/** Most recently visited folders first, regardless of how often they were visited. */
+export function recentVisits(db: FrecencyDb, limit = 8): { path: string; last: number }[] {
+  return Object.entries(db)
+    .map(([k, v]) => ({ path: pathOf(k, v), last: v.last }))
+    .sort((a, b) => b.last - a.last)
+    .slice(0, limit);
+}

@@ -97,9 +97,15 @@ export type OpRequest =
   | { kind: "move"; sources: string[]; dest: string }
   | { kind: "delete"; paths: string[]; permanent: boolean }
   | { kind: "relocate"; pairs: [string, string][] }
-  | { kind: "extract"; archive: string; items: string[]; dest: string };
+  | { kind: "extract"; archive: string; items: string[]; dest: string }
+  | { kind: "compress"; sources: string[]; dest: string; name: string; format: ArchiveFormat };
+
+export type ArchiveFormat = "zip" | "sevenZ" | "tarGz";
 
 export type ConflictChoice = "keepBoth" | "overwrite" | "skip";
+
+/** Items a copy or move of `sources` into `dest` would collide with. */
+export const transferConflicts = (sources: string[], dest: string) => invoke<import("./conflicts").NameConflict[]>("transfer_conflicts", { sources, dest });
 
 export interface OpOptions {
   conflict: ConflictChoice;
@@ -130,10 +136,10 @@ export interface CommitInfo {
 export const gitLastCommits = (dir: string) => invoke<Record<string, CommitInfo>>("git_last_commits", { dir });
 export const nativeMenu = (paths: string[]) => invoke<void>("native_menu", { paths });
 
-export function termStart(cwd: string, cols: number, rows: number, onData: (buf: ArrayBuffer) => void): Promise<number> {
+export function termStart(cwd: string, cols: number, rows: number, onData: (buf: ArrayBuffer) => void, shell?: string): Promise<number> {
   const channel = new Channel<ArrayBuffer>();
   channel.onmessage = onData;
-  return invoke<number>("term_start", { cwd, cols, rows, onData: channel });
+  return invoke<number>("term_start", { cwd, cols, rows, onData: channel, shell });
 }
 export const termWrite = (id: number, data: string) => invoke<void>("term_write", { id, data });
 export const termResize = (id: number, cols: number, rows: number) => invoke<void>("term_resize", { id, cols, rows });
@@ -146,7 +152,7 @@ export const restoreRecycled = (paths: string[]) => invoke<number>("restore_recy
 export const removeEmptyDir = (path: string) => invoke<void>("remove_empty_dir", { path });
 
 export interface Preview {
-  kind: "code" | "markdown" | "text" | "image" | "svg" | "pdf" | "audio" | "video" | "model" | "archive" | "binary";
+  kind: "code" | "markdown" | "text" | "image" | "svg" | "pdf" | "audio" | "video" | "model" | "archive" | "binary" | "font" | "table";
   lang: string | null;
   size: number;
   text: string | null;
@@ -156,9 +162,23 @@ export interface Preview {
   truncated: boolean;
   entries: number | null;
   tags: Record<string, string>;
+  details: [string, string][];
 }
 
 export const previewFile = (path: string) => invoke<Preview>("preview_file", { path });
+/** Opens a file in `editor`, or the file type's editor (Notepad if it has none). Never runs the file. */
+export const openInEditor = (path: string, editor: string | null) => invoke<void>("open_in_editor", { path, editor });
+/** Adds a line to the local diagnostics log (paths are removed before writing). */
+export const diagLog = (level: "info" | "warn" | "error", message: string) => invoke<void>("diag_log", { level, message });
+/** Logs how long after process start a startup stage was reached; returns those ms. */
+export const startupMark = (stage: string) => invoke<number>("startup_mark", { stage, pageMs: performance.now() });
+export const openLogFolder = () => invoke<void>("open_log_folder");
+/** Keeps Windows from sleeping while transfers run. */
+export const setKeepAwake = (on: boolean) => invoke<void>("set_keep_awake", { on });
+/** Shows a Windows notification. */
+export const notify = (title: string, body: string) => invoke<void>("notify", { title, body });
+/** Opens Windows' font installer for a font file. */
+export const installFont = (path: string) => invoke<void>("install_font", { path });
 export const readBytes = (path: string) => invoke<ArrayBuffer>("read_bytes", { path });
 export const thumbnail = (path: string, size: number, iconOnly: boolean) => invoke<ArrayBuffer>("thumbnail", { path, size, iconOnly });
 export const extractAndOpen = (path: string) => invoke<void>("extract_and_open", { path });
@@ -176,6 +196,33 @@ export interface FolderSizeInfo {
   name: string;
   bytes: number;
   files: number;
+  /** A remembered number that is being checked again. */
+  stale: boolean;
+}
+
+export interface SpaceNode {
+  readonly name: string;
+  readonly path: string;
+  readonly bytes: number;
+  readonly files: number;
+  readonly cached: boolean;
+  readonly children: readonly SpaceNode[];
+}
+
+export interface SpaceTree {
+  readonly root: SpaceNode;
+  readonly scanning: boolean;
+  readonly scanned: number;
+  readonly total: number;
+}
+
+export const cachedFolderSizes = (dir: string) => invoke<FolderSizeInfo[]>("cached_folder_sizes", { dir });
+export const diskSpaceTree = (root: string) => invoke<SpaceTree>("disk_space_tree", { root });
+export const cancelDiskSpace = () => invoke<void>("cancel_disk_space");
+export function scanDiskSpace(root: string, onUpdate: (tree: SpaceTree) => void): Promise<void> {
+  const channel = new Channel<SpaceTree>();
+  channel.onmessage = onUpdate;
+  return invoke<void>("scan_disk_space", { root, onUpdate: channel });
 }
 
 export function folderSizes(tabId: string, dir: string, onSize: (s: FolderSizeInfo) => void): Promise<void> {
@@ -185,8 +232,82 @@ export function folderSizes(tabId: string, dir: string, onSize: (s: FolderSizeIn
 }
 export const renameItem = (path: string, newName: string) => invoke<string>("rename_item", { path, newName });
 export const createFolder = (parent: string, name: string) => invoke<string>("create_folder", { parent, name });
+/** Creates a file, numbering the name if taken; `template` names a file in the templates folder. */
+export const createFile = (parent: string, name: string, template?: string) => invoke<string>("create_file", { parent, name, template: template ?? null });
+export interface BinItem {
+  readonly id: string;
+  readonly name: string;
+  readonly originalPath: string;
+  readonly deletedMs: number;
+  readonly size: number | null;
+  readonly isDir: boolean;
+}
+export const recycleBinList = () => invoke<BinItem[]>("recycle_bin_list");
+export const recycleBinRestore = (ids: string[]) => invoke<number>("recycle_bin_restore", { ids });
+export const recycleBinPurge = (ids: string[]) => invoke<number>("recycle_bin_purge", { ids });
+export const recycleBinEmpty = () => invoke<number>("recycle_bin_empty");
+export type LinkKind = "symbolic" | "junction" | "hard";
+/** Creates links to `targets` in `dest`; resolves with the links made and the errors. */
+export const createLinks = (kind: LinkKind, targets: string[], dest: string) => invoke<[string[], string[]]>("create_links", { kind, targets, dest });
+/** File names in the user's templates folder. */
+export const listTemplates = () => invoke<string[]>("list_templates");
+/** The templates folder's path (created if missing). */
+export const templatesFolder = () => invoke<string>("templates_folder");
+import type { LatestRelease } from "./update";
+
+/** Opens an https: or mailto: link in the user's default app. */
+export const openExternal = (url: string) => invoke<void>("open_path", { path: url });
+
+export const updateCheck = (repo: string) => invoke<LatestRelease>("update_check", { repo });
+export const updateDownload = (url: string, name: string, sha256: string) => invoke<string>("update_download", { url, name, sha256 });
+export const updateInstall = (path: string, sha256: string) => invoke<void>("update_install", { path, sha256 });
+export const openDataFolder = () => invoke<void>("open_data_folder");
+export const debugInfo = () => invoke<string>("debug_info");
+
+export interface CacheItem {
+  readonly id: "sizes" | "updates" | "search";
+  readonly label: string;
+  readonly detail: string;
+  readonly bytes: number;
+  readonly count: number;
+  readonly kind: "disk" | "memory";
+}
+
+export interface CacheInfo {
+  readonly dir: string;
+  readonly defaultDir: string;
+  readonly isCustom: boolean;
+  readonly totalDiskBytes: number;
+  readonly items: readonly CacheItem[];
+}
+
+export const cacheInfo = () => invoke<CacheInfo>("cache_info");
+export const openCacheFolder = () => invoke<void>("open_cache_folder");
+export const pickCacheFolder = () => invoke<string | null>("pick_cache_folder");
+export const setCacheDir = (path: string | null) => invoke<CacheInfo>("set_cache_dir", { path });
+export const clearCache = (scope: "sizes" | "updates" | "search" | "all") => invoke<CacheInfo>("clear_cache", { scope });
+
 export const openPath = (path: string) => invoke<void>("open_path", { path });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
+/** Windows' "Open with" dialog for a file. */
+export const openWith = (path: string) => invoke<void>("open_with", { path });
+/** Starts a program or script with administrator rights; Windows asks the user first. */
+export const runAsAdmin = (path: string) => invoke<void>("run_as_admin", { path });
+export interface ClipFiles {
+  readonly paths: string[];
+  readonly cut: boolean;
+  /** Windows' clipboard sequence number when read. */
+  readonly sequence: number;
+}
+/** Puts files on the Windows clipboard (Explorer can paste them); resolves with the new sequence number. */
+export const clipboardWriteFiles = (paths: string[], cut: boolean) => invoke<number>("clipboard_write_files", { paths, cut });
+/** Files on the Windows clipboard, from any app; empty `paths` when there are none. */
+export const clipboardReadFiles = () => invoke<ClipFiles>("clipboard_read_files");
+export const clipboardClear = () => invoke<void>("clipboard_clear");
+/** Saves a clipboard picture (PNG) or text as a new file in `dest`; null when there is neither. */
+export const pasteClipboardAsFile = (dest: string) => invoke<string | null>("paste_clipboard_as_file", { dest });
+/** Safely ejects a removable drive such as `E:\`. */
+export const ejectDrive = (root: string) => invoke<void>("eject_drive", { root });
 
 export interface Drive {
   root: string;
@@ -204,6 +325,106 @@ export interface KnownFolder {
   path: string;
 }
 export const knownFolders = () => invoke<KnownFolder[]>("known_folders");
+
+export interface FileAttributes {
+  readOnly: boolean;
+  hidden: boolean;
+  system: boolean;
+  archive: boolean;
+}
+export interface FileProperties {
+  readonly isDir: boolean;
+  readonly size: number;
+  readonly sizeOnDisk: number | null;
+  readonly createdMs: number;
+  readonly modifiedMs: number;
+  readonly accessedMs: number;
+  readonly attributes: FileAttributes;
+  readonly hardLinks: number;
+  /** Alternate data streams: [name, size]. */
+  readonly streams: [string, number][];
+  readonly linkTarget: string | null;
+}
+export type ChecksumKind = "blake3" | "sha256" | "md5";
+export const fileProperties = (path: string) => invoke<FileProperties>("file_properties", { path });
+export const setFileAttributes = (paths: string[], attributes: FileAttributes) => invoke<void>("set_file_attributes", { paths, attributes });
+export const setFileTimes = (path: string, times: { createdMs?: number; modifiedMs?: number; accessedMs?: number }) =>
+  invoke<void>("set_file_times", { path, createdMs: times.createdMs ?? null, modifiedMs: times.modifiedMs ?? null, accessedMs: times.accessedMs ?? null });
+export const fileChecksum = (path: string, kind: ChecksumKind) => invoke<string>("file_checksum", { path, kind });
+export interface DupeGroup {
+  readonly size: number;
+  /** [path, modified ms], newest first. */
+  readonly files: [string, number][];
+}
+/** Duplicate files under `root`; `onProgress(read, total)` bytes. Rejects with "cancelled" if stopped. */
+export function findDuplicates(id: string, root: string, minSize: number, onProgress: (read: number, total: number) => void): Promise<DupeGroup[]> {
+  const channel = new Channel<[number, number]>();
+  channel.onmessage = ([read, total]) => onProgress(read, total);
+  return invoke<DupeGroup[]>("find_duplicates", { id, root, minSize, onProgress: channel });
+}
+export const cancelScan = (id: string) => invoke<void>("cancel_scan", { id });
+/** [path, size, modified ms]. */
+export type CleanupItem = [string, number, number];
+export interface CleanupReport {
+  readonly totalBytes: number;
+  readonly largest: CleanupItem[];
+  readonly oldLarge: CleanupItem[];
+  readonly emptyDirs: CleanupItem[];
+  readonly junkDirs: CleanupItem[];
+  readonly tempFiles: CleanupItem[];
+}
+export const scanCleanup = (id: string, root: string) => invoke<CleanupReport>("scan_cleanup", { id, root });
+/** Tags of the items in a folder: [lower-case name, tags]. */
+export const tagsInDir = (dir: string) => invoke<[string, string[]][]>("tags_in_dir", { dir });
+export const setTag = (paths: string[], tag: string, on: boolean) => invoke<void>("set_tag", { paths, tag, on });
+/** Every tag with how many items carry it. */
+export const allTags = () => invoke<[string, number][]>("all_tags");
+/** Items carrying `tag` (items that no longer exist are dropped). */
+export const taggedPaths = (tag: string) => invoke<string[]>("tagged_paths", { tag });
+export type GitChange = "stage" | "unstage" | "discard";
+/** Stages, unstages, or discards uncommitted changes (uses the installed git). */
+export const gitChange = (paths: string[], action: GitChange) => invoke<void>("git_change", { paths, action });
+/** Unified diff of a file against the last commit. */
+export const gitDiff = (path: string) => invoke<string>("git_diff", { path });
+/** Lines in a file containing `text`: [line number, line]. */
+export const contentMatches = (path: string, text: string) => invoke<[number, string][]>("content_matches", { path, text });
+/** OneDrive: `keep` = always keep on this device; otherwise free up space. */
+export const setCloudPin = (paths: string[], keep: boolean) => invoke<void>("set_cloud_pin", { paths, keep });
+
+/** Paths Octopolis was started with (empty after the first call). */
+export const startupPaths = () => invoke<string[]>("startup_paths");
+/** Closing the window hides it to the notification area while on. */
+export const setKeepInTray = (on: boolean) => invoke<void>("set_keep_in_tray", { on });
+export const quitApp = () => invoke<void>("quit_app");
+export type SummonKey = "off" | "ctrlE" | "ctrlAltE";
+/** Sets the system-wide shortcut that brings Octopolis forward. */
+export const setSummon = (mode: SummonKey) => invoke<void>("set_summon", { mode });
+/** Runs a filled-in custom action command from `cwd`, hidden or in a new console. */
+export const runCustomAction = (command: string, cwd: string, console: boolean) => invoke<void>("run_custom_action", { command, cwd, console });
+/** Windows' Map Network Drive dialog. */
+export const mapNetworkDrive = () => invoke<void>("map_network_drive");
+export const disconnectNetworkDrive = (root: string, force = false) => invoke<void>("disconnect_network_drive", { root, force });
+/** Roots of installed WSL distros (under wsl.localhost); empty without WSL. */
+export const wslDistros = () => invoke<string[]>("wsl_distros");
+/** Opens a Windows shell location (Control Panel, `shell:` names) in File Explorer. */
+export const openInExplorer = (target: string) => invoke<void>("open_in_explorer", { target });
+export interface ExplorerMode {
+  /** Folder opens go to Octopolis. */
+  readonly folders: boolean;
+  readonly winE: boolean;
+  /** The entries point at this copy of Octopolis. */
+  readonly thisCopy: boolean;
+  readonly target: string | null;
+  /** The opt-in "Open in Octopolis" entry is in File Explorer's folder menu. */
+  readonly menu: boolean;
+}
+export const explorerModeStatus = () => invoke<ExplorerMode>("explorer_mode_status");
+/** Turns "Use Octopolis instead of File Explorer" on or off for this Windows account. */
+export const explorerModeSet = (on: boolean) => invoke<ExplorerMode>("explorer_mode_set", { on });
+/** Adds or removes "Open in Octopolis" in File Explorer's folder right-click menu. */
+export const explorerMenuSet = (on: boolean) => invoke<ExplorerMode>("explorer_menu_set", { on });
+/** Event sent when another launch asks this window to open paths. */
+export const OPEN_PATHS_EVENT = "octopolis://open-paths";
 
 export function watchDir(id: string, path: string, onChange: () => void): Promise<void> {
   const channel = new Channel<number>();

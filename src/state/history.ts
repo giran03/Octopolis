@@ -22,6 +22,11 @@ export const history = createRoot(() => {
       setDb((d) => forget(d, path));
       persist();
     },
+    db,
+    clear: () => {
+      setDb({});
+      persist();
+    },
     top: (limit?: number) => topVisits(db(), Date.now(), limit),
   };
 });

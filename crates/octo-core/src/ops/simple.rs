@@ -30,6 +30,30 @@ pub fn create_folder(parent: &Path, name: &str) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// Creates a file named `name` in `parent`, numbering it if taken. With a
+/// `template`, the new file starts as a copy of it; otherwise it is empty.
+/// Never overwrites: a name taken in a race is numbered again.
+pub fn create_file(parent: &Path, name: &str, template: Option<&Path>) -> Result<PathBuf> {
+    validate_name(name)?;
+    let content = match template {
+        Some(t) => fs::read(t).map_err(|e| Error::io(t, e))?,
+        None => Vec::new(),
+    };
+    for _ in 0..8 {
+        let target = unique_path(parent, name, false);
+        match fs::OpenOptions::new().write(true).create_new(true).open(&target) {
+            Ok(mut f) => {
+                use std::io::Write;
+                f.write_all(&content).map_err(|e| Error::io(&target, e))?;
+                return Ok(target);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(Error::io(&target, e)),
+        }
+    }
+    Err(Error::AlreadyExists(parent.join(name)))
+}
+
 /// Removes a folder only if it is empty (undo of "new folder").
 pub fn remove_empty_dir(path: &Path) -> Result<()> {
     fs::remove_dir(path).map_err(|e| Error::io(path, e))

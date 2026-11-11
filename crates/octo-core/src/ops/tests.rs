@@ -282,6 +282,114 @@ fn create_folder_numbers_duplicates() {
     assert_eq!(create_folder(tmp.path(), "New folder").unwrap(), tmp.path().join("New folder (2)"));
 }
 
+#[cfg(windows)]
+#[test]
+fn junctions_are_copied_as_links_not_followed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real");
+    fs::create_dir(&real).unwrap();
+    fs::write(real.join("big.bin"), vec![1u8; 2048]).unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let link = create_link(LinkKind::Junction, &real, &src).unwrap();
+    assert!(is_junction(&link));
+
+    let dest = tmp.path().join("dest");
+    fs::create_dir(&dest).unwrap();
+    let (report, _) = run_op(Operation::Copy { sources: vec![src.clone()], dest: dest.clone() }, Conflict::KeepBoth);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let copied = dest.join("src").join("real");
+    assert!(is_junction(&copied), "the copy must be a junction, not a folder of copied files");
+    assert_eq!(fs::read_link(&copied).unwrap(), fs::read_link(&link).unwrap());
+}
+
+/// Paths past Windows' classic 260-character limit must copy, move and delete like any other.
+#[test]
+fn long_paths_copy_move_and_delete() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("long");
+    let mut deep = src.clone();
+    for i in 0..12 {
+        deep = deep.join(format!("a-rather-long-folder-name-{i:02}"));
+    }
+    fs::create_dir_all(&deep).unwrap();
+    let file = deep.join("deep file with a long name.txt");
+    fs::write(&file, b"far down").unwrap();
+    assert!(file.as_os_str().len() > 300, "test path is only {} characters", file.as_os_str().len());
+
+    let copy_dest = tmp.path().join("copy");
+    fs::create_dir(&copy_dest).unwrap();
+    let (report, _) = run_op(Operation::Copy { sources: vec![src.clone()], dest: copy_dest.clone() }, Conflict::KeepBoth);
+    assert!(report.errors.is_empty(), "copy: {:?}", report.errors);
+    let copied = copy_dest.join(file.strip_prefix(tmp.path()).unwrap());
+    assert_eq!(fs::read(&copied).unwrap(), b"far down");
+
+    let move_dest = tmp.path().join("moved");
+    fs::create_dir(&move_dest).unwrap();
+    let (report, _) = run_op(Operation::Move { sources: vec![copy_dest.join("long")], dest: move_dest.clone() }, Conflict::KeepBoth);
+    assert!(report.errors.is_empty(), "move: {:?}", report.errors);
+    assert!(move_dest.join(file.strip_prefix(tmp.path()).unwrap()).exists());
+
+    let (report, _) = run_op(Operation::Delete { paths: vec![move_dest.join("long")], permanent: true }, Conflict::KeepBoth);
+    assert!(report.errors.is_empty(), "delete: {:?}", report.errors);
+    assert!(!move_dest.join("long").exists());
+}
+
+#[test]
+fn link_kinds_refuse_the_wrong_target() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("f.txt");
+    fs::write(&file, b"x").unwrap();
+    assert!(create_link(LinkKind::Junction, &file, tmp.path()).is_err());
+    assert!(create_link(LinkKind::Hard, tmp.path(), tmp.path()).is_err());
+    let hard = create_link(LinkKind::Hard, &file, tmp.path()).unwrap();
+    assert_eq!(hard.file_name().unwrap(), "f (2).txt");
+    assert_eq!(fs::read(hard).unwrap(), b"x");
+}
+
+#[test]
+fn find_conflicts_reports_taken_names_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    let dest = tmp.path().join("dest");
+    fs::create_dir_all(src.join("folder")).unwrap();
+    fs::create_dir_all(dest.join("folder")).unwrap();
+    fs::write(src.join("same.txt"), b"new content").unwrap();
+    fs::write(dest.join("same.txt"), b"old").unwrap();
+    fs::write(src.join("free.txt"), b"x").unwrap();
+
+    let sources = vec![src.join("same.txt"), src.join("free.txt"), src.join("folder")];
+    let found = find_conflicts(&sources, &dest);
+    assert_eq!(found.len(), 2, "{found:?}");
+    let file = found.iter().find(|c| !c.source.is_dir).unwrap();
+    assert_eq!((file.source.size, file.target.size), (11, 3));
+    assert_eq!(file.target.path, dest.join("same.txt"));
+    assert!(file.source.modified_ms > 0);
+    assert!(found.iter().any(|c| c.source.is_dir && c.target.is_dir));
+
+    // Pasting into the folder the items came from is not a conflict.
+    assert!(find_conflicts(&sources, &src).is_empty());
+}
+
+#[test]
+fn create_file_numbers_duplicates_and_copies_templates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = create_file(tmp.path(), "New text document.txt", None).unwrap();
+    assert_eq!(a, tmp.path().join("New text document.txt"));
+    assert_eq!(fs::read(&a).unwrap(), b"");
+    let b = create_file(tmp.path(), "New text document.txt", None).unwrap();
+    assert_eq!(b, tmp.path().join("New text document (2).txt"));
+
+    let tpl = tmp.path().join("template.md");
+    fs::write(&tpl, b"# Title").unwrap();
+    let c = create_file(tmp.path(), "Notes.md", Some(&tpl)).unwrap();
+    assert_eq!(fs::read(c).unwrap(), b"# Title");
+
+    assert!(matches!(create_file(tmp.path(), "bad|name", None), Err(crate::Error::InvalidName(_))));
+    assert!(create_file(tmp.path(), "x.txt", Some(&tmp.path().join("missing"))).is_err());
+    assert!(!tmp.path().join("x.txt").exists(), "a failed template read must not leave a file behind");
+}
+
 #[test]
 fn verify_passes_for_a_good_copy_and_records_pairs() {
     let tmp = tempfile::tempdir().unwrap();

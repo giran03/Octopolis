@@ -2,19 +2,23 @@
 // Ctrl+Shift+P runs commands.
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js";
 import { COMMANDS, type Command } from "../commands";
+import { inferPathIsDir } from "../lib/format";
 import { fuzzyRank, type FuzzyMatch } from "../lib/fuzzy";
-import { errorText, knownFolders, listDrives, resolvePath } from "../lib/ipc";
+import { errorText, knownFolders, listDrives, resolvePath, type Drive, type KnownFolder } from "../lib/ipc";
 import { formatKeys } from "../lib/keymap";
+import { baseName, isRoot } from "../lib/paths";
 import { history } from "../state/history";
 import { keybindings } from "../state/keybindings";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
+import { IconDrive, IconSearch, PathIcon, PlaceGlyph, TypeIcon } from "./Icons";
 
 const MAX_ROWS = 60;
 
 interface Row {
   readonly key: string;
   readonly label: string;
+  readonly icon?: () => JSX.Element;
   readonly hint?: string;
   readonly match?: FuzzyMatch;
   readonly run: () => void;
@@ -37,8 +41,47 @@ export function Palette() {
   const [hot, setHot] = createSignal(0);
   const [places] = createResource(async () => {
     const [folders, drives] = await Promise.all([knownFolders().catch(() => []), listDrives().catch(() => [])]);
-    return [...folders.map((f) => f.path), ...drives.map((d) => d.root)];
+    return { folders, drives };
   });
+
+  const placeLookups = createMemo(() => {
+    const folders = new Map<string, KnownFolder>();
+    const drives = new Map<string, Drive>();
+    const dirs = new Set<string>();
+    for (const f of places()?.folders ?? []) {
+      const k = f.path.toLowerCase();
+      folders.set(k, f);
+      dirs.add(k);
+    }
+    for (const d of places()?.drives ?? []) {
+      const k = d.root.toLowerCase();
+      drives.set(k, d);
+      drives.set(k.replace(/\\$/, ""), d);
+      dirs.add(k);
+    }
+    for (const t of workspace.allTabs()) dirs.add(t.path().toLowerCase());
+    return { folders, drives, dirs };
+  });
+
+  const iconForPath = (raw: string): JSX.Element => {
+    const norm = raw.trim().replace(/\//g, "\\");
+    const lower = norm.toLowerCase();
+    const { folders, drives, dirs } = placeLookups();
+    const drive = drives.get(lower);
+    if (drive) {
+      const letter = drive.root.replace(/\\$/, "");
+      return <PathIcon path={drive.root} name={letter} isDir exact size={16} fallback={<IconDrive kind={drive.kind} size={16} />} />;
+    }
+    const known = folders.get(lower);
+    if (known) {
+      return <PathIcon path={known.path} name={known.label} isDir exact size={16} fallback={<PlaceGlyph id={known.id} size={16} />} />;
+    }
+    if (isRoot(norm)) {
+      const root = norm.endsWith("\\") ? norm : `${norm}\\`;
+      return <PathIcon path={root} name={baseName(root)} isDir exact size={16} fallback={<IconDrive size={16} />} />;
+    }
+    return <TypeIcon path={norm} name={baseName(norm)} isDir={inferPathIsDir(norm, dirs)} size={16} />;
+  };
 
   const go = (path: string, select?: string | null) => {
     ui.closePalette();
@@ -71,10 +114,12 @@ export function Palette() {
     };
     history.top(300).forEach((v) => add(v.path));
     workspace.allTabs().forEach((t) => add(t.path()));
-    (places() ?? []).forEach(add);
+    (places()?.folders ?? []).forEach((f) => add(f.path));
+    (places()?.drives ?? []).forEach((d) => add(d.root));
     const rows: Row[] = fuzzyRank(q, candidates, (p) => p, (p) => Math.log2(1 + (scores.get(p.toLowerCase()) ?? 0)) * 6).map(({ item, match }) => ({
       key: item,
       label: item,
+      icon: () => iconForPath(item),
       match,
       run: () => go(item),
     }));
@@ -83,6 +128,7 @@ export function Palette() {
       rows.unshift({
         key: "open-typed",
         label: `Open ${trimmed}`,
+        icon: () => iconForPath(trimmed),
         run: () =>
           resolvePath(trimmed).then(
             (r) => go(r.dir, r.select),
@@ -94,6 +140,7 @@ export function Palette() {
       rows.push({
         key: "search-here",
         label: `Search subfolders for "${trimmed}"`,
+        icon: () => <IconSearch size={15} />,
         hint: tab?.title(),
         run: () => {
           ui.closePalette();
@@ -150,7 +197,12 @@ export function Palette() {
                 onMouseEnter={() => setHot(i())}
                 onClick={() => r.run()}
               >
-                <Highlight text={r.label} positions={r.match?.positions} />
+                <span class="palette-main">
+                  <Show when={r.icon}>
+                    <span class="palette-icon" aria-hidden="true">{r.icon!()}</span>
+                  </Show>
+                  <Highlight text={r.label} positions={r.match?.positions} />
+                </span>
                 <Show when={r.hint}>
                   <kbd>{r.hint}</kbd>
                 </Show>

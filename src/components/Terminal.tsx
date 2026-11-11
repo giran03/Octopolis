@@ -54,7 +54,7 @@ export function TerminalPanel() {
 
     const tab = workspace.activeTab();
     try {
-      const started = await termStart(tab?.path() ?? "C:\\", term.cols, term.rows, (buf) => term.write(new Uint8Array(buf)));
+      const started = await termStart(tab?.path() ?? "C:\\", term.cols, term.rows, (buf) => term.write(new Uint8Array(buf)), settings.terminalShell());
       if (disposed) return void termClose(started).catch(() => undefined);
       id = started;
     } catch (e) {

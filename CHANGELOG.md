@@ -4,6 +4,11 @@
 
 ### Added
 
+- Settings window (Ctrl+,) with General, Appearance, Shortcuts, Advanced, Updates and About tabs: start folder, folder sizes, file icons and thumbnails, delete confirmation, terminal shell, themes, accent, text size, density, animation level, tooltips, sidebar and shelf options, shortcut editing, settings backup and restore, and a reset.
+- Updates tab and About page. Updates stay off until a release feed is set up.
+- Collapsible sidebar sections, pinned folders, recent folders and a resizable sidebar.
+- Shelf that opens by itself while you drag files.
+- Custom title bar with window controls, a go-to pill, and icon-font icons throughout.
 - Fast folder browsing that stays smooth with folders of 100,000+ items.
 - Details list with Name, Date modified, Type and Size columns; click a column to sort, folders always on top, natural number order.
 - Tabs in every pane, and split panes side by side or stacked, with draggable dividers.
@@ -42,3 +47,49 @@
 - Path bar suggestions as you type, and a folder list on each breadcrumb arrow.
 - Drag tabs to reorder them or move them to another pane; save and reopen workspaces.
 - Context menu you can type to filter, with pinned actions and a link to the classic Windows menu.
+- "Where I left off" now brings back every pane and tab from your last session.
+- Middle-click (or Ctrl+click) a folder, breadcrumb or sidebar place to open it in a new tab; Shift opens it in front. Folders also have "Open in new tab" in their menu.
+- Invert selection (Ctrl+Shift+I), select by pattern (Ctrl+Shift+A, e.g. `*.jpg; IMG_*` or `re:`) and select items of the same type.
+- Selecting several items shows their total size, a breakdown by kind and their date range in the inspector, with quick Batch rename, Add to shelf and Copy paths buttons.
+- New text file (Ctrl+Alt+N), plus new Markdown or empty files and your own templates from a templates folder. Undo removes a new file to the Recycle Bin.
+- Copy as: path in quotes, with forward slashes, relative to the folder, name only, file URL or WSL path (Ctrl+Alt+C).
+- Open with… and Run as administrator (Ctrl+Shift+Enter) for programs and scripts.
+- Eject button and menu item for USB drives, memory cards and discs.
+- When pasted or dropped items already exist, choose Replace, Replace if newer, Skip or Keep both, for all items or one by one.
+- Files you copy or cut in Octopolis paste in File Explorer and other apps, and files copied there paste in Octopolis.
+- Use Octopolis instead of File Explorer (Settings › General): folders opened from the desktop, Start, the Run box and other apps, and Win+E, open in Octopolis. Turn it off at any time; uninstalling also undoes it.
+- Only one Octopolis runs at a time: opening a folder or starting it again adds a tab to the open window.
+- Keep running in the notification area, so Octopolis opens again instantly. Quit with Ctrl+Q or from its icon.
+- Optional shortcut to bring Octopolis forward: Ctrl+E on the desktop or taskbar, or Ctrl+Alt+E anywhere.
+- Compress to .zip, .7z or .tar.gz, with progress and cancel.
+- Paste a screenshot or copied text as a new file.
+- Recycle Bin window: search deleted items, restore them, delete them for good, or empty the bin.
+- Symbolic links and junctions are copied as links instead of failing, and Paste as link makes symbolic links, junctions or hard links.
+- Properties (Alt+Enter): size on disk, editable dates and attributes (for several items at once), hard links, extra streams, and SHA-256, MD5 and BLAKE3 checksums with a compare box.
+- Drag a box to select items in the list (from any column but the name) and in the grid.
+- Hold a dragged item over a folder, breadcrumb or tab to open it, and drop onto breadcrumbs.
+- Each folder remembers its view and sort.
+- Resize columns by dragging their edge, and right-click the header to show Extension and Attributes columns or hide others.
+- Pin and color tabs, duplicate them, or close the others from the tab's right-click menu.
+- OneDrive files show whether they are online only or kept on this device, with Always keep on this device and Free up space. Thumbnails and previews no longer download online-only files.
+- Very long paths (over 260 characters) copy, move and delete normally.
+- Search inside files with content: (for example `content:TODO ext:rs`); the inspector shows the matching lines.
+- Duplicate finder: groups identical files under a folder, biggest waste first, and moves the extra copies to the Recycle Bin.
+- Compare the folders in two panes: items only on one side, newer, older or a different size are marked, with Select differences and Copy or Move to the other pane.
+- Tags and color labels for files and folders (Ctrl+Shift+G), shown in the list, listed in the sidebar, and searchable with tag:. Tags follow items you move or rename in Octopolis.
+- Save searches to the sidebar and run them again with one click.
+- Custom actions: your own commands in the right-click menu, with placeholders for the selected paths.
+- Git: stage, unstage and discard changes from the right-click menu, see a file's changes in the inspector, and optionally hide files Git ignores.
+- Clean up a folder: rebuildable folders, largest files, old large files, temporary files and empty folders, ready to move to the Recycle Bin.
+- Map and disconnect network drives, and browse WSL distros from the sidebar.
+- Add Open in Octopolis to File Explorer's right-click menu for folders, drives and folder backgrounds, while File Explorer stays the default (Settings › General). Uninstalling removes it.
+- Quick look (Shift+Space): the preview fills the window; arrow keys step through files, Delete moves to the Recycle Bin and Esc closes.
+- Font previews with sample text at several sizes, every character, and an Install button.
+- CSV, TSV and JSON Lines files preview as a sortable table of up to 10,000 rows, with a switch to the raw text.
+- Text previews show the encoding, line endings and line count, with Open in editor (Ctrl+Shift+O). Choose the editor in Settings › General.
+- A Windows notification when a copy, move, compress or delete that took over 10 seconds finishes while Octopolis is in the background.
+- The PC stays awake while files are copied or moved. Both options are in Settings › General.
+- Diagnostics log with startup times and errors, with file and folder names removed (Settings › Advanced › Open log folder).
+- Faster start: the inspector and terminal load the first time you open them.
+- Screen readers hear the file list as a grid with selected rows, and when file operations start and finish. Windows contrast themes are supported.
+- Column view stays smooth in folders of any size, follows the list's sort and filter, and has Left and Right to move between folders, the usual keys and the right-click menu.

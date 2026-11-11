@@ -27,7 +27,79 @@ pub struct Drive {
 
 /// Opens a file with its associated app, or a folder in its default handler.
 pub fn open_path(path: &Path) -> Result<()> {
-    imp::open_path(path)
+    imp::open_verb(path, "open")
+}
+
+/// Opens a file in an editor: `editor` if given, else the file type's Edit
+/// command, else Notepad. Never runs the file itself (scripts stay closed).
+pub fn edit_path(path: &Path, editor: Option<&Path>) -> Result<()> {
+    if let Some(editor) = editor {
+        return std::process::Command::new(editor).arg(path).spawn().map(|_| ()).map_err(|e| Error::io(editor, e));
+    }
+    imp::open_verb(path, "edit").or_else(|_| std::process::Command::new("notepad.exe").arg(path).spawn().map(|_| ()).map_err(|e| Error::io(path, e)))
+}
+
+/// Keeps Windows from sleeping (the screen may still turn off) until called
+/// with `false`. Execution state belongs to a thread, so a dedicated thread
+/// holds it for as long as it is needed.
+pub fn keep_awake(on: bool) {
+    use std::sync::Mutex;
+    use std::sync::mpsc::{Sender, channel};
+    static HOLDER: Mutex<Option<Sender<()>>> = Mutex::new(None);
+    let mut holder = HOLDER.lock().unwrap_or_else(|e| e.into_inner());
+    match (on, holder.is_some()) {
+        (true, false) => {
+            let (tx, rx) = channel::<()>();
+            std::thread::spawn(move || {
+                imp::set_awake(true);
+                // Returns when the sender is dropped.
+                let _ = rx.recv();
+                imp::set_awake(false);
+            });
+            *holder = Some(tx);
+        }
+        (false, true) => *holder = None,
+        _ => {}
+    }
+}
+
+/// Opens Windows' font installer for a font file.
+pub fn install_font(path: &Path) -> Result<()> {
+    imp::open_verb(path, "install")
+}
+
+/// Shows Windows' "Open with" dialog for a file. Must be called on the UI
+/// thread; `hwnd` is the owning window handle.
+pub fn open_with(hwnd: isize, path: &Path) -> Result<()> {
+    imp::open_with(hwnd, path)
+}
+
+/// Shows Windows' native folder picker dialog. Must be called on the UI thread;
+/// `hwnd` is the owning window handle. Returns `Ok(None)` when cancelled.
+pub fn pick_folder(hwnd: isize, initial: Option<&Path>) -> Result<Option<PathBuf>> {
+    imp::pick_folder(hwnd, initial)
+}
+
+/// File types that can be started with administrator rights.
+pub fn can_run_as_admin(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "exe" | "bat" | "cmd" | "msi" | "ps1" | "com")
+}
+
+/// Starts a program or script with administrator rights (Windows asks to confirm).
+/// PowerShell scripts run in Windows PowerShell under the user's execution policy.
+pub fn run_as_admin(path: &Path) -> Result<()> {
+    if !can_run_as_admin(path) {
+        return Err(Error::io(path, std::io::Error::other("only programs and scripts can run as administrator")));
+    }
+    imp::run_as_admin(path)
+}
+
+/// Safely ejects a removable drive (`E:\`): flushes, locks and dismounts the
+/// volume, then ejects the media. Fails with "in use" if a program holds a
+/// file open on it.
+pub fn eject_drive(root: &Path) -> Result<()> {
+    imp::eject_drive(root)
 }
 
 /// Opens Windows Explorer with `path` selected.
@@ -98,14 +170,22 @@ mod imp {
         String::from_utf16_lossy(&buf[..len])
     }
 
-    pub fn open_path(path: &Path) -> Result<()> {
+    pub fn set_awake(on: bool) {
+        use windows::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
+        let flags = if on { ES_CONTINUOUS | ES_SYSTEM_REQUIRED } else { ES_CONTINUOUS };
+        // SAFETY: only changes this thread's power request.
+        unsafe { SetThreadExecutionState(flags) };
+    }
+
+    pub fn open_verb(path: &Path, verb: &str) -> Result<()> {
         let file = wide(path.as_os_str());
+        let verb = wide(std::ffi::OsStr::new(verb));
         let dir = path.parent().map(|p| wide(p.as_os_str()));
         // SAFETY: all strings are NUL-terminated and live across the call.
         let code = unsafe {
             ShellExecuteW(
                 None,
-                w!("open"),
+                PCWSTR(verb.as_ptr()),
                 PCWSTR(file.as_ptr()),
                 PCWSTR::null(),
                 dir.as_ref().map_or(PCWSTR::null(), |d| PCWSTR(d.as_ptr())),
@@ -117,6 +197,157 @@ mod imp {
         } else {
             Err(Error::io(path, std::io::Error::other(format!("the shell could not open it (code {})", code.0 as isize))))
         }
+    }
+
+    pub fn open_with(hwnd: isize, path: &Path) -> Result<()> {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::Shell::{OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT, OPENASINFO, SHOpenWithDialog};
+        let file = wide(path.as_os_str());
+        let info = OPENASINFO {
+            pcszFile: PCWSTR(file.as_ptr()),
+            pcszClass: PCWSTR::null(),
+            oaifInFlags: OAIF_ALLOW_REGISTRATION | OAIF_REGISTER_EXT | OAIF_EXEC,
+        };
+        // SAFETY: `file` is NUL-terminated and outlives the modal dialog.
+        match unsafe { SHOpenWithDialog(Some(HWND(hwnd as *mut _)), &info) } {
+            Ok(()) => Ok(()),
+            // Cancelling the dialog is not an error.
+            Err(e) if e.code() == windows::Win32::Foundation::ERROR_CANCELLED.to_hresult() => Ok(()),
+            Err(e) => Err(Error::io(path, e.into())),
+        }
+    }
+
+    pub fn pick_folder(hwnd: isize, initial: Option<&Path>) -> Result<Option<PathBuf>> {
+        use windows::Win32::Foundation::{ERROR_CANCELLED, HWND};
+        use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize};
+        use windows::Win32::UI::Shell::{
+            FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, IShellItem, SHCreateItemFromParsingName,
+            SIGDN_FILESYSPATH,
+        };
+        struct Com(bool);
+        impl Drop for Com {
+            fn drop(&mut self) {
+                if self.0 {
+                    // SAFETY: balanced against CoInitializeEx below.
+                    unsafe { CoUninitialize() };
+                }
+            }
+        }
+        let fallback = initial.unwrap_or_else(|| Path::new(""));
+        let fail = |e: windows::core::Error| Error::io(fallback, e.into());
+        // SAFETY: STA COM init on UI thread.
+        let _com = Com(unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok());
+        // SAFETY: standard FileOpenDialog CLSID.
+        let dialog: IFileOpenDialog = unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) }.map_err(fail)?;
+        // SAFETY: setting folder-picker options on the newly created dialog.
+        unsafe {
+            let opts = dialog.GetOptions().map_err(fail)?;
+            dialog.SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST).map_err(fail)?;
+            if let Some(dir) = initial.filter(|p| p.is_dir()) {
+                let w = wide(dir.as_os_str());
+                if let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(PCWSTR(w.as_ptr()), None) {
+                    let _ = dialog.SetFolder(&item);
+                }
+            }
+            match dialog.Show(Some(HWND(hwnd as *mut _))) {
+                Ok(()) => {}
+                Err(e) if e.code() == ERROR_CANCELLED.to_hresult() => return Ok(None),
+                Err(e) => return Err(fail(e)),
+            }
+            let item = dialog.GetResult().map_err(fail)?;
+            let ptr = item.GetDisplayName(SIGDN_FILESYSPATH).map_err(fail)?;
+            let text = ptr.to_string().unwrap_or_default();
+            CoTaskMemFree(Some(ptr.0 as _));
+            Ok((!text.is_empty()).then(|| PathBuf::from(text)))
+        }
+    }
+
+    pub fn run_as_admin(path: &Path) -> Result<()> {
+        let is_ps1 = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ps1"));
+        let dir = path.parent().map(|p| wide(p.as_os_str()));
+        // A .ps1 opens in an editor by default, so start PowerShell with the script instead.
+        let (file, params) = if is_ps1 {
+            let mut args = std::ffi::OsString::from("-NoProfile -NoExit -File \"");
+            args.push(path.as_os_str());
+            args.push("\"");
+            (wide(std::ffi::OsStr::new("powershell.exe")), Some(wide(&args)))
+        } else {
+            (wide(path.as_os_str()), None)
+        };
+        // SAFETY: all strings are NUL-terminated and live across the call.
+        let code = unsafe {
+            ShellExecuteW(
+                None,
+                w!("runas"),
+                PCWSTR(file.as_ptr()),
+                params.as_ref().map_or(PCWSTR::null(), |p| PCWSTR(p.as_ptr())),
+                dir.as_ref().map_or(PCWSTR::null(), |d| PCWSTR(d.as_ptr())),
+                SW_SHOWNORMAL,
+            )
+        };
+        const SE_ERR_ACCESSDENIED: isize = 5; // also returned when the user says No
+        match code.0 as isize {
+            c if c > SHELL_EXECUTE_OK => Ok(()),
+            SE_ERR_ACCESSDENIED => Err(Error::io(path, std::io::Error::other("administrator rights were not granted"))),
+            c => Err(Error::io(path, std::io::Error::other(format!("Windows could not start it (code {c})")))),
+        }
+    }
+
+    pub fn eject_drive(root: &Path) -> Result<()> {
+        use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE};
+        use windows::Win32::Storage::FileSystem::{
+            CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, FlushFileBuffers, OPEN_EXISTING,
+        };
+        use windows::Win32::System::IO::DeviceIoControl;
+        use windows::Win32::System::Ioctl::{
+            FSCTL_DISMOUNT_VOLUME, FSCTL_LOCK_VOLUME, IOCTL_STORAGE_EJECT_MEDIA, IOCTL_STORAGE_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL,
+        };
+
+        let text = root.to_string_lossy();
+        let letter = text.chars().next().filter(|c| c.is_ascii_alphabetic() && text.get(1..2) == Some(":"));
+        let Some(letter) = letter else {
+            return Err(Error::io(root, std::io::Error::other("only lettered drives can be ejected")));
+        };
+        let root_w = wide(std::ffi::OsStr::new(&format!("{letter}:\\")));
+        // SAFETY: `root_w` is NUL-terminated.
+        let kind = unsafe { GetDriveTypeW(PCWSTR(root_w.as_ptr())) };
+        if kind != DRIVE_REMOVABLE && kind != DRIVE_CDROM {
+            return Err(Error::io(root, std::io::Error::other("only removable drives (USB sticks, memory cards, discs) can be ejected")));
+        }
+        let volume = wide(std::ffi::OsStr::new(&format!("\\\\.\\{letter}:")));
+        let fail = |what: &str, e: windows::core::Error| Error::io(root, std::io::Error::other(format!("{what} ({})", e.message())));
+        // SAFETY: `volume` is NUL-terminated; the handle is closed on every path below.
+        let handle = unsafe {
+            CreateFileW(PCWSTR(volume.as_ptr()), (GENERIC_READ | GENERIC_WRITE).0, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, FILE_FLAGS_AND_ATTRIBUTES(0), None)
+        }
+        .map_err(|e| fail("the drive could not be opened", e))?;
+        let ioctl = |code: u32, input: Option<(*const std::ffi::c_void, u32)>| -> windows::core::Result<()> {
+            let mut returned = 0u32;
+            let (ptr, len) = input.map_or((None, 0), |(p, l)| (Some(p), l));
+            // SAFETY: `handle` is an open volume handle; `input` points at a live value of `len` bytes.
+            unsafe { DeviceIoControl(handle, code, ptr, len, None, 0, Some(&mut returned), None) }
+        };
+        let result = (|| {
+            // SAFETY: flushing an open handle.
+            let _ = unsafe { FlushFileBuffers(handle) };
+            // Locking fails while a program has a file open; retry briefly for short-lived handles.
+            let mut locked = ioctl(FSCTL_LOCK_VOLUME, None);
+            for _ in 0..10 {
+                if locked.is_ok() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                locked = ioctl(FSCTL_LOCK_VOLUME, None);
+            }
+            locked.map_err(|e| fail("the drive is in use — close files and programs using it, then try again", e))?;
+            ioctl(FSCTL_DISMOUNT_VOLUME, None).map_err(|e| fail("the drive could not be dismounted", e))?;
+            let allow = PREVENT_MEDIA_REMOVAL { PreventMediaRemoval: false };
+            let _ = ioctl(IOCTL_STORAGE_MEDIA_REMOVAL, Some((&allow as *const _ as *const _, size_of::<PREVENT_MEDIA_REMOVAL>() as u32)));
+            ioctl(IOCTL_STORAGE_EJECT_MEDIA, None).map_err(|e| fail("the drive could not be ejected", e))
+        })();
+        // SAFETY: closing the handle opened above.
+        let _ = unsafe { CloseHandle(handle) };
+        result
     }
 
     pub fn show_native_menu(hwnd: isize, paths: &[PathBuf]) -> Result<()> {
@@ -240,7 +471,25 @@ mod imp {
         Ok(())
     }
 
-    pub fn open_path(path: &Path) -> Result<()> {
+    pub fn open_with(_: isize, path: &Path) -> Result<()> {
+        open_path(path)
+    }
+
+    pub fn pick_folder(_: isize, _: Option<&Path>) -> Result<Option<PathBuf>> {
+        Ok(None)
+    }
+
+    pub fn run_as_admin(path: &Path) -> Result<()> {
+        Err(Error::io(path, std::io::Error::other("not supported on this system")))
+    }
+
+    pub fn eject_drive(root: &Path) -> Result<()> {
+        Err(Error::io(root, std::io::Error::other("not supported on this system")))
+    }
+
+    pub fn set_awake(_: bool) {}
+
+    pub fn open_verb(path: &Path, _: &str) -> Result<()> {
         std::process::Command::new("xdg-open").arg(path).spawn().map(|_| ()).map_err(|e| Error::io(path, e))
     }
 
@@ -267,5 +516,23 @@ mod tests {
             "{drives:?}"
         );
         assert!(drives.iter().any(|d| d.total_bytes > 0));
+    }
+
+    #[test]
+    fn only_programs_and_scripts_run_as_admin() {
+        use std::path::Path;
+        assert!(super::can_run_as_admin(Path::new("C:\\x\\setup.EXE")));
+        assert!(super::can_run_as_admin(Path::new("C:\\x\\fix.ps1")));
+        assert!(!super::can_run_as_admin(Path::new("C:\\x\\notes.txt")));
+        assert!(super::run_as_admin(Path::new("C:\\x\\notes.txt")).is_err());
+    }
+
+    #[test]
+    fn eject_refuses_non_drive_paths() {
+        assert!(super::eject_drive(std::path::Path::new("\\\\server\\share")).is_err());
+        // The system drive is fixed, so it is refused before anything touches it.
+        let sys = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        let err = super::eject_drive(std::path::Path::new(&format!("{sys}\\"))).unwrap_err();
+        assert!(err.to_string().contains("removable"), "{err}");
     }
 }

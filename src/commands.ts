@@ -2,11 +2,15 @@
 // handler, the command palette and the shortcuts editor all read this list.
 import * as A from "./actions";
 import { listHandles } from "./components/Pane";
+import { quitApp } from "./lib/ipc";
 import { moveFocus, selectAll, selectAt, type NavKey } from "./lib/selection";
 import { ops } from "./state/ops";
 import { settings } from "./state/settings";
+import { shelf } from "./state/shelf";
+import { sidebar } from "./state/sidebar";
 import type { TabModel } from "./state/tab";
 import { ui } from "./state/ui";
+import { inspector } from "./state/inspector";
 import { workspace } from "./state/workspace";
 
 export type Category = "File" | "Navigate" | "Tabs" | "Panes" | "View" | "Search" | "App" | "List";
@@ -56,8 +60,8 @@ function toggleFlatView(t: TabModel) {
 
 export const COMMANDS: readonly Command[] = [
   // Navigate
-  { id: "nav.back", title: "Go back", category: "Navigate", keys: ["alt+arrowleft"], run: withTab((t) => t.back()) },
-  { id: "nav.forward", title: "Go forward", category: "Navigate", keys: ["alt+arrowright"], run: withTab((t) => t.forward()) },
+  { id: "nav.back", title: "Go back", category: "Navigate", keys: ["alt+arrowleft", "browserback"], run: withTab((t) => t.back()) },
+  { id: "nav.forward", title: "Go forward", category: "Navigate", keys: ["alt+arrowright", "browserforward"], run: withTab((t) => t.forward()) },
   { id: "nav.up", title: "Go to parent folder", category: "Navigate", keys: ["alt+arrowup", "backspace"], vimKeys: ["h"], run: withTab((t) => t.up()) },
   { id: "nav.refresh", title: "Refresh", category: "Navigate", keys: ["f5", "ctrl+r"], run: withTab((t) => void t.refresh()) },
   { id: "nav.editPath", title: "Edit path", category: "Navigate", keys: ["ctrl+l"], global: true, run: () => ui.requestFocus(workspace.activePaneId(), "path") },
@@ -67,19 +71,40 @@ export const COMMANDS: readonly Command[] = [
   { id: "file.open", title: "Open", category: "File", keys: ["enter"], vimKeys: ["l"], run: withTab(A.openSelection) },
   { id: "file.rename", title: "Rename", category: "File", keys: ["f2"], run: withTab(A.startRename) },
   { id: "file.newFolder", title: "New folder", category: "File", keys: ["ctrl+shift+n"], run: withTab((t) => void A.newFolder(t)) },
+  { id: "file.newFile", title: "New text file", category: "File", keys: ["ctrl+alt+n"], run: withTab((t) => void A.newFile(t)) },
+  { id: "file.newFromTemplate", title: "New file from template…", category: "File", run: withTab((t) => void A.openNewFileMenu(t)) },
   { id: "file.copy", title: "Copy", category: "File", keys: ["ctrl+c"], vimKeys: ["y y"], run: withTab((t) => A.copySelection(t, "copy")) },
   { id: "file.cut", title: "Cut", category: "File", keys: ["ctrl+x"], vimKeys: ["d d"], run: withTab((t) => A.copySelection(t, "cut")) },
   { id: "file.paste", title: "Paste", category: "File", keys: ["ctrl+v"], vimKeys: ["p"], run: withTab(A.pasteInto) },
   { id: "file.delete", title: "Delete (Recycle Bin)", category: "File", keys: ["delete"], run: withTab((t) => A.deleteSelection(t, false)) },
   { id: "file.deletePermanently", title: "Delete permanently", category: "File", keys: ["shift+delete"], run: withTab((t) => A.deleteSelection(t, true)) },
+  { id: "file.pasteAsLink", title: "Paste as link…", category: "File", run: withTab((t) => A.openPasteAsLinkMenu(t)) },
   { id: "file.copyPath", title: "Copy path", category: "File", keys: ["ctrl+shift+c"], run: withTab((t) => void A.copyPaths(t)) },
+  { id: "file.copyPathAs", title: "Copy path as…", category: "File", keys: ["ctrl+alt+c"], run: withTab((t) => A.openCopyAsMenu(t)) },
   { id: "file.undo", title: "Undo", category: "File", keys: ["ctrl+z"], vimKeys: ["u"], run: () => void ops.undo() },
   { id: "file.redo", title: "Redo", category: "File", keys: ["ctrl+y", "ctrl+shift+z"], run: () => void ops.redo() },
   { id: "file.batchRename", title: "Batch rename…", category: "File", keys: ["ctrl+shift+r"], run: withTab(A.openBatchRename) },
+  { id: "tools.actions", title: "Run a custom action…", category: "File", run: withTab((t) => A.openActionsMenu(t)) },
+  { id: "tools.editActions", title: "Edit custom actions…", category: "App", run: () => ui.setActionsEditorOpen(true) },
+  { id: "git.stage", title: "Git: stage selection", category: "File", run: withTab((t) => A.gitAct(t, "stage")) },
+  { id: "git.unstage", title: "Git: unstage selection", category: "File", run: withTab((t) => A.gitAct(t, "unstage")) },
+  { id: "git.discard", title: "Git: discard changes to selection…", category: "File", run: withTab((t) => A.gitAct(t, "discard")) },
+  { id: "git.hideIgnored", title: "Show or hide files Git ignores", category: "View", run: () => settings.set({ hideGitIgnored: !settings.hideGitIgnored() }) },
+  { id: "file.tags", title: "Tags and color labels…", category: "File", keys: ["ctrl+shift+g"], run: withTab(A.editTags) },
+  { id: "search.save", title: "Save this search to the sidebar…", category: "Search", run: withTab(A.saveSearch) },
+  { id: "file.properties", title: "Properties", category: "File", keys: ["alt+enter"], run: withTab(A.showProperties) },
   { id: "file.whoLocks", title: "What is locking this?", category: "File", keys: ["ctrl+shift+l"], run: withTab(A.whoLocks) },
+  { id: "file.compress", title: "Compress to zip…", category: "File", run: withTab((t) => A.compressSelection(t, "zip")) },
+  { id: "file.compressAs", title: "Compress to…", category: "File", run: withTab((t) => A.openCompressMenu(t)) },
   { id: "file.extract", title: "Extract selected items from the archive", category: "File", run: withTab(A.extractHere) },
   { id: "file.reveal", title: "Show in Windows Explorer", category: "File", run: withTab((t) => A.reveal(t)) },
+  { id: "file.edit", title: "Open in editor", category: "File", keys: ["ctrl+shift+o"], run: withTab(A.editSelection) },
+  { id: "file.openWith", title: "Open with…", category: "File", run: withTab(A.openWithDialog) },
+  { id: "file.runAsAdmin", title: "Run as administrator", category: "File", keys: ["ctrl+shift+enter"], run: withTab(A.runSelectedAsAdmin) },
   { id: "file.selectAll", title: "Select all", category: "File", keys: ["ctrl+a"], run: withTab((t) => t.setSelection(selectAll(t.view()))) },
+  { id: "file.invertSelection", title: "Invert selection", category: "File", keys: ["ctrl+shift+i"], run: withTab(A.invertSelected) },
+  { id: "file.selectSameType", title: "Select items of the same type", category: "File", run: withTab(A.selectSameType) },
+  { id: "file.selectPattern", title: "Select by pattern…", category: "File", keys: ["ctrl+shift+a"], run: withTab(A.selectByPattern) },
 
   // Search and view
   { id: "view.filter", title: "Filter this folder", category: "Search", keys: ["ctrl+f"], vimKeys: ["/"], global: true, run: () => ui.requestFocus(workspace.activePaneId(), "filter") },
@@ -96,10 +121,12 @@ export const COMMANDS: readonly Command[] = [
     },
   },
   { id: "search.flat", title: "Toggle flat view (all files in subfolders)", category: "Search", keys: ["ctrl+shift+e"], run: withTab(toggleFlatView) },
+  { id: "sidebar.pin", title: "Pin or unpin this folder in the sidebar", category: "View", run: withTab((t) => sidebar.togglePin(t.path())) },
+  { id: "view.quickLook", title: "Quick look (full-window preview)", category: "View", keys: ["shift+space"], run: inspector.toggleQuickLook },
   { id: "view.inspector", title: "Show or hide the inspector", category: "View", keys: ["ctrl+i", "space"], run: settings.toggleInspector },
-  { id: "view.sizes", title: "Calculate folder sizes", category: "View", keys: ["ctrl+shift+s"], run: withTab((t) => (t.dirSizes() ? t.clearSizes() : t.computeSizes())) },
+  { id: "view.sizes", title: "Calculate folder sizes", category: "View", keys: ["ctrl+shift+s"], run: withTab((t) => (t.sizesLive() ? t.clearSizes() : t.computeSizes())) },
   { id: "view.treemap", title: "Toggle disk space treemap", category: "View", keys: ["ctrl+shift+m"], run: withTab((t) => {
-      if (!t.treemap() && !t.dirSizes()) t.computeSizes();
+      if (!t.treemap() && !t.sizesLive()) t.computeSizes();
       t.setTreemap(!t.treemap());
     }) },
   { id: "transfer.verify", title: "Toggle verifying copies with checksums", category: "App", run: () => {
@@ -117,11 +144,17 @@ export const COMMANDS: readonly Command[] = [
   { id: "view.details", title: "Details view", category: "View", keys: ["ctrl+1"], run: withTab((t) => t.setViewMode("details")) },
   { id: "view.grid", title: "Thumbnail grid view", category: "View", keys: ["ctrl+2"], run: withTab((t) => t.setViewMode("grid")) },
   { id: "view.columns", title: "Column (Miller) view", category: "View", keys: ["ctrl+3"], run: withTab((t) => t.setViewMode("columns")) },
+  { id: "shelf.toggle", title: "Show or hide the shelf", category: "File", run: () => shelf.setOpen(!shelf.open()) },
   { id: "shelf.add", title: "Add selection to the shelf", category: "File", keys: ["ctrl+shift+d"], run: withTab(A.addToShelf) },
   { id: "file.nativeMenu", title: "Windows context menu", category: "File", keys: ["shift+f10"], run: withTab(A.nativeContextMenu) },
   { id: "workspace.save", title: "Save workspace…", category: "Panes", run: A.savePreset },
   { id: "workspace.load", title: "Open saved workspace…", category: "Panes", run: A.openPresetMenu },
-  { id: "app.settings", title: "Settings", category: "App", keys: ["ctrl+,"], global: true, run: () => ui.setSettingsOpen(true) },
+  { id: "app.quit", title: "Quit Octopolis", category: "App", keys: ["ctrl+q"], global: true, run: () => void quitApp() },
+  { id: "app.settings", title: "Settings", category: "App", keys: ["ctrl+,"], global: true, run: () => ui.openSettings() },
+  { id: "app.updates", title: "Check for updates", category: "App", global: true, run: () => ui.openSettings("updates") },
+  { id: "tools.cleanup", title: "Clean up this folder…", category: "Search", run: withTab((t) => (t.archive() ? ui.toast("Not available inside archives") : ui.setCleanupRoot(t.path()))) },
+  { id: "tools.duplicates", title: "Find duplicate files in this folder…", category: "Search", run: withTab((t) => (t.archive() ? ui.toast("Not available inside archives") : ui.setDuplicatesRoot(t.path()))) },
+  { id: "view.recycleBin", title: "Open the Recycle Bin", category: "View", run: () => ui.setRecycleBinOpen(true) },
   { id: "view.hidden", title: "Show or hide hidden items", category: "View", keys: ["ctrl+h"], global: true, run: settings.toggleHidden },
   { id: "view.sidebar", title: "Show or hide the sidebar", category: "View", keys: ["ctrl+b"], global: true, run: settings.toggleSidebar },
 
@@ -136,6 +169,10 @@ export const COMMANDS: readonly Command[] = [
   { id: "tab.prev", title: "Previous tab", category: "Tabs", keys: ["ctrl+shift+tab"], global: true, run: () => workspace.cycleTab(-1) },
   { id: "pane.splitRight", title: "Split pane right", category: "Panes", keys: ["ctrl+\\"], global: true, run: () => workspace.split("row") },
   { id: "pane.splitDown", title: "Split pane down", category: "Panes", keys: ["ctrl+shift+\\"], global: true, run: () => workspace.split("column") },
+  { id: "pane.compare", title: "Compare folders in the two panes", category: "Panes", run: A.toggleCompare },
+  { id: "pane.selectDifferences", title: "Select items that differ from the other pane", category: "Panes", run: withTab(A.selectDifferences) },
+  { id: "pane.copyToOther", title: "Copy selection to the other pane", category: "Panes", keys: ["ctrl+shift+arrowright"], run: withTab((t) => A.sendToOtherPane(t, "copy")) },
+  { id: "pane.moveToOther", title: "Move selection to the other pane", category: "Panes", run: withTab((t) => A.sendToOtherPane(t, "move")) },
   { id: "pane.close", title: "Close pane", category: "Panes", keys: ["ctrl+shift+w"], global: true, run: () => workspace.closePane(workspace.activePaneId()) },
   { id: "pane.next", title: "Next pane", category: "Panes", keys: ["f6"], global: true, run: () => workspace.cyclePane(1) },
   { id: "pane.prev", title: "Previous pane", category: "Panes", keys: ["shift+f6"], global: true, run: () => workspace.cyclePane(-1) },
@@ -143,7 +180,7 @@ export const COMMANDS: readonly Command[] = [
 
   // App
   { id: "palette.commands", title: "Show all commands", category: "App", keys: ["ctrl+shift+p"], global: true, run: () => ui.openPalette("commands") },
-  { id: "app.shortcuts", title: "Keyboard shortcuts", category: "App", keys: ["ctrl+k ctrl+s"], global: true, run: () => ui.setShortcutsOpen(true) },
+  { id: "app.shortcuts", title: "Keyboard shortcuts", category: "App", keys: ["ctrl+k ctrl+s"], global: true, run: () => ui.openSettings("shortcuts") },
   { id: "app.vim", title: "Toggle Vim keys (h j k l, gg, G, yy, dd, p, v)", category: "App", run: () => {
       settings.toggleVim();
       ui.setVisual(false);

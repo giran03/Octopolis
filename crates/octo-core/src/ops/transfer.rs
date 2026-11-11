@@ -176,8 +176,19 @@ fn copy_tree(ctx: &mut Ctx<'_>, src: &Path, dst: &Path, conflict: Conflict) {
     };
     ctx.progress.current = Some(src.into());
     if meta.is_symlink() {
+        // Links are copied as links to the same target, never followed.
         ctx.progress.done_items += 1;
-        return ctx.fail(src, "links and junctions are not copied yet");
+        if dst.symlink_metadata().is_ok() {
+            if conflict != Conflict::Overwrite {
+                ctx.report.skipped.push(src.into());
+                return ctx.emit(false);
+            }
+            let _ = if dst.is_dir() { fs::remove_dir(dst) } else { fs::remove_file(dst) };
+        }
+        if let Err(e) = super::links::recreate(src, dst) {
+            ctx.fail(src, e);
+        }
+        return ctx.emit(false);
     }
     if !meta.is_dir() {
         if dst.exists() && conflict != Conflict::Overwrite {

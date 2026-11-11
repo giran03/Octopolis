@@ -4,6 +4,7 @@
 import { commandById, COMMANDS, moveTo } from "./commands";
 import { listHandles } from "./components/Pane";
 import { eventToKey } from "./lib/keymap";
+import { isDir } from "./lib/listing";
 import { moveFocus, NAV_KEYS, selectAt, typeAhead, type NavKey } from "./lib/selection";
 import { keybindings } from "./state/keybindings";
 import { settings } from "./state/settings";
@@ -37,6 +38,15 @@ function listKeys(e: KeyboardEvent): boolean {
     const cols = listHandles.get(tab)?.columns?.() ?? 1;
     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key as "ArrowLeft"];
     moveTo(tab, Math.min(Math.max(tab.focus() + step, 0), tab.view().length - 1), e.shiftKey, ctrl);
+    return true;
+  }
+  // Column view: Left goes up a folder, Right opens the focused folder.
+  if (tab.viewMode() === "columns" && !e.altKey && !ctrl && !e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    if (e.key === "ArrowLeft") void tab.up();
+    else {
+      const entry = tab.view()[tab.focus()];
+      if (entry !== undefined && isDir(tab.listing(), entry)) void tab.navigate(tab.pathOf(entry));
+    }
     return true;
   }
   if (NAV_KEYS.has(e.key) && !e.altKey) {
@@ -91,4 +101,15 @@ export function onKeyDown(e: KeyboardEvent) {
     }
   }
   if (!editing && listKeys(e)) e.preventDefault();
+}
+
+/** Mouse side buttons: 3 = back, 4 = forward (also stops WebView2's own history navigation). */
+export function onMouseNav(e: MouseEvent) {
+  if (e.button !== 3 && e.button !== 4) return;
+  e.preventDefault();
+  if (e.type !== "mouseup" || ui.modalOpen()) return;
+  const tab = workspace.activeTab();
+  if (!tab) return;
+  if (e.button === 3) tab.back();
+  else tab.forward();
 }
