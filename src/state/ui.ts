@@ -93,6 +93,8 @@ export const ui = createRoot(() => {
   /** The folder the cleanup assistant is looking at, while it is open. */
   const [cleanupRoot, setCleanupRoot] = createSignal<string | null>(null);
   const [diskSpaceRoot, setDiskSpaceRoot] = createSignal<string | null>(null);
+  /** The folder whose emoji icon is being chosen. */
+  const [emojiTarget, setEmojiTarget] = createSignal<string | null>(null);
   /** Vim visual mode: movement extends the selection. */
   const [visual, setVisual] = createSignal(false);
 
@@ -148,6 +150,8 @@ export const ui = createRoot(() => {
     cleanupRoot,
     setCleanupRoot,
     diskSpaceRoot,
+    emojiTarget,
+    setEmojiTarget,
     openDiskSpace: (root: string) => setDiskSpaceRoot(root),
     closeDiskSpace: () => setDiskSpaceRoot(null),
     askConflicts: (p: ConflictPrompt) => setConflictPrompt(p),
@@ -157,7 +161,7 @@ export const ui = createRoot(() => {
     visual,
     setVisual,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot()),
+    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot() || emojiTarget()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

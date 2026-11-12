@@ -7,6 +7,7 @@ import { baseName, parentPath, samePath } from "../lib/paths";
 import { EMPTY_STACKS, popRedo, popUndo, pushAction, redoStep, undoStep, type Pair, type Step, type UndoAction } from "../lib/undo";
 import { formatKeys } from "../lib/keymap";
 import { finishNotice } from "../lib/notify";
+import { folderIcons } from "./folderIcons";
 import { keybindings } from "./keybindings";
 import { settings } from "./settings";
 import { ui } from "./ui";
@@ -121,7 +122,11 @@ export const ops = createRoot(() => {
 
   const patch = (key: number, fn: (o: OpView) => OpView) => setList((l) => l.map((o) => (o.key === key ? fn(o) : o)));
   const dismiss = (key: number) => setList((l) => l.filter((o) => o.key !== key));
-  const record = (a: UndoAction) => setStacks((s) => pushAction(s, a));
+  const record = (a: UndoAction) => {
+    // A folder's emoji icon goes with it when it is renamed or moved.
+    if (a.kind === "move") for (const [from, to] of a.pairs) folderIcons.move(from, to);
+    setStacks((s) => pushAction(s, a));
+  };
 
   function refreshDirs(dirs: readonly (string | null)[]) {
     for (const tab of workspace.allTabs()) {
@@ -308,6 +313,7 @@ export const ops = createRoot(() => {
     switch (step.type) {
       case "relocate": {
         const pairs = step.pairs.map(([a, b]) => [a, b] as [string, string]);
+        for (const [a, b] of pairs) folderIcons.move(a, b);
         // Renames in one folder may swap names or differ only by case; the
         // batch renamer handles both, a plain move refuses them.
         if (pairs.every(([a, b]) => samePath(parentPath(a) ?? a, parentPath(b) ?? b))) {

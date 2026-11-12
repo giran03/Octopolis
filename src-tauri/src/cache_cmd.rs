@@ -98,16 +98,21 @@ fn build_info(app: &AppHandle) -> Result<CacheInfoDto, String> {
     let is_custom = !dir.to_string_lossy().eq_ignore_ascii_case(&default_dir.to_string_lossy());
 
     let sizes_state: State<'_, SizesState> = app.state();
-    let (live_dirs, saved_dirs, size_bytes) = sizes_state.stats(app);
+    let (live_dirs, live_bytes, saved_dirs, size_bytes) = sizes_state.stats(app);
 
     let (upd_bytes, upd_files) = dir_size_and_files(&dir.join(UPDATES_DIR));
     let search_roots = app.state::<SearchState>().cached_count();
+    let search_bytes = app.state::<SearchState>().cached_bytes();
 
     let items = vec![
         CacheItemDto {
             id: "sizes",
             label: "Folder size index",
-            detail: format!("{} saved · {} live in memory", saved_dirs, live_dirs),
+            detail: if live_dirs == 0 {
+                format!("{saved_dirs} saved on disk")
+            } else {
+                format!("{saved_dirs} saved on disk · {live_dirs} live in memory (~{} MB)", (live_bytes / (1024 * 1024)).max(1))
+            },
             bytes: size_bytes,
             count: saved_dirs + live_dirs,
             kind: "disk",
@@ -130,9 +135,9 @@ fn build_info(app: &AppHandle) -> Result<CacheInfoDto, String> {
             detail: if search_roots == 0 {
                 "No folders indexed in memory yet".into()
             } else {
-                format!("{search_roots} folder tree{} cached in memory", if search_roots == 1 { "" } else { "s" })
+                format!("{search_roots} folder tree{} · freed after 10 min idle", if search_roots == 1 { "" } else { "s" })
             },
-            bytes: 0,
+            bytes: search_bytes,
             count: search_roots,
             kind: "memory",
         },
@@ -178,6 +183,35 @@ fn move_dir_contents(from: &Path, to: &Path) -> Result<(), String> {
     }
     let _ = fs::remove_dir_all(from);
     Ok(())
+}
+
+/// Installers older than this are removed at startup; a newer download replaces any older one.
+const STAGED_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
+/// Deletes leftover partial downloads and installers nobody ran within a week. Returns bytes freed.
+pub fn prune_updates(dir: &Path, max_age: std::time::Duration) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else { return 0 };
+    let mut freed = 0;
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let partial = entry.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("part"));
+        let old = meta.modified().ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age > max_age);
+        if (partial || old) && fs::remove_file(entry.path()).is_ok() {
+            freed += meta.len();
+        }
+    }
+    freed
+}
+
+/// Housekeeping at startup, off the main thread: drop stale installers.
+pub fn startup_cleanup(app: &AppHandle) {
+    let Ok(dir) = resolve_cache_dir(app) else { return };
+    std::thread::spawn(move || {
+        prune_updates(&dir.join(UPDATES_DIR), STAGED_MAX_AGE);
+    });
 }
 
 #[tauri::command]
@@ -273,6 +307,21 @@ pub async fn clear_cache(app: AppHandle, scope: String) -> Result<CacheInfoDto, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prune_removes_partials_and_old_files_only() {
+        let dir = std::env::temp_dir().join(format!("octopolis-prune-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a.exe.part"), vec![0u8; 10]).unwrap();
+        fs::write(dir.join("setup.exe"), vec![0u8; 20]).unwrap();
+        // Fresh installer survives, the partial download goes.
+        assert_eq!(prune_updates(&dir, std::time::Duration::from_secs(3600)), 10);
+        assert!(dir.join("setup.exe").exists() && !dir.join("a.exe.part").exists());
+        // Everything is "old" with a zero max age.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(prune_updates(&dir, std::time::Duration::ZERO), 20);
+        let _ = fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn computes_dir_size_and_moves_contents() {

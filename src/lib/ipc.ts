@@ -437,3 +437,9 @@ export const unwatchDir = (id: string) => invoke<void>("unwatch_dir", { id });
 export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+/** Sets the window (taskbar) and tray icon from raw RGBA pixels, and remembers it for the next launch. */
+export const setAppIcon = (rgba: Uint8ClampedArray | Uint8Array, width: number, height: number) =>
+  invoke<void>("set_app_icon", new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength), {
+    headers: { width: String(width), height: String(height) },
+  });

@@ -146,6 +146,30 @@ impl SizeIndex {
         self.lock().clear();
     }
 
+    /// Approximate heap use in bytes (keys, subfolder names and table overhead).
+    pub fn approx_bytes(&self) -> u64 {
+        let map = self.lock();
+        map.iter()
+            .map(|(k, r)| 64 + k.len() + r.subdirs.iter().map(|s| s.len() + 40).sum::<usize>())
+            .sum::<usize>() as u64
+    }
+
+    /// Keeps the index within `max` folders: when it has grown past that, everything outside `keep`
+    /// is dropped. Dropped folders simply read as unknown until they are scanned again.
+    /// Returns how many records were dropped.
+    pub fn trim(&self, max: usize, keep: &Path) -> usize {
+        let mut map = self.lock();
+        if map.len() <= max {
+            return 0;
+        }
+        let root = key_of(keep);
+        let prefix = format!("{root}\\");
+        let before = map.len();
+        map.retain(|k, _| *k == root || k.starts_with(&prefix));
+        map.shrink_to_fit();
+        before - map.len()
+    }
+
     /// Drops `dir` and everything below it.
     pub fn forget(&self, dir: &Path) {
         let mut map = self.lock();
@@ -298,6 +322,19 @@ mod tests {
         index.scan(tmp.path(), &CancelToken::default());
         assert_eq!(index.dirty_dir(&tmp.path().join("a")), Some(tmp.path().join("a")));
         assert_eq!(index.dirty_dir(&tmp.path().join("a/x")), Some(tmp.path().join("a")));
+    }
+
+    #[test]
+    fn trim_keeps_only_the_given_tree_once_over_the_cap() {
+        let tmp = fixture();
+        let index = SizeIndex::default();
+        index.scan(tmp.path(), &CancelToken::default());
+        assert_eq!(index.len(), 3);
+        assert_eq!(index.trim(10, &tmp.path().join("a")), 0);
+        assert_eq!(index.trim(2, &tmp.path().join("a")), 1);
+        assert!(!index.contains(tmp.path()));
+        assert!(index.contains(&tmp.path().join("a/deep")));
+        assert!(index.approx_bytes() > 0);
     }
 
     #[test]

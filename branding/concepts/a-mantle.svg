@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><title>Octopolis A Mantle</title>
+<circle cx="128" cy="92" r="68" fill="#000"/>
+<g fill="none" stroke="#000" stroke-width="20" stroke-linecap="round">
+<path d="M84 140C80 190 50 206 34 188C26 176 38 164 48 172"/>
+<path d="M112 150C112 198 98 226 80 222C68 218 70 204 82 206"/>
+<path d="M144 150C144 198 158 226 176 222C188 218 186 204 174 206"/>
+<path d="M172 140C176 190 206 206 222 188C230 176 218 164 208 172"/></g></svg>

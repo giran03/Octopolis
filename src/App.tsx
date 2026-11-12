@@ -11,6 +11,8 @@ import { errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer,
 import { classifyTarget } from "./lib/launch";
 import { samePath } from "./lib/paths";
 import { parsePreset } from "./lib/session";
+import { currentIconColors, renderAppIcon } from "./lib/appIcon";
+import { setAppIcon } from "./lib/ipc";
 import { BUILT_IN_THEMES, DENSITIES, THEME_TOKENS } from "./lib/themes";
 import { onKeyDown, onMouseNav } from "./keys";
 import { loadJson, saveJson, settings } from "./state/settings";
@@ -92,8 +94,40 @@ async function openLaunchTargets(args: readonly string[]) {
   }
 }
 
+/** Keeps the taskbar and tray icon in the colors of the active theme and accent. */
+function syncAppIcon() {
+  let last = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const push = () => {
+    const colors = currentIconColors();
+    const key = `${colors.bg}|${colors.tiles}|${colors.hub}`;
+    if (key === last) return;
+    last = key;
+    renderAppIcon(colors).then((img) => setAppIcon(img.data, img.width, img.height)).catch(() => (last = ""));
+  };
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(push, 150);
+  };
+  // Runs after applyTheme (created before it), so the page already carries the new colors.
+  createEffect(() => {
+    void settings.theme();
+    void settings.customTheme();
+    void settings.accent();
+    schedule();
+  });
+  // With no chosen theme the colors follow the system's light or dark setting.
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", schedule);
+  onCleanup(() => {
+    clearTimeout(timer);
+    media.removeEventListener("change", schedule);
+  });
+}
+
 export function App() {
   createEffect(applyTheme);
+  syncAppIcon();
   createEffect(applyMotion);
   startVideoThumbPrefetch();
   // Remember where the user was, for the "Where I left off" start option.
@@ -124,6 +158,15 @@ export function App() {
     window.addEventListener("focus", onFocus);
     onCleanup(() => window.removeEventListener("focus", onFocus));
     onFocus();
+    // Endless decorative motion (the shortcut ticker) pauses while another app is in front.
+    // Focus moving into a preview frame keeps the page focused, hence the hasFocus check.
+    const markInactive = () => setTimeout(() => document.documentElement.classList.toggle("window-inactive", !document.hasFocus()));
+    window.addEventListener("blur", markInactive);
+    window.addEventListener("focus", markInactive);
+    onCleanup(() => {
+      window.removeEventListener("blur", markInactive);
+      window.removeEventListener("focus", markInactive);
+    });
     for (const type of ["mousedown", "mouseup"] as const) {
       window.addEventListener(type, onMouseNav);
       onCleanup(() => window.removeEventListener(type, onMouseNav));

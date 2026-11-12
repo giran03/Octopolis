@@ -23,13 +23,15 @@ function encode(names: string[]): ArrayBuffer {
 }
 
 const cachedSizes = new Map<string, { name: string; bytes: number; files: number; stale: boolean }[]>();
+const gitRepos = new Map<string, { branch: string; children: Record<string, string> }>();
+const repoCommits = new Map<string, Record<string, { timeMs: number; author: string }>>();
 
 vi.mock("../lib/ipc", () => ({
   errorText: (e: unknown) => String(e),
   cachedFolderSizes: async (path: string) => cachedSizes.get(path) ?? [],
   folderSizes: async () => undefined,
-  gitStatus: async () => null,
-  gitLastCommits: async () => ({}),
+  gitStatus: async (path: string) => gitRepos.get(path) ?? null,
+  gitLastCommits: async (path: string) => repoCommits.get(path) ?? {},
   unwatchDir: async () => undefined,
   watchDir: async () => undefined,
   listDir: async (path: string, onBatch: (b: ArrayBuffer) => boolean) => {
@@ -44,12 +46,16 @@ vi.mock("../lib/ipc", () => ({
   },
 }));
 
+const { settings } = await import("./settings");
 const { createTab } = await import("./tab");
 const selectedNames = (t: ReturnType<typeof createTab>) => [...t.selection()].map((i) => t.listing().names[i]).sort();
 
 beforeEach(() => {
   dirs.clear();
   cachedSizes.clear();
+  gitRepos.clear();
+  repoCommits.clear();
+  settings.set({ showCommits: false });
   gates.length = 0;
   holdNextLoad = false;
 });
@@ -143,5 +149,21 @@ describe("tab refresh", () => {
     expect(tab.dirSizes()?.get("docs")).toBe(4096);
     gates.forEach((g) => g());
     await revisit;
+  });
+
+  it("loads last-commit info immediately when showCommits is toggled inside a repository", async () => {
+    dirs.set("C:\\repo", ["README.md"]);
+    gitRepos.set("C:\\repo", { branch: "main", children: { "readme.md": "M" } });
+    repoCommits.set("C:\\repo", { "readme.md": { timeMs: 1_700_000_000_000, author: "Ada" } });
+
+    const tab = createTab("C:\\repo");
+    await tab.navigate("C:\\repo");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(tab.git()?.branch).toBe("main");
+    expect(tab.commits()).toBeNull();
+
+    settings.toggleCommits();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(tab.commits()?.["readme.md"]?.author).toBe("Ada");
   });
 });

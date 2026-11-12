@@ -50,6 +50,14 @@ export function targets(tab: TabModel): string[] {
   return entry === undefined ? [] : [tab.pathOf(entry)];
 }
 
+/** The path of the selected item when it is exactly one real folder (not inside an archive). */
+export function singleFolderPath(tab: TabModel): string | null {
+  if (tab.archive() || tab.selection().size !== 1) return null;
+  const l = tab.listing();
+  const entry = [...tab.selection()][0];
+  return entry < l.count && isDir(l, entry) ? tab.pathOf(entry) : null;
+}
+
 export function openEntry(tab: TabModel, entry: number) {
   const l = tab.listing();
   if (entry >= l.count) return;

@@ -19,6 +19,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
+    "country-flag-emoji-polyfill": "^0.1.10",
+    "emojibase-data": "^18.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vite-plugin-solid": "^2.11.16",

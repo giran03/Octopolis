@@ -1,13 +1,14 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { formatSize } from "../../lib/format";
 import { cacheInfo, clearCache, openCacheFolder, openDataFolder, openLogFolder, pickCacheFolder, setCacheDir, type CacheInfo } from "../../lib/ipc";
-import { clearGridThumbs, gridThumbCount } from "../Extras";
+import { clearGridThumbs, gridThumbBytes, gridThumbCount } from "../Extras";
+import { folderIcons } from "../../state/folderIcons";
 import { history } from "../../state/history";
 import { clearIconCache, iconCacheCount } from "../../state/icons";
 import { sanitizeSettings, settings } from "../../state/settings";
 import { shelf } from "../../state/shelf";
 import { clearSessionSizes, sessionSizeCount } from "../../state/tab";
-import { clearThumbCache, thumbCacheCount } from "../../state/thumbs";
+import { clearThumbCache, thumbCacheBytes, thumbCacheCount } from "../../state/thumbs";
 import { ui } from "../../state/ui";
 import { ActionButton, Section, SettingRow } from "./controls";
 
@@ -28,6 +29,10 @@ export function AdvancedTab() {
   const thumbCount = () => {
     void memTick();
     return thumbCacheCount() + gridThumbCount();
+  };
+  const thumbBytes = () => {
+    void memTick();
+    return thumbCacheBytes() + gridThumbBytes();
   };
   const iconCount = () => {
     void memTick();
@@ -185,7 +190,7 @@ export function AdvancedTab() {
             <div class="srow stacked">
               <div class="srow-text">
                 <div class="srow-label">What's cached</div>
-                <div class="srow-hint">Disk files live in your cache folder; memory caches clear automatically when you close Octopolis</div>
+                <div class="srow-hint">Disk files live in your cache folder; memory caches are size-limited, freed when idle and empty on close. Thumbnails aren't saved to disk: Windows already keeps its own thumbnail cache</div>
               </div>
               <div class="cache-list">
                 <For each={info().items}>
@@ -196,7 +201,7 @@ export function AdvancedTab() {
                         <span class="cache-item-detail">{item.detail}</span>
                       </div>
                       <span class="cache-item-size num">
-                        {item.kind === "disk" ? formatSize(item.bytes) : "In memory"}
+                        {item.kind === "disk" ? formatSize(item.bytes) : item.bytes > 0 ? `${formatSize(item.bytes)} in memory` : "In memory"}
                       </span>
                       <button
                         class="btn small"
@@ -216,7 +221,7 @@ export function AdvancedTab() {
                       {thumbCount() === 0 ? "No thumbnails cached" : `${thumbCount().toLocaleString()} thumbnail${thumbCount() === 1 ? "" : "s"} in memory`}
                     </span>
                   </div>
-                  <span class="cache-item-size num">In memory</span>
+                  <span class="cache-item-size num">{thumbBytes() > 0 ? `${formatSize(thumbBytes())} in memory` : "In memory"}</span>
                   <button
                     class="btn small"
                     disabled={busy() || thumbCount() === 0}
@@ -278,6 +283,9 @@ export function AdvancedTab() {
       <Section title="Clean up">
         <SettingRow label="Recent folders" hint="Clears the Recent list and what Ctrl+P learned about the folders you visit">
           <ActionButton label="Clear" confirm="Press again to clear" onClick={() => (history.clear(), ui.toast("Recent folders cleared"))} />
+        </SettingRow>
+        <SettingRow label="Folder icons" hint={folderIcons.count() === 0 ? "No folders have a custom emoji icon. Right-click a folder and choose Change icon" : `${folderIcons.count()} folder${folderIcons.count() === 1 ? "" : "s"} with a custom emoji icon`}>
+          <ActionButton label="Reset all" confirm="Press again to reset" disabled={folderIcons.count() === 0} onClick={() => (folderIcons.clear(), ui.toast("Folder icons reset"))} />
         </SettingRow>
         <SettingRow label="Shelf" hint={shelf.items().length === 0 ? "The shelf is empty" : `${shelf.items().length} item${shelf.items().length === 1 ? "" : "s"} waiting on the shelf`}>
           <ActionButton label="Empty shelf" confirm="Press again to empty" disabled={shelf.items().length === 0} onClick={shelf.clear} />

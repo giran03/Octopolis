@@ -12,7 +12,12 @@ const MAX_PREFETCH_PER_DIR = 48;
 const SETTLE_MS = 250;
 const YIELD_MS = 45;
 
+/** Decoded PNGs held as blobs count against this budget, so a few huge thumbnails cannot pile up. */
+const MAX_BYTES = 24 * 1024 * 1024;
+
 const cache = new Map<string, string | null>();
+const sizes = new Map<string, number>();
+let totalBytes = 0;
 const pending = new Map<string, Promise<string | null>>();
 
 export function thumbCacheKey(path: string, modified: number, size = VIDEO_THUMB_PX): string {
@@ -28,16 +33,24 @@ export function peekThumb(key: string): string | null | undefined {
   return val;
 }
 
-function storeThumb(key: string, url: string | null) {
-  if (cache.has(key)) cache.delete(key);
-  while (cache.size >= MAX_CACHED) {
+function drop(key: string) {
+  const url = cache.get(key);
+  cache.delete(key);
+  if (url) URL.revokeObjectURL(url);
+  totalBytes -= sizes.get(key) ?? 0;
+  sizes.delete(key);
+}
+
+function storeThumb(key: string, url: string | null, bytes = 0) {
+  if (cache.has(key)) drop(key);
+  while (cache.size > 0 && (cache.size >= MAX_CACHED || totalBytes + bytes > MAX_BYTES)) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
-    const oldUrl = cache.get(oldest);
-    cache.delete(oldest);
-    if (oldUrl) URL.revokeObjectURL(oldUrl);
+    drop(oldest);
   }
   cache.set(key, url);
+  sizes.set(key, bytes);
+  totalBytes += bytes;
 }
 
 /** Loads and caches a thumbnail, deduplicating concurrent requests for the same key. */
@@ -53,7 +66,7 @@ export function loadCachedThumb(path: string, modified: number, size = VIDEO_THU
     .then(
       (buf) => {
         const url = URL.createObjectURL(new Blob([buf], { type: "image/png" }));
-        storeThumb(key, url);
+        storeThumb(key, url, buf.byteLength);
         return url;
       },
       () => {
@@ -69,6 +82,8 @@ export function loadCachedThumb(path: string, modified: number, size = VIDEO_THU
 
 /** Number of cached video thumbnails currently held in memory. */
 export const thumbCacheCount = () => cache.size;
+/** Bytes of image data held by the cached video thumbnails. */
+export const thumbCacheBytes = () => totalBytes;
 
 /** Clears cached video thumbnails (mainly for tests or cache management). */
 export function clearThumbCache() {
@@ -76,6 +91,8 @@ export function clearThumbCache() {
     if (url) URL.revokeObjectURL(url);
   }
   cache.clear();
+  sizes.clear();
+  totalBytes = 0;
   pending.clear();
 }
 

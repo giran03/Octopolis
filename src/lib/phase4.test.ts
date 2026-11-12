@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_THEMES, isColor, parseTheme } from "./themes";
-import { filterMenu } from "./menu";
+import { clampMenuPosition, filterMenu, MENU_EDGE_GAP } from "./menu";
 import { psCdCommand } from "./paths";
 
 describe("terminal folder sync", () => {
@@ -57,6 +57,12 @@ describe("curated context menu", () => {
   it("collapses leading, trailing and doubled separators", () => {
     const out = filterMenu(["separator", { label: "A" }, "separator", "separator", { label: "B" }, "separator"], "", new Set());
     expect(out).toEqual([{ label: "A" }, "separator", { label: "B" }]);
+  });
+
+  it("clamps context menus away from window corners and accounts for UI zoom", () => {
+    expect(clampMenuPosition(0, 2, 260, 400, 1280, 800)).toEqual({ x: MENU_EDGE_GAP, y: MENU_EDGE_GAP });
+    expect(clampMenuPosition(1275, 795, 260, 400, 1280, 800)).toEqual({ x: 1280 - 260 - MENU_EDGE_GAP, y: 800 - 400 - MENU_EDGE_GAP });
+    expect(clampMenuPosition(1100, 700, 240, 300, 1200, 800, 1.25)).toEqual({ x: (1200 - 240 - MENU_EDGE_GAP) / 1.25, y: (800 - 300 - MENU_EDGE_GAP) / 1.25 });
   });
 });
 

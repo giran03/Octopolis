@@ -20,3 +20,25 @@ export function filterMenu<T extends { label: string }>(entries: readonly Entry<
   const rest = entries.filter((e) => e === "separator" || !pinned.has(e.label));
   return tidy(top.length ? [...top, "separator", ...rest] : rest);
 }
+
+/** Minimum distance in viewport pixels between a context menu and any window edge. */
+export const MENU_EDGE_GAP = 16;
+
+/** Clamps a context menu inside the viewport with uniform edge padding, accounting for UI zoom. */
+export function clampMenuPosition(
+  x: number,
+  y: number,
+  menuW: number,
+  menuH: number,
+  viewW: number,
+  viewH: number,
+  zoom = 1,
+  gap = MENU_EDGE_GAP,
+): { x: number; y: number } {
+  const z = Math.max(0.1, zoom);
+  const maxX = Math.max(gap, viewW - menuW - gap);
+  const maxY = Math.max(gap, viewH - menuH - gap);
+  const vx = Math.max(gap, Math.min(x, maxX));
+  const vy = Math.max(gap, Math.min(y, maxY));
+  return { x: vx / z, y: vy / z };
+}

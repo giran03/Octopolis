@@ -9,6 +9,26 @@ pub fn thumbnail_png(path: &Path, size: u32, icon_only: bool) -> Result<Vec<u8>>
     imp::thumbnail_png(path, size, icon_only)
 }
 
+/// Encodes straight-alpha RGBA pixels as PNG.
+pub fn rgba_to_png(rgba: &[u8], width: u32, height: u32) -> std::io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, width, height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().map_err(std::io::Error::other)?;
+        w.write_image_data(rgba).map_err(std::io::Error::other)?;
+    }
+    Ok(out)
+}
+
+/// True for a bare drive root such as `C:` followed by a backslash, or just `C:`.
+pub fn is_drive_root(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    let b = s.as_bytes();
+    (b.len() == 2 || (b.len() == 3 && (b[2] == b'\\' || b[2] == b'/'))) && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
 /// Encodes BGRA pixels (top-down, as GDI returns them) as PNG. Thumbnails with
 /// an all-zero alpha channel have no real alpha and are made opaque; others
 /// are premultiplied and are converted to straight alpha.
@@ -48,9 +68,12 @@ mod imp {
         HBITMAP, HGDIOBJ,
     };
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
+    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
     use windows::Win32::UI::Shell::{
-        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
+        IShellItemImageFactory, SHCreateItemFromParsingName, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW, SIIGBF_BIGGERSIZEOK,
+        SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
     };
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
     use windows::core::PCWSTR;
 
     use super::bgra_to_png;
@@ -66,7 +89,128 @@ mod imp {
         }
     }
 
+    /// The shell answers "not yet available" while it is busy (many requests at once, a drive waking up).
+    const E_PENDING: i32 = 0x8000_000Au32 as i32;
+    const RETRIES: u32 = 8;
+
+    /// Windows' own icon or thumbnail, trying the best source the running Windows has:
+    /// 1. a bare drive root: `SHGetFileInfo`, which asks the drive itself (works on every Windows version);
+    /// 2. `IShellItemImageFactory` (Vista and later), retried while the shell says "not yet";
+    /// 3. `SHGetFileInfo` as the last resort (also covers Windows versions or items the factory rejects).
+    ///
+    /// The caller falls back to Octopolis' drawn icons only when all of these fail.
     pub fn thumbnail_png(path: &Path, size: u32, icon_only: bool) -> Result<Vec<u8>> {
+        // A drive's own icon (system drive logo, removable, network...) comes from the drive itself.
+        // Asking the shell namespace for a bare root can return a generic folder or file icon instead.
+        if icon_only
+            && super::is_drive_root(path)
+            && let Some(png) = sh_file_info_icon(path, true)
+        {
+            return Ok(png);
+        }
+        let mut result = fetch(path, size, icon_only);
+        for attempt in 1..RETRIES {
+            match &result {
+                Err(Error::Io { source, .. }) if source.raw_os_error() == Some(E_PENDING) => {
+                    std::thread::sleep(std::time::Duration::from_millis(40 * attempt as u64));
+                    result = fetch(path, size, icon_only);
+                }
+                _ => break,
+            }
+        }
+        if result.is_err()
+            && icon_only
+            && let Some(png) = sh_file_info_icon(path, false)
+        {
+            return Ok(png);
+        }
+        result
+    }
+
+    /// The icon `SHGetFileInfo` reports for a path, as PNG. `None` when it cannot be read.
+    fn sh_file_info_icon(path: &Path, root_only: bool) -> Option<Vec<u8>> {
+        let mut wide: Vec<u16> = if root_only { path.as_os_str().encode_wide().take(2).collect() } else { path.as_os_str().encode_wide().collect() };
+        if root_only {
+            wide.push(u16::from(b'\\'));
+        }
+        wide.push(0);
+        let mut info = SHFILEINFOW::default();
+        // SAFETY: `wide` is NUL-terminated; `info` is the struct size passed.
+        let got = unsafe {
+            SHGetFileInfoW(PCWSTR(wide.as_ptr()), FILE_FLAGS_AND_ATTRIBUTES(0), Some(&mut info), size_of::<SHFILEINFOW>() as u32, SHGFI_ICON | SHGFI_LARGEICON)
+        };
+        if got == 0 || info.hIcon.is_invalid() {
+            return None;
+        }
+        let png = hicon_to_png(info.hIcon);
+        // SAFETY: the icon was created for us by SHGetFileInfoW.
+        let _ = unsafe { DestroyIcon(info.hIcon) };
+        png
+    }
+
+    fn hicon_to_png(icon: HICON) -> Option<Vec<u8>> {
+        let mut ii = ICONINFO::default();
+        // SAFETY: `ii` is a valid out-parameter; both bitmaps are ours to delete.
+        unsafe { GetIconInfo(icon, &mut ii) }.ok()?;
+        let result = (|| {
+            let (w, h, color) = read_bitmap(ii.hbmColor, false)?;
+            let mut rgba = Vec::with_capacity(color.len());
+            let has_alpha = color.chunks_exact(4).any(|p| p[3] != 0);
+            let mask = if has_alpha { None } else { Some(read_bitmap(ii.hbmMask, false)?.2) };
+            for (i, p) in color.chunks_exact(4).enumerate() {
+                let a = match &mask {
+                    None => p[3],
+                    Some(m) => if m[i * 4] == 0 { 255 } else { 0 },
+                };
+                rgba.extend_from_slice(&[p[2], p[1], p[0], a]);
+            }
+            super::rgba_to_png(&rgba, w, h).ok()
+        })();
+        // SAFETY: GetIconInfo handed us ownership of these bitmaps.
+        unsafe {
+            if !ii.hbmColor.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ(ii.hbmColor.0));
+            }
+            if !ii.hbmMask.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ(ii.hbmMask.0));
+            }
+        }
+        result
+    }
+
+    /// Top-down BGRA pixels of a bitmap, with its size.
+    fn read_bitmap(bitmap: HBITMAP, _unused: bool) -> Option<(u32, u32, Vec<u8>)> {
+        let mut info = BITMAP::default();
+        // SAFETY: `info` is a BITMAP of the size passed.
+        let got = unsafe { GetObjectW(HGDIOBJ(bitmap.0), size_of::<BITMAP>() as i32, Some((&mut info as *mut BITMAP).cast())) };
+        if got == 0 || info.bmWidth <= 0 || info.bmHeight == 0 {
+            return None;
+        }
+        let (w, h) = (info.bmWidth, info.bmHeight.abs());
+        let mut bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut pixels = vec![0u8; (w as usize) * (h as usize) * 4];
+        // SAFETY: the buffer holds w*h 32-bit pixels, as described by `bmi`.
+        let lines = unsafe {
+            let dc = CreateCompatibleDC(None);
+            let n = GetDIBits(dc, bitmap, 0, h as u32, Some(pixels.as_mut_ptr().cast()), &mut bmi, DIB_RGB_COLORS);
+            let _ = DeleteDC(dc);
+            n
+        };
+        (lines != 0).then_some((w as u32, h as u32, pixels))
+    }
+
+    fn fetch(path: &Path, size: u32, icon_only: bool) -> Result<Vec<u8>> {
         // SAFETY: COM init on this thread; balanced by `Com::drop` when it succeeded.
         let _com = Com(unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok());
         let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();

@@ -32,6 +32,7 @@ interface Settings {
   terminalShell: TerminalShell;
   motion: MotionPref;
   tooltips: boolean;
+  showHints: boolean;
   shelfAutoOpen: boolean;
   showPinned: boolean;
   showRecent: boolean;
@@ -63,7 +64,7 @@ export type TerminalShell = "powershell" | "pwsh" | "cmd";
 export type MotionPref = "system" | "reduce" | "full";
 export type UpdateMode = "off" | "notify" | "auto";
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customTheme: null, accent: null, uiScale: 100, density: "normal", pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: false, autoFolderSizes: false, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "notify", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", notifyDone: true, keepAwake: true };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customTheme: null, accent: null, uiScale: 100, density: "normal", pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "notify", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", notifyDone: true, keepAwake: true };
 
 export const SETTING_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
@@ -130,6 +131,7 @@ export const settings = createRoot(() => {
     terminalShell: () => value().terminalShell,
     motion: () => value().motion,
     tooltips: () => value().tooltips,
+    showHints: () => value().showHints,
     shelfAutoOpen: () => value().shelfAutoOpen,
     showPinned: () => value().showPinned,
     showRecent: () => value().showRecent,

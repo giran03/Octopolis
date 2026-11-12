@@ -273,7 +273,14 @@ pub async fn update_check(repo: String) -> Result<LatestRelease, String> {
 pub async fn update_download(app: AppHandle, url: String, name: String, sha256: String) -> Result<String, String> {
     crate::off_main(move || {
         let dir = updates_dir(&app)?;
-        download(&dir, &url, &name, &sha256).map(|p| p.to_string_lossy().into_owned())
+        let path = download(&dir, &url, &name, &sha256)?;
+        // Only the newest installer is worth keeping.
+        for entry in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+            if entry.path() != path && entry.path().is_file() {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+        Ok(path.to_string_lossy().into_owned())
     })
     .await
 }

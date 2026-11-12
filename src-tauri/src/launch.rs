@@ -83,6 +83,7 @@ pub fn set_summon(app: AppHandle, mode: String) {
         if in_front && summon == octo_core::hotkey::Summon::CtrlAltE {
             let keep = handle.state::<LaunchState>().keep_in_tray.load(Ordering::Relaxed);
             let _ = if keep { w.hide() } else { w.minimize() };
+            crate::dormant::sync(&handle);
         } else {
             show_main(&handle);
         }
@@ -95,7 +96,7 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-const TRAY_ID: &str = "octopolis-tray";
+pub const TRAY_ID: &str = "octopolis-tray";
 
 pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -103,6 +104,7 @@ pub fn show_main(app: &AppHandle) {
         let _ = w.show();
         let _ = w.set_focus();
     }
+    crate::dormant::sync(app);
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -110,7 +112,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID).tooltip("Octopolis").menu(&menu).show_menu_on_left_click(false);
-    if let Some(icon) = app.default_window_icon() {
+    if let Some(icon) = crate::icon_cmd::saved(app) {
+        builder = builder.icon(icon);
+    } else if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
     builder

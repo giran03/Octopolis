@@ -1,24 +1,29 @@
 // Floating UI: operations tray, context menu, confirmation dialog, toasts.
-import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, lazy, onCleanup, onMount, Show } from "solid-js";
 import { formatSize } from "../lib/format";
 import { baseName } from "../lib/paths";
 import { ops, type OpView } from "../state/ops";
-import { filterMenu } from "../lib/menu";
+import { clampMenuPosition, filterMenu, MENU_EDGE_GAP } from "../lib/menu";
 import { settings } from "../state/settings";
 import { ui, type MenuEntry, type MenuItem, type MenuState } from "../state/ui";
 import { ConflictDialog } from "./ConflictDialog";
-import { DiskSpaceModal } from "./DiskSpaceModal";
-import { PropertiesDialog } from "./PropertiesDialog";
-import { RecycleBin } from "./RecycleBin";
-import { Duplicates } from "./Duplicates";
 import { TaggedList, TagsDialog } from "./Tags";
-import { ActionsEditor } from "./ActionsEditor";
-import { Cleanup } from "./Cleanup";
-import { BatchRename, LockHunter } from "./Dialogs";
 import { PromptDialog } from "./Extras";
 import { IconClose, IconStarFill } from "./Icons";
 import { Palette } from "./Palette";
-import { SettingsModal } from "./settings/SettingsModal";
+
+// Dialogs opened now and then load on first use, keeping them out of startup parsing and memory.
+// The conflict prompt and palette stay eager: they must appear the instant they are needed.
+const DiskSpaceModal = lazy(() => import("./DiskSpaceModal").then((m) => ({ default: m.DiskSpaceModal })));
+const PropertiesDialog = lazy(() => import("./PropertiesDialog").then((m) => ({ default: m.PropertiesDialog })));
+const RecycleBin = lazy(() => import("./RecycleBin").then((m) => ({ default: m.RecycleBin })));
+const Duplicates = lazy(() => import("./Duplicates").then((m) => ({ default: m.Duplicates })));
+const ActionsEditor = lazy(() => import("./ActionsEditor").then((m) => ({ default: m.ActionsEditor })));
+const Cleanup = lazy(() => import("./Cleanup").then((m) => ({ default: m.Cleanup })));
+const BatchRename = lazy(() => import("./Dialogs").then((m) => ({ default: m.BatchRename })));
+const LockHunter = lazy(() => import("./Dialogs").then((m) => ({ default: m.LockHunter })));
+const EmojiPicker = lazy(() => import("./EmojiPicker").then((m) => ({ default: m.EmojiPicker })));
+const SettingsModal = lazy(() => import("./settings/SettingsModal").then((m) => ({ default: m.SettingsModal })));
 
 export function Overlays() {
   return (
@@ -64,6 +69,9 @@ export function Overlays() {
       </Show>
       <Show when={ui.prompt()} keyed>
         {(p) => <PromptDialog title={p.title} label={p.label} initial={p.initial} submitLabel={p.submitLabel} onSubmit={p.onSubmit} />}
+      </Show>
+      <Show when={ui.emojiTarget()} keyed>
+        {(path) => <EmojiPicker path={path} />}
       </Show>
       <Show when={ui.batchRenameOpen()}>
         <BatchRename />
@@ -185,7 +193,8 @@ function OpCard(props: { op: OpView }) {
 
 function ContextMenu(props: { menu: MenuState }) {
   let el!: HTMLDivElement;
-  const [pos, setPos] = createSignal({ x: props.menu.x, y: props.menu.y });
+  const zoom = () => Math.max(0.1, settings.uiScale() / 100);
+  const [pos, setPos] = createSignal({ x: props.menu.x / zoom(), y: props.menu.y / zoom() });
   const [hot, setHot] = createSignal(-1);
   const [filter, setFilter] = createSignal("");
   const pinned = () => new Set(settings.pinnedActions());
@@ -198,17 +207,26 @@ function ContextMenu(props: { menu: MenuState }) {
   };
 
   onMount(() => {
-    const r = el.getBoundingClientRect();
-    setPos({
-      x: Math.max(4, Math.min(props.menu.x, window.innerWidth - r.width - 4)),
-      y: Math.max(4, Math.min(props.menu.y, window.innerHeight - r.height - 4)),
-    });
+    const place = () => {
+      const z = zoom();
+      el.style.maxHeight = `${Math.max(120, (window.innerHeight - MENU_EDGE_GAP * 2) / z)}px`;
+      // Use offsetWidth/offsetHeight so the entry scale(0.97) animation never shrinks the measured size.
+      const menuW = el.offsetWidth * z;
+      const menuH = el.offsetHeight * z;
+      setPos(clampMenuPosition(props.menu.x, props.menu.y, menuW, menuH, window.innerWidth, window.innerHeight, z));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    window.addEventListener("resize", place);
     el.focus();
     const away = (e: MouseEvent) => !el.contains(e.target as Node) && ui.closeMenu();
     const blur = () => ui.closeMenu();
     window.addEventListener("mousedown", away, true);
     window.addEventListener("blur", blur);
     onCleanup(() => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
       window.removeEventListener("mousedown", away, true);
       window.removeEventListener("blur", blur);
     });

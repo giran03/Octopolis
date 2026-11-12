@@ -32,7 +32,11 @@ const MAX_WAIT: Duration = Duration::from_secs(3);
 /// More changed folders than this in one burst: rescan the affected subfolders instead.
 const MAX_REFRESH: usize = 400;
 const SAVE_EVERY: Duration = Duration::from_secs(5);
-const MAX_SAVED: usize = 20_000;
+const MAX_SAVED: usize = 10_000;
+/// Remembered totals untouched for this long are dropped when the file is loaded.
+const SAVED_TTL_SECS: u64 = 90 * 24 * 3600;
+/// The live index is cut back to the current folder's tree beyond this many folders (roughly 50 MB).
+const MAX_LIVE_DIRS: usize = 150_000;
 pub const SAVE_FILE: &str = "size-cache.json";
 
 #[derive(Default)]
@@ -44,8 +48,10 @@ pub struct SizesState {
 }
 
 impl SizesState {
-    pub fn stats(&self, app: &tauri::AppHandle) -> (usize, usize, u64) {
+    /// (live folders, live bytes in memory, saved folders, saved file bytes).
+    pub fn stats(&self, app: &tauri::AppHandle) -> (usize, u64, usize, u64) {
         let live = self.index.len();
+        let live_bytes = self.index.approx_bytes();
         let file = crate::cache_cmd::resolve_cache_dir(app).map(|d| d.join(SAVE_FILE)).ok();
         let mut guard = self.saved.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref f) = file {
@@ -53,7 +59,7 @@ impl SizesState {
         }
         let saved = guard.map.len();
         let bytes = file.and_then(|f| std::fs::metadata(f).ok().map(|m| m.len())).unwrap_or(0);
-        (live, saved, bytes)
+        (live, live_bytes, saved, bytes)
     }
 
     pub fn flush_now(&self) {
@@ -138,6 +144,12 @@ impl Saved {
         self.loaded = true;
         self.map = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         self.file = Some(file);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let before = self.map.len();
+        self.map.retain(|_, v| now.saturating_sub(v[2]) < SAVED_TTL_SECS);
+        if self.map.len() != before {
+            self.dirty = true; // rewritten smaller on the next flush
+        }
     }
 
     fn get(&self, dir: &Path) -> Option<FolderSize> {
@@ -323,6 +335,11 @@ pub async fn scan_disk_space(app: tauri::AppHandle, root: String, on_update: Cha
             scanned: done.load(std::sync::atomic::Ordering::Relaxed),
             total,
         });
+        // A whole-drive scan can index millions of folders. The finished tree was just sent and the
+        // top-level totals are saved to disk, so give the memory back instead of keeping it all live.
+        if !cancel.is_cancelled() && index.len() > MAX_LIVE_DIRS {
+            index.clear();
+        }
         Ok(())
     })
     .await
@@ -545,6 +562,9 @@ fn run(dir: PathBuf, cancel: CancelToken, on_size: Channel<SizeDto>, index: Arc<
         }
     });
     saved.lock().unwrap_or_else(|e| e.into_inner()).flush(true);
+    if !cancel.is_cancelled() {
+        index.trim(MAX_LIVE_DIRS, &dir);
+    }
 
     // 4. Keep the numbers live in the background until this tab moves on.
     if let Some(watcher) = watcher {
@@ -630,7 +650,18 @@ fn apply_changes(dir: &Path, cancel: &CancelToken, on_size: &Channel<SizeDto>, i
     for name in &affected {
         let path = dir.join(name);
         // A subfolder deleted outside the app has no total any more; the list refresh removes its row.
-        let Some(size) = index.total(&path) else { continue };
+        // Unknown because the index was trimmed (not because the folder is gone): read it again.
+        let size = match index.total(&path) {
+            Some(size) => size,
+            None if path.is_dir() && !cancel.is_cancelled() => {
+                index.scan(&path, cancel);
+                match index.total(&path) {
+                    Some(size) => size,
+                    None => continue,
+                }
+            }
+            None => continue,
+        };
         saved.lock().unwrap_or_else(|e| e.into_inner()).set(&path, size);
         if !send(on_size, name, size, false) {
             return;

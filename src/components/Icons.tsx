@@ -3,6 +3,7 @@
 import { type JSX, Show } from "solid-js";
 import { categoryOf, type FileCategory } from "../lib/format";
 import { fileIconSpec } from "../lib/fileicons";
+import { folderIcons } from "../state/folderIcons";
 import { iconFor } from "../state/icons";
 
 type P = { size?: number; class?: string };
@@ -80,6 +81,20 @@ export const IconInfo = (p: P) => (
   </svg>
 );
 
+export const IconGitIgnore = (p: P) => (
+  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4.5 2.5h4.75l2.75 2.75v7.25a1 1 0 0 1-1 1h-6.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" />
+    <path d="M2.25 13.75l11.5-11.5" />
+  </svg>
+);
+
+export const IconGitCommit = (p: P) => (
+  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="8" cy="8" r="2.75" />
+    <path d="M1.5 8h3.75M10.75 8h3.75" />
+  </svg>
+);
+
 export const IconDrive = (p: P & { kind?: string }) => <Glyph code={p.kind === "removable" ? "E88E" : "EDA2"} size={p.size} class={p.class} />;
 
 /** Which font glyph stands for each kind of file. */
@@ -147,36 +162,38 @@ export function PlaceGlyph(p: { id: string; size?: number }) {
   return <Glyph code={place().code} size={p.size ?? 18} class={`place place-${place().tone}`} />;
 }
 
+/** A folder's chosen emoji, drawn in place of its normal icon. */
+export const FolderEmoji = (p: { emoji: string; size?: number; class?: string }) => (
+  <span
+    class={`emoji folder-emoji${p.class ? ` ${p.class}` : ""}`}
+    style={{ "font-size": `${Math.round((p.size ?? 16) * 0.9)}px`, width: `${p.size ?? 16}px`, height: `${p.size ?? 16}px` }}
+    aria-hidden="true"
+  >
+    {p.emoji}
+  </span>
+);
+
 /**
  * The Windows icon for a path, shown at `size`, with `fallback` until it arrives (or when Windows icons are off).
  * `exact` asks for this path's own icon, which differs for drives and special folders.
+ * A folder with a chosen emoji shows that instead.
  */
 export function PathIcon(p: { path: string; name: string; isDir: boolean; exact?: boolean; size?: number; fallback: JSX.Element }) {
-  const url = () => iconFor(p.path, p.name, p.isDir, p.exact)();
+  const emoji = () => (p.isDir ? folderIcons.get(p.path) : undefined);
+  const url = () => (emoji() ? null : iconFor(p.path, p.name, p.isDir, p.exact)());
   return (
-    <Show when={url()} fallback={p.fallback}>
-      {(u) => <img class="path-icon" src={u()} alt="" width={p.size ?? 16} height={p.size ?? 16} />}
+    <Show when={!emoji()} fallback={<FolderEmoji emoji={emoji()!} size={p.size} />}>
+      <Show when={url()} fallback={p.fallback}>
+        {(u) => <img class="path-icon" src={u()} alt="" width={p.size ?? 16} height={p.size ?? 16} />}
+      </Show>
     </Show>
   );
 }
 
-/** The Octopolis octopus, drawn in the accent color. Brand artwork, so it stays an SVG. */
+/** The Octopolis mark: eight blocks around one hub. Brand artwork, so it stays an SVG and follows the theme. */
 export const AppMark = (p: { class?: string }) => (
-  <svg class={p.class} viewBox="0 0 1024 1024" aria-hidden="true">
-    <defs>
-      <linearGradient id="mark-ink" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="var(--accent)" stop-opacity="0.75" />
-        <stop offset="1" stop-color="var(--accent)" />
-      </linearGradient>
-    </defs>
-    <path d="M512 196c-138 0-238 100-238 230 0 62 22 112 56 150h364c34-38 56-88 56-150 0-130-100-230-238-230z" fill="url(#mark-ink)" />
-    <circle cx="436" cy="430" r="34" fill="var(--bg)" />
-    <circle cx="588" cy="430" r="34" fill="var(--bg)" />
-    <g fill="none" stroke="url(#mark-ink)" stroke-width="58" stroke-linecap="round">
-      <path d="M352 576c-40 70-96 112-150 116" />
-      <path d="M452 590c-8 96-40 168-98 210" />
-      <path d="M572 590c8 96 40 168 98 210" />
-      <path d="M672 576c40 70 96 112 150 116" />
-    </g>
+  <svg class={p.class} viewBox="0 0 256 256" aria-hidden="true">
+    <path fill="var(--text)" d="M28 20H76A8 8 0 0 1 84 28V54A30 30 0 0 1 54 84H28A8 8 0 0 1 20 76V28A8 8 0 0 1 28 20ZM104 20H152A8 8 0 0 1 160 28V66A18 18 0 0 1 142 84H114A18 18 0 0 1 96 66V28A8 8 0 0 1 104 20ZM180 20H228A8 8 0 0 1 236 28V76A8 8 0 0 1 228 84H202A30 30 0 0 1 172 54V28A8 8 0 0 1 180 20ZM28 96H66A18 18 0 0 1 84 114V142A18 18 0 0 1 66 160H28A8 8 0 0 1 20 152V104A8 8 0 0 1 28 96ZM190 96H228A8 8 0 0 1 236 104V152A8 8 0 0 1 228 160H190A18 18 0 0 1 172 142V114A18 18 0 0 1 190 96ZM28 172H54A30 30 0 0 1 84 202V228A8 8 0 0 1 76 236H28A8 8 0 0 1 20 228V180A8 8 0 0 1 28 172ZM114 172H142A18 18 0 0 1 160 190V228A8 8 0 0 1 152 236H104A8 8 0 0 1 96 228V190A18 18 0 0 1 114 172ZM202 172H228A8 8 0 0 1 236 180V228A8 8 0 0 1 228 236H180A8 8 0 0 1 172 228V202A30 30 0 0 1 202 172Z" />
+    <circle cx="128" cy="128" r="30" fill="var(--accent)" />
   </svg>
 );

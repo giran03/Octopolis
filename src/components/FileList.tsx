@@ -21,7 +21,8 @@ import { isPinned } from "../lib/sidebar";
 import { iconFor } from "../state/icons";
 import { cancelSpring, DRAG_MIME, dragState, springLoad } from "../state/drag";
 import { fileIconSpec } from "../lib/fileicons";
-import { FileGlyph, FileIcon, Glyph } from "./Icons";
+import { FileGlyph, FileIcon, FolderEmoji, Glyph } from "./Icons";
+import { folderIcons } from "../state/folderIcons";
 
 /** Row height in pixels, from the density setting. */
 const rowHeight = () => DENSITIES[settings.density()];
@@ -500,54 +501,84 @@ function pinEntry(tab: TabModel): MenuEntry[] {
   return [{ label: isPinned(sidebar.pins(), path) ? "Unpin from sidebar" : "Pin to sidebar", run: () => sidebar.togglePin(path) }];
 }
 
+/** "Change icon…" for a single selected folder, plus a way back to the default. */
+function folderIconEntries(tab: TabModel): MenuEntry[] {
+  const path = A.singleFolderPath(tab);
+  if (!path) return [];
+  return [
+    { label: "Change icon…", run: () => ui.setEmojiTarget(path) },
+    ...(folderIcons.get(path) ? [{ label: "Reset icon", run: () => folderIcons.set(path, null) }] : []),
+  ];
+}
+
 function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
   const hasClip = ops.canPaste();
   const single = tab.selection().size === 1;
   const items: MenuEntry[] = onItems
     ? [
+        // Open & launch
         { label: "Open", shortcut: "Enter", run: () => A.openSelection(tab) },
         ...openInTabEntry(tab),
         ...fileOpenEntries(tab),
         "separator",
+        // Clipboard
         { label: "Cut", shortcut: "Ctrl+X", run: () => A.copySelection(tab, "cut") },
         { label: "Copy", shortcut: "Ctrl+C", run: () => A.copySelection(tab, "copy") },
         { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => A.pasteInto(tab) },
         "separator",
+        // Rename & paths
         { label: "Rename", shortcut: "F2", disabled: !single, run: () => A.startRename(tab) },
         { label: "Batch rename…", disabled: tab.selection().size < 2, run: () => A.openBatchRename(tab) },
         { label: "Copy path", shortcut: "Ctrl+Shift+C", run: () => void A.copyPaths(tab) },
         { label: "Copy as…", run: () => A.openCopyAsMenu(tab, menuX, menuY) },
-        { label: "What is locking this?", run: () => A.whoLocks(tab) },
-        ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : []),
+        "separator",
+        // Transfer & archive
         { label: "Add to shelf", shortcut: "Ctrl+Shift+D", run: () => A.addToShelf(tab) },
-        ...(tab.archive() ? [] : [{ label: "Compress to…", run: () => A.openCompressMenu(tab, menuX, menuY) }]),
-        ...pinEntry(tab),
-        { label: "Show in Explorer", run: () => A.reveal(tab) },
-        ...cloudEntries(tab),
         ...(A.otherPaneTab() ? [{ label: "Copy to the other pane", shortcut: "Ctrl+Shift+→", run: () => A.sendToOtherPane(tab, "copy") }, { label: "Move to the other pane", run: () => A.sendToOtherPane(tab, "move") }] : []),
+        ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : [{ label: "Compress to…", run: () => A.openCompressMenu(tab, menuX, menuY) }]),
+        "separator",
+        // Organize & customize
         ...(tab.archive() ? [] : [{ label: "Tags…", shortcut: "Ctrl+Shift+G", run: () => A.editTags(tab) }]),
+        ...pinEntry(tab),
+        ...folderIconEntries(tab),
         ...(tab.archive() ? [] : [{ label: "Actions…", run: () => A.openActionsMenu(tab, menuX, menuY) }]),
+        ...cloudEntries(tab),
+        "separator",
+        // Git
         ...gitEntries(tab),
+        "separator",
+        // Inspect & system
+        { label: "Show in Explorer", run: () => A.reveal(tab) },
+        { label: "What is locking this?", run: () => A.whoLocks(tab) },
         { label: "Properties", shortcut: "Alt+Enter", run: () => A.showProperties(tab) },
         { label: "More options (Windows menu)", shortcut: "Shift+F10", run: () => A.nativeContextMenu(tab) },
         "separator",
+        // Destructive
         { label: "Delete", shortcut: "Del", run: () => A.deleteSelection(tab, false) },
         { label: "Delete permanently", shortcut: "Shift+Del", danger: true, run: () => A.deleteSelection(tab, true) },
       ]
     : [
+        // Clipboard
         { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => A.pasteInto(tab) },
         { label: "Paste as link…", disabled: !(ops.clip()?.paths.length && !ops.clip()?.archive), run: () => A.openPasteAsLinkMenu(tab, menuX, menuY) },
+        "separator",
+        // Create
         { label: "New folder", shortcut: "Ctrl+Shift+N", run: () => void A.newFolder(tab) },
         { label: "New text file", shortcut: "Ctrl+Alt+N", run: () => void A.newFile(tab) },
         { label: "New file from template…", run: () => void A.openNewFileMenu(tab, menuX, menuY) },
         "separator",
+        // View & compare
         { label: "Refresh", shortcut: "F5", run: () => void tab.refresh() },
         { label: tab.sizesLive() ? "Hide folder sizes" : "Calculate folder sizes", shortcut: "Ctrl+Shift+S", run: () => (tab.sizesLive() ? tab.clearSizes() : tab.computeSizes()) },
-        { label: isPinned(sidebar.pins(), tab.path()) ? "Unpin folder from sidebar" : "Pin folder to sidebar", run: () => sidebar.togglePin(tab.path()) },
-        { label: "Copy folder path", run: () => void A.copyPaths(tab, [tab.path()]) },
+        ...(A.otherPaneTab() ? [{ label: compare.active() ? "Stop comparing" : "Compare with the other pane", run: A.toggleCompare }, ...(compare.statusOf(tab) ? [{ label: "Select differences", run: () => A.selectDifferences(tab) }] : [])] : []),
+        "separator",
+        // Tools
         ...(tab.archive() ? [] : [{ label: "Find duplicate files…", run: () => ui.setDuplicatesRoot(tab.path()) }, { label: "Clean up…", run: () => ui.setCleanupRoot(tab.path()) }]),
         ...(tab.search() ? [{ label: "Save this search…", run: () => A.saveSearch(tab) }] : []),
-        ...(A.otherPaneTab() ? [{ label: compare.active() ? "Stop comparing" : "Compare with the other pane", run: A.toggleCompare }, ...(compare.statusOf(tab) ? [{ label: "Select differences", run: () => A.selectDifferences(tab) }] : [])] : []),
+        "separator",
+        // Folder & system
+        { label: isPinned(sidebar.pins(), tab.path()) ? "Unpin folder from sidebar" : "Pin folder to sidebar", run: () => sidebar.togglePin(tab.path()) },
+        { label: "Copy folder path", run: () => void A.copyPaths(tab, [tab.path()]) },
         { label: "Open in Explorer", run: () => A.reveal(tab, tab.path()) },
       ];
   return items;
@@ -568,9 +599,12 @@ function RowIcon(props: { path: string; name: string; isDir: boolean; virtual: b
   // Types Octopolis knows get its own icon; the rest use the Windows icon for their type.
   const own = () => !props.isDir && fileIconSpec(props.name) !== null;
   const url = () => (props.virtual || own() ? null : iconFor(props.path, props.name, props.isDir)());
+  const emoji = () => (props.isDir && !props.virtual ? folderIcons.get(props.path) : undefined);
   return (
-    <Show when={url()} fallback={<FileIcon name={props.name} isDir={props.isDir} link={props.link} />}>
-      {(u) => <img class="row-icon" src={u()} alt="" width="16" height="16" />}
+    <Show when={!emoji()} fallback={<FolderEmoji emoji={emoji()!} size={16} class="row-icon" />}>
+      <Show when={url()} fallback={<FileIcon name={props.name} isDir={props.isDir} link={props.link} />}>
+        {(u) => <img class="row-icon" src={u()} alt="" width="16" height="16" />}
+      </Show>
     </Show>
   );
 }

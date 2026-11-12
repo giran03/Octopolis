@@ -1,6 +1,8 @@
 //! Tauri shell: exposes the octo-core engine to the UI as commands.
 
 mod diag;
+mod dormant;
+mod icon_cmd;
 mod launch;
 mod listing;
 mod ops_cmd;
@@ -12,6 +14,8 @@ mod size_cmd;
 mod cache_cmd;
 mod update_cmd;
 mod watch;
+
+use tauri::Manager;
 
 /// Runs file-system work on the blocking pool. Sync Tauri commands run on the
 /// main thread, so a slow disk or a dead network share would freeze the UI.
@@ -44,16 +48,23 @@ pub fn run() {
         .manage(cache_cmd::CacheState::default())
         .manage(size_cmd::SizesState::default())
         .manage(term_cmd::TermState::default())
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 launch::on_close_requested(window, api);
+                dormant::sync(window.app_handle());
             }
+            // Minimize and restore arrive as resizes; focus covers any other way back.
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(_) => dormant::sync(window.app_handle()),
+            _ => {}
         })
         .setup(|app| {
             diag::init(app.handle());
             launch::init(app.handle());
+            icon_cmd::restore(app.handle());
             std::thread::spawn(system::repair_explorer_mode);
             size_cmd::warm_cache(app.handle());
+            cache_cmd::startup_cleanup(app.handle());
+            search_cmd::start_idle_sweeper(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -64,6 +75,7 @@ pub fn run() {
             launch::set_keep_in_tray,
             launch::quit_app,
             launch::set_summon,
+            icon_cmd::set_app_icon,
             search_cmd::search,
             search_cmd::cancel_search,
             listing::list_dir,

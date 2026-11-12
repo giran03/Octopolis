@@ -11,6 +11,7 @@ import { settings } from "../state/settings";
 import { shelf } from "../state/shelf";
 import { type SectionId, sidebar } from "../state/sidebar";
 import { ui, type MenuEntry } from "../state/ui";
+import { folderIcons } from "../state/folderIcons";
 import { workspace } from "../state/workspace";
 import { savedSearches } from "../state/savedSearches";
 import { tags } from "../state/tags";
@@ -350,7 +351,14 @@ function placeMenu(e: MouseEvent, path: string, extra: MenuEntry[] = []) {
   ui.openMenu(e.clientX, e.clientY, [
     { label: "Open", run: () => go(path) },
     { label: "Open in new tab", run: () => A.openInNewTab(path, false) },
+    "separator",
     { label: pinned ? "Unpin from sidebar" : "Pin to sidebar", run: () => sidebar.togglePin(path) },
+    ...(/^[a-z]:[\\/]?$/i.test(path)
+      ? []
+      : [
+          { label: "Change icon…", run: () => ui.setEmojiTarget(path) },
+          ...(folderIcons.get(path) ? [{ label: "Reset icon", run: () => folderIcons.set(path, null) }] : []),
+        ]),
     ...extra,
   ]);
 }

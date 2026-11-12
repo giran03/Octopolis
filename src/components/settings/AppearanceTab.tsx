@@ -73,6 +73,7 @@ export function AppearanceTab() {
         </SettingRow>
         <SettingRow label="Tooltips" hint="Small labels when you hover or focus a button">
           <Toggle label="Tooltips" checked={settings.tooltips()} onChange={(tooltips) => settings.set({ tooltips })} />
+          <Toggle label="Shortcut hints in the status bar" checked={settings.showHints()} onChange={(showHints) => settings.set({ showHints })} />
         </SettingRow>
       </Section>
 

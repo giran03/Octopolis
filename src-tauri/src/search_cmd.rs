@@ -20,7 +20,12 @@ use serde::Serialize;
 use tauri::Manager;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
-const MAX_CACHED_ROOTS: usize = 3;
+const MAX_CACHED_ROOTS: usize = 2;
+/// Built indexes may use this much memory together; the least recently used ones are dropped beyond it.
+const MAX_INDEX_BYTES: u64 = 384 * 1024 * 1024;
+/// An index (and its watcher) nobody searched in this long is dropped. Rebuilding takes seconds.
+const IDLE_EVICT: Duration = Duration::from_secs(10 * 60);
+const SWEEP_EVERY: Duration = Duration::from_secs(60);
 const REBUILD_AFTER: Duration = Duration::from_secs(30);
 const RESULT_LIMIT: usize = 100_000;
 /// Sizes unknown to the NTFS journal are looked up for this many top hits.
@@ -41,6 +46,21 @@ struct Slot {
     last_used: Mutex<Instant>,
 }
 
+impl Slot {
+    fn bytes(&self) -> u64 {
+        self.built.try_lock().ok().and_then(|b| b.as_ref().map(|b| b.index.heap_bytes())).unwrap_or(0)
+    }
+}
+
+/// Starts the background sweeper that frees idle search indexes.
+pub fn start_idle_sweeper(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(SWEEP_EVERY);
+        app.state::<SearchState>().sweep_idle();
+    });
+}
+
 #[derive(Default)]
 pub struct SearchState {
     slots: Mutex<HashMap<String, Arc<Slot>>>,
@@ -51,6 +71,35 @@ pub struct SearchState {
 impl SearchState {
     pub fn cached_count(&self) -> usize {
         self.slots.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    /// Approximate memory held by the built indexes.
+    pub fn cached_bytes(&self) -> u64 {
+        let Ok(slots) = self.slots.lock() else { return 0 };
+        slots.values().map(|s| s.bytes()).sum()
+    }
+
+    /// Drops indexes nobody searched in for a while, along with their folder watchers.
+    pub fn sweep_idle(&self) {
+        if let Ok(mut slots) = self.slots.lock() {
+            slots.retain(|_, s| s.last_used.lock().map(|t| t.elapsed() < IDLE_EVICT).unwrap_or(false));
+        }
+    }
+
+    /// Drops least recently used indexes (never `keep`) until the total fits the memory budget.
+    fn enforce_budget(&self, keep: &str) {
+        let Ok(mut slots) = self.slots.lock() else { return };
+        while slots.values().map(|s| s.bytes()).sum::<u64>() > MAX_INDEX_BYTES {
+            let victim = slots
+                .iter()
+                .filter(|(k, _)| k.as_str() != keep)
+                .min_by_key(|(_, s)| s.last_used.lock().map(|t| *t).unwrap_or_else(|_| Instant::now()))
+                .map(|(k, _)| k.clone());
+            match victim {
+                Some(k) => slots.remove(&k),
+                None => break,
+            };
+        }
     }
 
     pub fn clear_cache(&self) {
@@ -105,6 +154,9 @@ pub async fn search(
         let started = Instant::now();
         let slot = slot_for(&app, &root)?;
         let (built, index_ms) = ensure_index(&slot, &root, rebuild, &on_progress)?;
+        if index_ms.is_some() {
+            app.state::<SearchState>().enforce_budget(&root.to_string_lossy().to_lowercase());
+        }
         let result = rank::run(&built.index, &q, RESULT_LIMIT, &cancel);
         if cancel.is_cancelled() {
             return Err("cancelled".into());

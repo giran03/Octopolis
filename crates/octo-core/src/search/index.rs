@@ -35,6 +35,14 @@ impl Index {
         self.names.is_empty()
     }
 
+    /// Approximate heap use in bytes: the parallel arrays plus each name's text and allocator overhead.
+    pub fn heap_bytes(&self) -> u64 {
+        use std::mem::size_of;
+        let per_entry = size_of::<Box<str>>() + size_of::<u32>() * 2 + size_of::<EntryKind>() + size_of::<u64>() + size_of::<i64>();
+        let text: usize = self.names.iter().map(|n| n.len() + 16).sum();
+        (self.names.len() * per_entry + text) as u64
+    }
+
     pub fn push(&mut self, name: &str, parent: u32, kind: EntryKind, attrs: u32, size: u64, modified_ms: i64) -> u32 {
         let id = self.names.len() as u32;
         self.names.push(name.into());
@@ -76,5 +84,15 @@ mod tests {
         assert_eq!(ix.rel_path(f), r"a\b\f.txt");
         assert_eq!(ix.rel_path(a), "a");
         assert_eq!(ix.full_path(f), PathBuf::from(r"C:\r\a\b\f.txt"));
+    }
+
+    #[test]
+    fn heap_bytes_grows_with_entries() {
+        let mut ix = Index::new(PathBuf::from(r"C:\r"));
+        assert_eq!(ix.heap_bytes(), 0);
+        ix.push("a", ROOT, EntryKind::Dir, 0, 0, 0);
+        let one = ix.heap_bytes();
+        ix.push("longer-name.txt", ROOT, EntryKind::File, 0, 1, 0);
+        assert!(one > 0 && ix.heap_bytes() > one * 2 - 1);
     }
 }

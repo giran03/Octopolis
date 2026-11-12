@@ -66,5 +66,7 @@ describe("settings import", () => {
     expect(clean).not.toHaveProperty("nope");
     expect(sanitizeSettings("garbage")).toEqual({});
     expect(SETTING_DEFAULTS.updateMode).toBe("notify");
+    expect(SETTING_DEFAULTS.autoFolderSizes).toBe(true);
+    expect(SETTING_DEFAULTS.confirmRecycle).toBe(true);
   });
 });

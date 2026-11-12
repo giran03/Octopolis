@@ -1,5 +1,5 @@
 // One browsing tab: location, history, streamed listing, sort and selection.
-import { batch, createMemo, createRoot, createSignal } from "solid-js";
+import { batch, createEffect, createMemo, createRoot, createSignal } from "solid-js";
 import { cachedFolderSizes, cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
@@ -99,7 +99,11 @@ export function createTab(initialPath: string) {
 
     /** Refreshes Git badges for the folder (best effort, outside archives). */
     function loadGit(dir: string, gen: number) {
-      if (archive()) return setGit(null);
+      setCommits(null);
+      if (archive()) {
+        setGit(null);
+        return;
+      }
       gitStatus(dir).then(
         (g) => gen === generation && setGit(g),
         () => gen === generation && setGit(null),
@@ -111,6 +115,19 @@ export function createTab(initialPath: string) {
         );
       }
     }
+
+    // Fetch last-commit data immediately if the user toggles "Show last commit" while already inside a repository.
+    createEffect(() => {
+      if (!settings.showCommits()) return;
+      const g = git();
+      const dir = path();
+      const gen = generation;
+      if (!g || archive() || commits() !== null) return;
+      gitLastCommits(dir).then(
+        (c) => gen === generation && samePath(dir, path()) && setCommits(c),
+        () => undefined,
+      );
+    });
     /** Folder-mode sort, restored when a search ends. */
     let folderSort: SortSpec = DEFAULT_SORT;
 

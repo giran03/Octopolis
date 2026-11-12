@@ -4,9 +4,9 @@ import { isDir } from "../lib/listing";
 import { ops } from "../state/ops";
 import { settings } from "../state/settings";
 import type { SearchState } from "../state/tab";
-import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
-import { IconBranch, IconEye, IconSettings, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow } from "./Icons";
+import { StatusHints } from "./StatusHints";
+import { IconBranch, IconEye, IconGitCommit, IconGitIgnore, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow } from "./Icons";
 
 export function StatusBar() {
   const tab = () => workspace.activeTab();
@@ -50,8 +50,30 @@ export function StatusBar() {
       <Show when={tab()?.git()?.branch}>
         {(b) => <span class="git-branch" title="Git branch"><IconBranch size={12} /> {b()}</span>}
       </Show>
-      <span class="spacer" />
-      <button class="icon-btn" title="Settings (Ctrl+,)" onClick={() => ui.openSettings()}><IconSettings size={14} /></button>
+      <StatusHints />
+      <Show when={tab()?.git()}>
+        <button
+          class="icon-btn"
+          classList={{ on: settings.hideGitIgnored() }}
+          aria-label="Hide files Git ignores"
+          aria-pressed={settings.hideGitIgnored()}
+          title="Hide files Git ignores"
+          onClick={() => settings.set({ hideGitIgnored: !settings.hideGitIgnored() })}
+        >
+          <IconGitIgnore size={14} />
+        </button>
+        <button
+          class="icon-btn"
+          classList={{ on: settings.showCommits() }}
+          aria-label="Show last commit"
+          aria-pressed={settings.showCommits()}
+          title="Show last commit"
+          onClick={settings.toggleCommits}
+        >
+          <IconGitCommit size={14} />
+        </button>
+        <span class="status-sep" aria-hidden="true" />
+      </Show>
       <button class="icon-btn" classList={{ on: settings.showHidden() }} title="Show hidden items (Ctrl+H)" onClick={settings.toggleHidden}>
         <IconEye size={14} />
       </button>

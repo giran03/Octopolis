@@ -11,7 +11,8 @@ import { DENSITIES } from "../lib/themes";
 import { createMarquee } from "./marquee";
 import { settings } from "../state/settings";
 import type { TabModel } from "../state/tab";
-import { FileIcon } from "./Icons";
+import { folderIcons } from "../state/folderIcons";
+import { FileIcon, FolderEmoji } from "./Icons";
 import { ui } from "../state/ui";
 
 export function PromptDialog(props: { title: string; label: string; initial?: string; submitLabel?: string; onSubmit: (value: string) => void }) {
@@ -47,12 +48,15 @@ const OVERSCAN_ROWS = 1;
 const MAX_THUMBS = 400;
 /** Thumbnail URLs, oldest first. Visible cells stay recent, so they are never evicted. */
 const thumbs = new Map<string, string>();
+const thumbBytes = new Map<string, number>();
 const pendingThumbs = new Map<string, Promise<string | null>>();
 
 export const gridThumbCount = () => thumbs.size;
+export const gridThumbBytes = () => [...thumbBytes.values()].reduce((a, b) => a + b, 0);
 export function clearGridThumbs() {
   for (const url of thumbs.values()) URL.revokeObjectURL(url);
   thumbs.clear();
+  thumbBytes.clear();
   pendingThumbs.clear();
 }
 
@@ -73,9 +77,11 @@ function loadThumb(key: string, path: string): Promise<string | null> {
             const oldest = thumbs.keys().next().value as string;
             URL.revokeObjectURL(thumbs.get(oldest)!);
             thumbs.delete(oldest);
+            thumbBytes.delete(oldest);
           }
           const u = URL.createObjectURL(new Blob([b], { type: "image/png" }));
           thumbs.set(key, u);
+          thumbBytes.set(key, b.byteLength);
           return u;
         },
         () => null,
@@ -101,8 +107,12 @@ function GridThumb(props: { path: string; modified: number; virtual: boolean; na
   );
   return (
     <div class="grid-thumb">
-      <Show when={url()} fallback={<span class="grid-fallback"><FileIcon name={props.name} isDir={props.dir} size={40} /></span>}>
-        {(u) => <img src={u()} alt="" draggable={false} />}
+      <Show when={props.dir && folderIcons.get(props.path)} fallback={
+        <Show when={url()} fallback={<span class="grid-fallback"><FileIcon name={props.name} isDir={props.dir} size={40} /></span>}>
+          {(u) => <img src={u()} alt="" draggable={false} />}
+        </Show>
+      }>
+        {(e) => <span class="grid-fallback"><FolderEmoji emoji={e()} size={44} /></span>}
       </Show>
     </div>
   );
