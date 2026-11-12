@@ -39,6 +39,23 @@ pub fn edit_path(path: &Path, editor: Option<&Path>) -> Result<()> {
     imp::open_verb(path, "edit").or_else(|_| std::process::Command::new("notepad.exe").arg(path).spawn().map(|_| ()).map_err(|e| Error::io(path, e)))
 }
 
+/// Opens a terminal in `dir`: Windows Terminal when it is installed, else PowerShell in its own window.
+pub fn open_terminal_at(dir: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        if std::process::Command::new("wt.exe").arg("-d").arg(dir).spawn().is_ok() {
+            return Ok(());
+        }
+        std::process::Command::new("powershell.exe").arg("-NoExit").current_dir(dir).creation_flags(CREATE_NEW_CONSOLE).spawn().map(|_| ()).map_err(|e| Error::io(dir, e))
+    }
+    #[cfg(not(windows))]
+    {
+        Err(Error::io(dir, std::io::Error::other("terminals are only supported on Windows")))
+    }
+}
+
 /// Keeps Windows from sleeping (the screen may still turn off) until called
 /// with `false`. Execution state belongs to a thread, so a dedicated thread
 /// holds it for as long as it is needed.

@@ -13,6 +13,7 @@ gix = { version = "0.90.0", default-features = false, features = ["status", "rev
 id3 = "1.17.3"
 jiff = "0.2.42"
 kamadak-exif = "0.6.2"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"] }
 md-5 = "0.10"
 memchr = "2"
 nucleo-matcher = "0.3.1"

@@ -1,3 +1,4 @@
+import { groupOf, type GroupKey } from "./group";
 import { baseOf, isDir, isHidden, type Listing } from "./listing";
 import { extensionOf } from "./paths";
 
@@ -20,6 +21,8 @@ export interface ViewOptions {
   readonly filter?: string;
   /** Recursive folder sizes by lower-case name; folders sort by these when known. */
   readonly dirSizes?: ReadonlyMap<string, number> | null;
+  /** Keeps items of the same group together (the chosen sort applies inside each group). */
+  readonly group?: GroupKey;
 }
 
 /**
@@ -47,9 +50,22 @@ export function buildView(l: Listing, opts: ViewOptions): Uint32Array {
   const extOf = new Map<number, string>();
   if (exts) picked.forEach((i, n) => extOf.set(i, exts[n]));
 
+  // Group order per item, worked out once instead of on every comparison.
+  const groupOrder = new Map<number, number>();
+  const grouping = opts.group && opts.group !== "none" ? opts.group : null;
+  if (grouping) {
+    const now = Date.now();
+    for (const i of picked) groupOrder.set(i, groupOf(l, i, grouping, now).order);
+  }
+
   picked.sort((a, b) => {
     const da = isDir(l, a);
     if (da !== isDir(l, b)) return da ? -1 : 1;
+    if (grouping) {
+      const ga = groupOrder.get(a)!;
+      const gb = groupOrder.get(b)!;
+      if (ga !== gb) return ga - gb;
+    }
     let c = 0;
     switch (key) {
       case "modified":

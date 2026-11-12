@@ -92,4 +92,15 @@
 - Diagnostics log with startup times and errors, with file and folder names removed (Settings › Advanced › Open log folder).
 - Faster start: the inspector and terminal load the first time you open them.
 - Screen readers hear the file list as a grid with selected rows, and when file operations start and finish. Windows contrast themes are supported.
+- Free up space (broom button in the sidebar footer): caches, Windows Update leftovers, browser caches, developer caches and the Recycle Bin that are safe to delete, previewed before anything is removed.
+- Settings › General › Editor: pick an installed editor (found automatically) or any program, and choose whether double-clicking text and code files uses it. Folders open in the editor and terminals from the right-click menu.
+- Settings › Appearance › Icons: Material Symbols with style (Outlined, Rounded, Sharp), weight, size, filled icons and presets; interface font choice.
+- Settings search across every tab, and an outline of the current tab's sections.
+- Hide file extensions (Settings › General), taskbar progress for copies and moves, Copy to… / Move to… with the folder picker, and Back and Forward history lists on right-click.
+- Recent file operations list, friendlier empty, access-denied and missing-folder states, and a short first-run welcome.
+- Folder rules: move or delete old files that match name patterns, previewed first, with undo.
+- Duplicate finder can look for similar pictures; Resize or convert pictures from the right-click menu.
+- Word, PowerPoint, Excel and OpenDocument files preview as text.
+- Group by (right-click the list background, or the command palette): type, date modified, size or first letter, remembered per folder.
+- Swap the two panes, and synchronized browsing so going into a folder or up in one pane does the same in the other (buttons in the status bar).
 - Column view stays smooth in folders of any size, follows the list's sort and filter, and has Left and Right to move between folders, the usual keys and the right-click menu.

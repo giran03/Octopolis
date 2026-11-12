@@ -83,6 +83,11 @@ export const ui = createRoot(() => {
   const [conflictPrompt, setConflictPrompt] = createSignal<ConflictPrompt | null>(null);
   const [propertiesPaths, setPropertiesPaths] = createSignal<readonly string[] | null>(null);
   const [recycleBinOpen, setRecycleBinOpen] = createSignal(false);
+  const [systemCleanupOpen, setSystemCleanupOpen] = createSignal(false);
+  const [opsHistoryOpen, setOpsHistoryOpen] = createSignal(false);
+  const [welcomeOpen, setWelcomeOpen] = createSignal(false);
+  const [rulesOpen, setRulesOpen] = createSignal(false);
+  const [imageToolsPaths, setImageToolsPaths] = createSignal<readonly string[] | null>(null);
   /** The folder the duplicate finder is looking in, while it is open. */
   const [duplicatesRoot, setDuplicatesRoot] = createSignal<string | null>(null);
   /** Items whose tags are being edited. */
@@ -138,6 +143,16 @@ export const ui = createRoot(() => {
     propertiesPaths,
     setPropertiesPaths,
     recycleBinOpen,
+    systemCleanupOpen,
+    opsHistoryOpen,
+    welcomeOpen,
+    rulesOpen,
+    imageToolsPaths,
+    setImageToolsPaths,
+    setRulesOpen,
+    setWelcomeOpen,
+    setOpsHistoryOpen,
+    setSystemCleanupOpen,
     setRecycleBinOpen,
     duplicatesRoot,
     setDuplicatesRoot,
@@ -161,7 +176,7 @@ export const ui = createRoot(() => {
     visual,
     setVisual,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot() || emojiTarget()),
+    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || rulesOpen() || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot() || emojiTarget()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

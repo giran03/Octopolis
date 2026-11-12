@@ -227,10 +227,10 @@ function Toolbar(props: { paneId: string; tab: TabModel }) {
 
   return (
     <div class="toolbar">
-      <button class="icon-btn" title="Back (Alt+Left)" disabled={!props.tab.canBack()} onClick={props.tab.back}>
+      <button class="icon-btn" title="Back (Alt+Left). Right-click for the list" disabled={!props.tab.canBack()} onClick={props.tab.back} onContextMenu={(e) => historyMenu(e, props.tab, -1)}>
         <IconBack />
       </button>
-      <button class="icon-btn" title="Forward (Alt+Right)" disabled={!props.tab.canForward()} onClick={props.tab.forward}>
+      <button class="icon-btn" title="Forward (Alt+Right). Right-click for the list" disabled={!props.tab.canForward()} onClick={props.tab.forward} onContextMenu={(e) => historyMenu(e, props.tab, 1)}>
         <IconForward />
       </button>
       <button class="icon-btn" title="Up (Alt+Up)" onClick={props.tab.up}>
@@ -243,6 +243,15 @@ function Toolbar(props: { paneId: string; tab: TabModel }) {
       <SearchBox tab={props.tab} ref={(el) => (filterInput = el)} />
     </div>
   );
+}
+
+/** Right-click on Back or Forward: the folders on that side of the history, nearest first. */
+function historyMenu(e: MouseEvent, tab: TabModel, dir: -1 | 1) {
+  e.preventDefault();
+  const list = tab.historyList(dir);
+  if (list.length === 0) return;
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  ui.openMenu(r.left, r.bottom + 4, list.map((h) => ({ label: baseName(h.path) || h.path, run: () => tab.goBy(h.offset) })));
 }
 
 const SEARCH_DEBOUNCE_MS = 150;

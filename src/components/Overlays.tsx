@@ -17,6 +17,11 @@ import { Palette } from "./Palette";
 const DiskSpaceModal = lazy(() => import("./DiskSpaceModal").then((m) => ({ default: m.DiskSpaceModal })));
 const PropertiesDialog = lazy(() => import("./PropertiesDialog").then((m) => ({ default: m.PropertiesDialog })));
 const RecycleBin = lazy(() => import("./RecycleBin").then((m) => ({ default: m.RecycleBin })));
+const SystemCleanup = lazy(() => import("./SystemCleanup").then((m) => ({ default: m.SystemCleanup })));
+const OpsHistory = lazy(() => import("./OpsHistory").then((m) => ({ default: m.OpsHistory })));
+const Welcome = lazy(() => import("./Welcome").then((m) => ({ default: m.Welcome })));
+const Rules = lazy(() => import("./Rules").then((m) => ({ default: m.Rules })));
+const ImageTools = lazy(() => import("./ImageTools").then((m) => ({ default: m.ImageTools })));
 const Duplicates = lazy(() => import("./Duplicates").then((m) => ({ default: m.Duplicates })));
 const ActionsEditor = lazy(() => import("./ActionsEditor").then((m) => ({ default: m.ActionsEditor })));
 const Cleanup = lazy(() => import("./Cleanup").then((m) => ({ default: m.Cleanup })));
@@ -47,6 +52,21 @@ export function Overlays() {
       </Show>
       <Show when={ui.duplicatesRoot()} keyed>
         {(root) => <Duplicates root={root} />}
+      </Show>
+      <Show when={ui.imageToolsPaths()} keyed>
+        {(paths) => <ImageTools paths={paths} />}
+      </Show>
+      <Show when={ui.rulesOpen()}>
+        <Rules />
+      </Show>
+      <Show when={ui.welcomeOpen()}>
+        <Welcome />
+      </Show>
+      <Show when={ui.opsHistoryOpen()}>
+        <OpsHistory />
+      </Show>
+      <Show when={ui.systemCleanupOpen()}>
+        <SystemCleanup />
       </Show>
       <Show when={ui.recycleBinOpen()}>
         <RecycleBin />
@@ -279,7 +299,7 @@ function ContextMenu(props: { menu: MenuState }) {
                   settings.togglePinned(it.label);
                 }}
               >
-                <IconStarFill size={14} />
+                <IconStarFill size={18} />
               </span>
             </button>
           )

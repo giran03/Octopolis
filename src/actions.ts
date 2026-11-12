@@ -1,6 +1,7 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
 import type { ArchiveFormat, GitChange, LinkKind } from "./lib/ipc";
-import { createFile, createFolder, createLinks, gitChange, openInEditor, runCustomAction, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, templatesFolder } from "./lib/ipc";
+import { GROUP_KEYS, GROUP_TITLES } from "./lib/group";
+import { openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, openInEditor, runCustomAction, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, templatesFolder } from "./lib/ipc";
 import { baseOf, isDir } from "./lib/listing";
 import { baseName, joinPath, parentPath, samePath, sameVolume } from "./lib/paths";
 import { extensionOf, invertSelection, namePattern, selectWhere } from "./lib/selection";
@@ -58,13 +59,22 @@ export function singleFolderPath(tab: TabModel): string | null {
   return entry < l.count && isDir(l, entry) ? tab.pathOf(entry) : null;
 }
 
+/** Plain-text and source files, which open in the chosen editor instead of the Windows default. */
+const TEXT_FILE = /\.(txt|md|markdown|mdx|log|json|jsonc|json5|ya?ml|toml|ini|cfg|conf|env|properties|xml|csv|tsv|html?|css|scss|sass|less|js|mjs|cjs|jsx|ts|mts|cts|tsx|vue|svelte|astro|py|pyi|rb|php|java|kt|kts|scala|groovy|gradle|go|rs|c|h|cc|cpp|cxx|hpp|hh|cs|fs|vb|swift|m|mm|dart|lua|pl|r|jl|sql|graphql|gql|proto|sh|bash|zsh|ps1|psm1|psd1|bat|cmd|dockerfile|makefile|cmake|tf|gitignore|gitattributes|editorconfig|lock|diff|patch|tex|rst|srt)$/i;
+
+/** The program for a double-clicked file: the editor from Settings for text files, else null (Windows decides). */
+const opener = (tab: TabModel, name: string): ((path: string) => Promise<void>) => {
+  if (tab.archive()) return extractAndOpen;
+  if (settings.editorPath() && settings.editorOpensText() && TEXT_FILE.test(name)) return (path) => openInEditor(path, settings.editorPath());
+  return openPath;
+};
+
 export function openEntry(tab: TabModel, entry: number) {
   const l = tab.listing();
   if (entry >= l.count) return;
   const full = tab.pathOf(entry);
   if (isDir(l, entry) || ARCHIVE_NAME.test(l.names[entry])) return void tab.navigate(full);
-  const open = tab.archive() ? extractAndOpen : openPath;
-  open(full).catch((e) => ui.toast(`Couldn't open ${l.names[entry]}: ${errorText(e)}`));
+  opener(tab, l.names[entry])(full).catch((e) => ui.toast(`Couldn't open ${l.names[entry]}: ${errorText(e)}`));
 }
 
 /** Opens a folder (or archive) in a new tab of the active pane; files open normally. */
@@ -82,9 +92,8 @@ export function openEntryInTab(tab: TabModel, entry: number, background = true) 
 
 /** Opens a path from a view that isn't index-based (Miller columns). */
 export function openFromPath(tab: TabModel, path: string) {
-  const open = tab.archive() ? extractAndOpen : openPath;
   if (ARCHIVE_NAME.test(path)) return void tab.navigate(path);
-  open(path).catch((e) => ui.toast(errorText(e)));
+  opener(tab, path)(path).catch((e) => ui.toast(errorText(e)));
 }
 
 export function openSelection(tab: TabModel) {
@@ -277,6 +286,50 @@ export function sendToOtherPane(tab: TabModel, kind: "copy" | "move") {
   if (paths.length === 0) return;
   if (tab.archive()) return dropPaths(paths, there.path(), true, tab.archive());
   void ops.transfer(kind, paths, there.path());
+}
+
+/** Copy or move the selection to a folder chosen in the Windows folder picker. */
+export async function transferToPicked(tab: TabModel, kind: "copy" | "move") {
+  if (kind === "move" && blockedInArchive(tab)) return;
+  const paths = targets(tab);
+  if (paths.length === 0) return;
+  let dest: string | null;
+  try {
+    dest = await pickFolderDialog(otherPaneTab()?.path() ?? tab.path());
+  } catch (e) {
+    return void ui.toast(`Couldn't open the folder picker: ${errorText(e)}`);
+  }
+  if (!dest) return;
+  if (tab.archive()) return dropPaths(paths, dest, true, tab.archive());
+  void ops.transfer(kind, paths, dest);
+}
+
+/** Opens a folder in the editor chosen in Settings (the project, for editors that take folders). */
+export async function openFolderInEditor(path: string) {
+  const editor = settings.editorPath();
+  if (!editor) {
+    ui.toast("Choose an editor first", { label: "Settings", onClick: () => ui.openSettings("general") });
+    return;
+  }
+  try {
+    await openInEditor(path, editor);
+  } catch (e) {
+    ui.toast(`Couldn't open the editor: ${errorText(e)}`);
+  }
+}
+
+const IMAGE_FILE = /\.(jpe?g|png|gif|bmp|webp)$/i;
+
+/** Opens the resize / convert dialog for the pictures in the selection. */
+export function openImageTools(tab: TabModel) {
+  if (tab.archive()) return;
+  const pics = targets(tab).filter((p) => IMAGE_FILE.test(p));
+  if (pics.length === 0) return void ui.toast("Select a picture first (JPEG, PNG, GIF, BMP or WebP)");
+  ui.setImageToolsPaths(pics);
+}
+
+export function openTerminalAt(path: string) {
+  openTerminalHere(path).catch((e) => ui.toast(`Couldn't open a terminal: ${errorText(e)}`));
 }
 
 export function invertSelected(tab: TabModel) {
@@ -509,6 +562,19 @@ export function compressSelection(tab: TabModel, format: ArchiveFormat) {
 
 export function openCompressMenu(tab: TabModel, x = window.innerWidth / 2 - 110, y = 120) {
   ui.openMenu(x, y, ARCHIVE_FORMATS.map((f) => ({ label: f.label, run: () => compressSelection(tab, f.format) })));
+}
+
+/** A small menu to group the list by type, date, size or first letter (or not at all). */
+export function openGroupMenu(tab: TabModel, x = window.innerWidth / 2 - 110, y = 120) {
+  const current = tab.groupBy();
+  ui.openMenu(x, y, GROUP_KEYS.map((key) => ({ label: `${key === current ? "✓ " : "   "}${key === "none" ? "No grouping" : GROUP_TITLES[key]}`, run: () => tab.setGroupBy(key) })));
+}
+
+/** Steps through the grouping choices: none, type, date, size, name. */
+export function cycleGroup(tab: TabModel) {
+  const next = GROUP_KEYS[(GROUP_KEYS.indexOf(tab.groupBy()) + 1) % GROUP_KEYS.length];
+  tab.setGroupBy(next);
+  ui.toast(next === "none" ? "Grouping off" : `Grouped by ${GROUP_TITLES[next].toLowerCase()}`);
 }
 
 /** Copies the target paths, or the given ones (e.g. just the folder), as text. */

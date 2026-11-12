@@ -16,7 +16,7 @@ import { workspace } from "../state/workspace";
 import { savedSearches } from "../state/savedSearches";
 import { tags } from "../state/tags";
 import { SearchItems, TagItems } from "./Tags";
-import { FileGlyph, Glyph, IconChevron, IconDiskSpace, IconDrive, IconPin, IconPlus, IconTrash, PathIcon, PlaceGlyph } from "./Icons";
+import { FileGlyph, Glyph, IconMop, IconChevron, IconDiskSpace, IconDrive, IconPin, IconPlus, IconTrash, PathIcon, PlaceGlyph } from "./Icons";
 
 /** Opens a place; Ctrl+click opens it in a new tab (Ctrl+Shift in front). */
 const go = (path: string, e?: MouseEvent) => (e?.ctrlKey ? A.openInNewTab(path, !e.shiftKey) : void workspace.activeTab()?.navigate(path));
@@ -309,6 +309,16 @@ export function Sidebar() {
           onClick={() => ui.openDiskSpace(activeDriveRoot())}
         >
           <IconDiskSpace size={17} />
+        </button>
+        <button
+          class="icon-btn foot-btn"
+          classList={{ on: ui.systemCleanupOpen() }}
+          aria-label="Free up space"
+          aria-pressed={ui.systemCleanupOpen()}
+          data-tooltip="Free up space · caches, Windows leftovers, Recycle Bin"
+          onClick={() => ui.setSystemCleanupOpen(true)}
+        >
+          <IconMop size={17} />
         </button>
         <span class="spacer" />
         <button class="icon-btn foot-btn" aria-label="Settings" data-tooltip="Settings · Ctrl+," onClick={() => ui.openSettings()}>

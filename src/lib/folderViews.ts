@@ -1,4 +1,5 @@
 // The view and sort each folder was last shown with, most recent first.
+import { GROUP_KEYS, type GroupKey } from "./group";
 import type { SortKey, SortSpec } from "./sort";
 
 export type ViewMode = "details" | "grid" | "columns";
@@ -6,6 +7,8 @@ export type ViewMode = "details" | "grid" | "columns";
 export interface FolderView {
   readonly mode: ViewMode;
   readonly sort: SortSpec;
+  /** Group by, when the folder is shown grouped. */
+  readonly group?: GroupKey;
 }
 
 export type FolderViews = readonly (readonly [key: string, view: FolderView])[];
@@ -38,7 +41,8 @@ export function parseFolderViews(raw: unknown): FolderViews {
     const v = item[1] as Partial<FolderView> | undefined;
     const sort = v?.sort as Partial<SortSpec> | undefined;
     if (!v || !MODES.includes(v.mode as ViewMode) || !sort || !KEYS.includes(sort.key as SortKey) || (sort.dir !== 1 && sort.dir !== -1)) continue;
-    out.push([item[0], { mode: v.mode as ViewMode, sort: { key: sort.key as SortKey, dir: sort.dir } }]);
+    const group = GROUP_KEYS.includes(v.group as GroupKey) && v.group !== "none" ? (v.group as GroupKey) : undefined;
+    out.push([item[0], { mode: v.mode as ViewMode, sort: { key: sort.key as SortKey, dir: sort.dir }, ...(group ? { group } : {}) }]);
   }
   return out.slice(0, MAX_FOLDER_VIEWS);
 }

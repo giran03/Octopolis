@@ -7,7 +7,7 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TooltipLayer } from "./components/Tooltip";
-import { errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, startupPaths, type KnownFolder } from "./lib/ipc";
+import { detectEditors, errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, startupPaths, type KnownFolder } from "./lib/ipc";
 import { classifyTarget } from "./lib/launch";
 import { samePath } from "./lib/paths";
 import { parsePreset } from "./lib/session";
@@ -50,6 +50,14 @@ function applyTheme() {
   root.style.setProperty("--d", String(scale));
   root.style.setProperty("--ds", String(1 + (scale - 1) * 0.5));
   document.body.style.zoom = String(settings.uiScale() / 100);
+  // Button icons: the Material Symbols weight, fill and shape family.
+  root.style.setProperty("--icon-weight", String(settings.iconWeight()));
+  root.style.setProperty("--icon-fill", settings.iconFill() ? "1" : "0");
+  root.dataset.iconStyle = settings.iconStyle();
+  root.style.setProperty("--icon-scale", String(settings.iconScale() / 100));
+  // Interface font: the chosen one first, then the usual stack.
+  if (settings.uiFont()) root.style.setProperty("--font", `"${settings.uiFont().replace(/"/g, "")}", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`);
+  else root.style.removeProperty("--font");
 }
 
 const LAST_PATH_KEY = "octopolis.lastpath.v1";
@@ -148,9 +156,13 @@ export function App() {
     if (markedFirstRows || !s || s.loading || s.elapsedMs === null) return;
     markedFirstRows = true;
     requestAnimationFrame(() => void startupMark("first rows").catch(() => undefined));
+    // Warm the editor list once things have settled, so Settings has it ready.
+    setTimeout(() => void detectEditors().catch(() => undefined), 4000);
   });
 
   onMount(async () => {
+    // First run: a short welcome once the window has settled.
+    if (!settings.welcomeSeen()) setTimeout(() => ui.setWelcomeOpen(true), 1500);
     window.addEventListener("keydown", onKeyDown);
     onCleanup(() => window.removeEventListener("keydown", onKeyDown));
     // Files copied in Explorer or another app enable Paste here.

@@ -69,7 +69,7 @@
   color: var(--text);
 }
 
-.stab[aria-selected="true"] .gi {
+.stab[aria-selected="true"] :is(.gi, .ms) {
   color: var(--accent);
 }
 
@@ -86,6 +86,42 @@
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.srail-divider {
+  flex: none;
+  height: 1px;
+  margin: 6px 8px 2px;
+  background: var(--border);
+}
+
+/* "On this page": links to the open tab's sections, with a line along the left. */
+.sout {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 0 0 12px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+
+.sout-link {
+  margin-left: -1px;
+  padding: 5px 10px;
+  border-left: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.sout-link:hover {
+  color: var(--text);
+}
+
+.sout-link.on {
+  border-left-color: var(--accent);
+  color: var(--text);
 }
 
 .spane {
@@ -492,7 +528,7 @@
   color: var(--danger);
 }
 
-.update-glyph.spin .gi {
+.update-glyph.spin :is(.gi, .ms) {
   animation: spin 1s linear infinite;
 }
 
@@ -645,6 +681,8 @@
   }
 
   .srail-title,
+  .srail-divider,
+  .sout,
   .stab-label {
     display: none;
   }
@@ -677,3 +715,10 @@
 .setting-note code {
   font: 12px "Cascadia Code", Consolas, monospace;
 }
+
+/* Search across all tabs. */
+.spanel [hidden] { display: none !important; }
+.ssearch { width: 100%; margin: 2px 0 6px; }
+.sres-head { margin: 18px 0 2px; font-size: 13px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.sres-tab:first-child .sres-head { margin-top: 4px; }
+.sres-none { padding: 24px 0; text-align: center; }

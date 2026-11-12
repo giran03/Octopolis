@@ -2597,17 +2597,17 @@ button.crumb-sep:hover { background: var(--surface-3); color: var(--text); }
   cursor: pointer;
   transition: background-color var(--m-fast, 120ms) ease-out, color var(--m-fast, 120ms) ease-out, opacity var(--m-fast, 120ms) ease-out, transform var(--m-fast, 120ms) var(--m-out, ease-out);
 }
-.menu-pin .gi {
+.menu-pin :is(.gi, .ms) {
   transition: transform var(--m-fast, 120ms) var(--m-out, ease-out);
 }
 .menu-pin:hover {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   color: var(--accent);
 }
-.menu-pin:hover .gi {
+.menu-pin:hover :is(.gi, .ms) {
   transform: scale(1.18);
 }
-.menu-pin:active .gi {
+.menu-pin:active :is(.gi, .ms) {
   transform: scale(0.92);
 }
 .menu-item:hover .menu-pin, .menu-pin.on { opacity: 1; }
@@ -2940,8 +2940,8 @@ textarea {
   text-shadow: 0 0 2px var(--bg), 0 0 2px var(--bg);
 }
 
-.arrow .gi,
-.sort-arrow .gi {
+.arrow :is(.gi, .ms),
+.sort-arrow :is(.gi, .ms) {
   vertical-align: middle;
 }
 
@@ -2961,12 +2961,12 @@ textarea {
 .place-videos { color: #b48cff; }
 .place-folder { color: var(--g-folder); }
 
-.side-item .gi,
+.side-item :is(.gi, .ms),
 .side-item .path-icon {
   flex: none;
 }
 
-.side-item.recent .gi,
+.side-item.recent :is(.gi, .ms),
 .side-item.recent .path-icon {
   margin-top: 1px;
 }
@@ -3320,9 +3320,9 @@ textarea {
 :root.sidebar-names-only .side-item.drive {
   align-items: center;
 }
-:root.sidebar-names-only .side-item.recent .gi,
+:root.sidebar-names-only .side-item.recent :is(.gi, .ms),
 :root.sidebar-names-only .side-item.recent .path-icon,
-:root.sidebar-names-only .side-item.drive .gi,
+:root.sidebar-names-only .side-item.drive :is(.gi, .ms),
 :root.sidebar-names-only .side-item.drive .path-icon {
   margin-top: 0;
 }
@@ -4361,3 +4361,216 @@ button.table-cell {
 .window-inactive .hint-track.scrolling { animation-play-state: paused; }
 
 .reduce-motion .hint-track.scrolling { animation: none; }
+
+/* ---------- free up space ---------- */
+.sc-title { display: inline-flex; align-items: center; gap: 8px; }
+.sc-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 2px; }
+.sc-group { display: flex; flex-direction: column; gap: 6px; }
+.bin-list.sc-list { flex: none; overflow: visible; }
+.sc-item + .sc-item { border-top: 1px solid var(--border); }
+.sc-row { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
+.sc-row:hover { background: var(--surface-3); }
+.sc-row.off { cursor: default; }
+.sc-note { white-space: normal; }
+.sc-tag { margin-left: 8px; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 10.5px; font-weight: 600; vertical-align: 1px; }
+.sc-extra { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 10px 8px 40px; font-size: 12px; }
+.sc-folder { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.sc-result { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--accent-soft); }
+
+/* ---------- Material Symbols (plain UI icons) ---------- */
+/* Three variable-font subsets (weight 100-700, fill 0-1). Settings > Appearance sets --icon-weight, --icon-fill and data-icon-style. */
+@font-face {
+  font-family: "Material Symbols Outlined";
+  src: url("./assets/fonts/material-symbols-outlined.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Material Symbols Rounded";
+  src: url("./assets/fonts/material-symbols-rounded.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Material Symbols Sharp";
+  src: url("./assets/fonts/material-symbols-sharp.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: block;
+}
+
+.ms {
+  display: inline-block;
+  flex: none;
+  font-family: "Material Symbols Outlined";
+  font-style: normal;
+  font-weight: var(--icon-weight, 200);
+  font-variation-settings: "FILL" var(--icon-fill, 0), "GRAD" 0, "opsz" 20;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  text-align: center;
+  font-feature-settings: "liga";
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+:root[data-icon-style="rounded"] .ms { font-family: "Material Symbols Rounded"; }
+:root[data-icon-style="sharp"] .ms { font-family: "Material Symbols Sharp"; }
+
+/* Icons that mean "on" (a starred item) are solid whatever the fill setting says. */
+.ms.ms-fill {
+  font-variation-settings: "FILL" 1, "GRAD" 0, "opsz" 20;
+}
+
+.icon-preview {
+  display: inline-flex;
+  gap: 12px;
+  color: var(--text);
+}
+/* ---------- free up space: loading ---------- */
+/* A thin bar slides across the top edge while scanning or cleaning; the mop swings; the first scan shows placeholder rows. */
+.sc-dialog { position: relative; overflow: hidden; }
+.sc-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--m-base, 180ms) ease-out;
+  pointer-events: none;
+}
+.sc-progress.on { opacity: 1; }
+.sc-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: sc-slide 1.3s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+@keyframes sc-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(270%); }
+}
+/* Without motion, a still accent line says the same thing. */
+.reduce-motion .sc-progress > span { width: 100%; animation: none; background: var(--accent); opacity: 0.6; }
+
+.sc-mop { transform-origin: 62% 12%; }
+.sc-mop.busy { color: var(--accent); animation: sc-sweep 0.9s ease-in-out infinite alternate; }
+@keyframes sc-sweep {
+  from { transform: rotate(-16deg); }
+  to { transform: rotate(16deg); }
+}
+
+.sc-body { transition: opacity var(--m-base, 180ms) ease-out; }
+.sc-body.busy { opacity: 0.55; pointer-events: none; }
+
+.sc-skel-row { display: grid; grid-template-columns: 20px 1fr 60px; align-items: center; gap: 10px; padding: 10px; }
+.sc-skel-row + .sc-skel-row { border-top: 1px solid var(--border); }
+.sc-skel-lines { display: flex; flex-direction: column; gap: 6px; }
+.sc-skel-box, .sc-skel-bar {
+  display: block;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface-3) 30%, color-mix(in srgb, var(--text) 9%, var(--surface-3)) 50%, var(--surface-3) 70%);
+  background-size: 300% 100%;
+  animation: sc-shimmer 1.4s linear infinite;
+}
+.sc-skel-box { width: 14px; height: 14px; }
+.sc-skel-bar { height: 9px; width: 55%; }
+.sc-skel-bar.short { width: 80%; height: 8px; opacity: 0.7; }
+.sc-skel-bar.size { width: 100%; justify-self: end; }
+@keyframes sc-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* A folder's size is being worked out: a magnifier sweeps beside the number, like the mop in Free up space. */
+.size-scan {
+  position: relative;
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: var(--accent);
+  transform-origin: 82% 82%;
+  animation: size-scan-sweep 0.8s ease-in-out infinite alternate;
+}
+@keyframes size-scan-sweep {
+  from { transform: rotate(-22deg) translateX(-1px); opacity: 0.55; }
+  to { transform: rotate(22deg) translateX(1px); opacity: 1; }
+}
+.reduce-motion .size-scan { opacity: 0.7; }
+
+/* Empty, denied and missing-folder states in the file list. */
+.empty-state { flex-direction: column; gap: 6px; text-align: center; }
+.empty-state .empty-icon { color: var(--text-faint); margin-bottom: 4px; }
+.empty-state strong { font-size: 14px; font-weight: 600; }
+.empty-state .empty-actions { display: inline-flex; gap: 8px; margin-top: 8px; }
+.bin-folder { align-self: flex-start; max-width: 100%; color: var(--text-muted); font-size: 12px; text-align: left; }
+
+/* ---------- recent activity ---------- */
+.ops-log { overflow: auto; }
+.ops-entry { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 10px; padding: 8px 10px; }
+.ops-entry + .ops-entry { border-top: 1px solid var(--border); }
+.ops-state { color: var(--text-faint); }
+.ops-entry.bad .ops-state, .ops-entry.bad .ops-detail { color: var(--danger); }
+.ops-detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- welcome tour ---------- */
+.dialog.welcome { display: flex; flex-direction: column; gap: 18px; width: min(460px, calc(100vw - 32px)); padding: 28px 28px 20px; }
+.welcome-body { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; min-height: 190px; justify-content: center; }
+.welcome-body h2 { margin: 4px 0 0; font-size: 18px; }
+.welcome-body p { margin: 0; max-width: 36ch; }
+.welcome-icon { color: var(--accent); }
+.welcome-choices { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; align-items: stretch; }
+.welcome-choices label { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.welcome-foot { display: flex; align-items: center; gap: 8px; }
+.welcome-dots { display: inline-flex; gap: 6px; }
+.welcome-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--surface-3); transition: background-color var(--m-base, 180ms) ease-out, transform var(--m-base, 180ms) var(--m-out, ease-out); }
+.welcome-dots span.on { background: var(--accent); transform: scale(1.3); }
+
+/* ---------- folder rules ---------- */
+.dialog.rules-dialog { height: auto; max-height: min(640px, calc(100vh - 48px)); }
+.rules-list { flex: none; max-height: 360px; }
+.rule-row { display: grid; grid-template-columns: 22px 1fr auto auto auto; align-items: center; gap: 8px; padding: 8px 10px; }
+.rule-row + .rule-row, .rule-file + .rule-file { border-top: 1px solid var(--border); }
+.rule-file { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 5px 10px; }
+.rules-form { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.rules-form label { display: flex; flex-direction: column; gap: 4px; color: var(--text-muted); font-size: 12px; }
+.rules-form .inline { display: flex; gap: 8px; }
+.rules-form .inline .wide { flex: 1; }
+.rules-form .rules-check { flex-direction: row; align-items: center; gap: 8px; }
+.rules-preview { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.rules-preview .bin-list { max-height: 320px; }
+
+/* ---------- image tools ---------- */
+.dialog.imgtools { display: flex; flex-direction: column; gap: 12px; width: min(440px, calc(100vw - 32px)); }
+.dialog.imgtools h2 { margin: 0; }
+.dialog.imgtools p { margin: 0; }
+.dialog.imgtools label { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.imgtools-out { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.imgtools-out > .muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- group by: a line above each group's first row and a label chip beside its name ---------- */
+.row.group-start { box-shadow: inset 0 1px 0 var(--border-strong, var(--border)); }
+.group-chip {
+  flex: none;
+  margin-left: 10px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}

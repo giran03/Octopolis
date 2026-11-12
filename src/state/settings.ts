@@ -49,6 +49,22 @@ interface Settings {
   hideGitIgnored: boolean;
   /** Program for "Open in editor"; empty uses the file type's editor. */
   editorPath: string;
+  /** Double-clicking a text or code file opens it in the editor above (when one is set). */
+  editorOpensText: boolean;
+  /** Stroke weight of the button icons, 100 (hairline) to 700 (bold). */
+  iconWeight: number;
+  /** Show file extensions in names (off hides the last extension, like Explorer's option). */
+  showExtensions: boolean;
+  /** Size of the button icons relative to normal, in percent. */
+  iconScale: number;
+  /** Font for the interface text; empty uses the default. */
+  uiFont: string;
+  /** The first-run welcome has been shown. */
+  welcomeSeen: boolean;
+  /** Solid icons instead of outlines. */
+  iconFill: boolean;
+  /** Shape family of the button icons. */
+  iconStyle: IconStyle;
   /** Windows notification when a long transfer ends while the window is in the background. */
   notifyDone: boolean;
   /** Stop the PC from sleeping while transfers run. */
@@ -59,12 +75,16 @@ interface Settings {
   lastUpdateCheck: number;
 }
 
+export type IconStyle = "outlined" | "rounded" | "sharp";
+export const ICON_WEIGHT_MIN = 100;
+export const ICON_WEIGHT_MAX = 700;
+
 export type StartFolder = "home" | "last" | "custom";
 export type TerminalShell = "powershell" | "pwsh" | "cmd";
 export type MotionPref = "system" | "reduce" | "full";
 export type UpdateMode = "off" | "notify" | "auto";
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customTheme: null, accent: null, uiScale: 100, density: "normal", pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "notify", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", notifyDone: true, keepAwake: true };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customTheme: null, accent: null, uiScale: 100, density: "normal", pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "notify", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, iconScale: 100, uiFont: "", welcomeSeen: false, iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true };
 
 export const SETTING_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
@@ -143,6 +163,14 @@ export const settings = createRoot(() => {
     columnWidths: () => value().columnWidths,
     hideGitIgnored: () => value().hideGitIgnored,
     editorPath: () => value().editorPath,
+    editorOpensText: () => value().editorOpensText,
+    showExtensions: () => value().showExtensions,
+    iconScale: () => Math.min(140, Math.max(80, value().iconScale)),
+    uiFont: () => value().uiFont,
+    welcomeSeen: () => value().welcomeSeen,
+    iconWeight: () => Math.min(ICON_WEIGHT_MAX, Math.max(ICON_WEIGHT_MIN, value().iconWeight)),
+    iconFill: () => value().iconFill,
+    iconStyle: (): IconStyle => (["outlined", "rounded", "sharp"].includes(value().iconStyle) ? value().iconStyle : "outlined"),
     notifyDone: () => value().notifyDone,
     keepAwake: () => value().keepAwake,
     lastUpdateCheck: () => value().lastUpdateCheck,

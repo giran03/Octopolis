@@ -1,7 +1,7 @@
 // Duplicate finder: groups of identical files under a folder; recycle the extra copies.
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { formatDate, formatSize } from "../lib/format";
-import { cancelScan, errorText, findDuplicates, type DupeGroup } from "../lib/ipc";
+import { cancelScan, errorText, findDuplicates, findSimilarImages, type DupeGroup } from "../lib/ipc";
 import { baseName, parentPath } from "../lib/paths";
 import { extrasToRemove } from "../lib/summary";
 import { ops } from "../state/ops";
@@ -18,7 +18,15 @@ const MIN_SIZES: readonly { bytes: number; label: string }[] = [
 /** Groups shown at most; the biggest waste comes first. */
 const MAX_GROUPS = 300;
 
+const SIMILARITY: readonly { distance: number; label: string }[] = [
+  { distance: 4, label: "Very similar" },
+  { distance: 8, label: "Similar" },
+  { distance: 12, label: "Loosely similar" },
+];
+
 export function Duplicates(props: { root: string }) {
+  const [mode, setMode] = createSignal<"identical" | "pictures">("identical");
+  const [distance, setDistance] = createSignal(8);
   const [minSize, setMinSize] = createSignal(1024 * 1024);
   const [groups, setGroups] = createSignal<readonly DupeGroup[] | null>(null);
   const [progress, setProgress] = createSignal<[number, number] | null>(null);
@@ -33,7 +41,8 @@ export function Duplicates(props: { root: string }) {
     setPicked(new Set<string>());
     setProgress([0, 0]);
     try {
-      setGroups(await findDuplicates(SCAN_ID, props.root, minSize(), (read, total) => setProgress([read, total])));
+      const onProgress = (read: number, total: number) => setProgress([read, total]);
+      setGroups(mode() === "pictures" ? await findSimilarImages(SCAN_ID, props.root, distance(), onProgress) : await findDuplicates(SCAN_ID, props.root, minSize(), onProgress));
     } catch (e) {
       if (errorText(e) !== "cancelled") setError(errorText(e));
     } finally {
@@ -85,9 +94,22 @@ export function Duplicates(props: { root: string }) {
           <span class="muted small" title={props.root}>in {baseName(props.root) || props.root} and its subfolders</span>
         </div>
         <div class="dupes-bar">
-          <select class="conflict-choice" aria-label="Smallest file to compare" value={minSize()} disabled={scanning()} onChange={(e) => setMinSize(Number(e.currentTarget.value))}>
-            <For each={MIN_SIZES}>{(m) => <option value={m.bytes}>{m.label}</option>}</For>
+          <select class="conflict-choice" aria-label="What to look for" value={mode()} disabled={scanning()} onChange={(e) => { setMode(e.currentTarget.value as "identical" | "pictures"); setGroups(null); setPicked(new Set<string>()); }}>
+            <option value="identical">Identical files</option>
+            <option value="pictures">Similar pictures</option>
           </select>
+          <Show
+            when={mode() === "pictures"}
+            fallback={
+              <select class="conflict-choice" aria-label="Smallest file to compare" value={minSize()} disabled={scanning()} onChange={(e) => setMinSize(Number(e.currentTarget.value))}>
+                <For each={MIN_SIZES}>{(m) => <option value={m.bytes}>{m.label}</option>}</For>
+              </select>
+            }
+          >
+            <select class="conflict-choice" aria-label="How alike" value={distance()} disabled={scanning()} onChange={(e) => setDistance(Number(e.currentTarget.value))}>
+              <For each={SIMILARITY}>{(s) => <option value={s.distance}>{s.label}</option>}</For>
+            </select>
+          </Show>
           <Show when={!scanning()} fallback={<button class="btn" onClick={() => void cancelScan(SCAN_ID)}>Stop</button>}>
             <button class="btn primary" onClick={() => void scan()}>{groups() ? "Scan again" : "Find duplicates"}</button>
           </Show>
@@ -95,7 +117,7 @@ export function Duplicates(props: { root: string }) {
             {(p) => (
               <span class="dupes-progress">
                 <span class="usage"><span style={{ width: `${p()[1] ? (p()[0] / p()[1]) * 100 : 0}%` }} /></span>
-                <span class="muted small">{p()[1] ? `Comparing ${formatSize(p()[0])} of ${formatSize(p()[1])}` : "Listing files…"}</span>
+                <span class="muted small">{p()[1] ? (mode() === "pictures" ? `Looking at picture ${p()[0].toLocaleString()} of ${p()[1].toLocaleString()}` : `Comparing ${formatSize(p()[0])} of ${formatSize(p()[1])}`) : "Listing files…"}</span>
               </span>
             )}
           </Show>
@@ -120,7 +142,7 @@ export function Duplicates(props: { root: string }) {
                   {(g) => (
                     <div class="dupe-group">
                       <div class="dupe-head muted small">
-                        {g.files.length} copies · {formatSize(g.size)} each
+                        {mode() === "pictures" ? `${g.files.length} similar pictures · up to ${formatSize(g.size)}` : `${g.files.length} copies · ${formatSize(g.size)} each`}
                       </div>
                       <For each={g.files}>
                         {([path, modified]) => (

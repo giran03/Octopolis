@@ -1,5 +1,6 @@
 // The settings dialog: a rail of tabs on the left and the active tab's settings on the right.
-import { createEffect, For, Match, onMount, Switch } from "solid-js";
+import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { ui, type SettingsTab } from "../../state/ui";
 import { updater } from "../../state/updater";
 import { Glyph, IconClose } from "../Icons";
@@ -19,6 +20,8 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string; readonl
   { id: "about", label: "About", code: "E946" },
 ];
 
+const PANELS: Record<SettingsTab, Component> = { general: GeneralTab, appearance: AppearanceTab, shortcuts: ShortcutsTab, advanced: AdvancedTab, updates: UpdatesTab, about: AboutTab };
+
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
 
 export function SettingsModal() {
@@ -32,6 +35,66 @@ export function SettingsModal() {
   createEffect(() => {
     tab();
     if (panel) panel.scrollTop = 0;
+  });
+
+  // Outline: the section headings of the open tab, found in the rendered page so every tab gets one.
+  const [outline, setOutline] = createSignal<HTMLElement[]>([]);
+  const [current, setCurrent] = createSignal(0);
+  // Search: shows every tab's settings stacked and hides the rows that don't match.
+  const [query, setQuery] = createSignal("");
+  const [noResults, setNoResults] = createSignal(false);
+  const searching = () => query().trim().length > 0;
+  const applyFilter = () => {
+    const q = query().trim().toLowerCase();
+    const rows = [...panel.querySelectorAll<HTMLElement>(".srow")];
+    for (const row of rows) row.hidden = !!q && !(row.textContent ?? "").toLowerCase().includes(q);
+    for (const section of panel.querySelectorAll<HTMLElement>(".sset")) {
+      const title = (section.querySelector(".sset-title")?.textContent ?? "").toLowerCase();
+      const hasRow = [...section.querySelectorAll<HTMLElement>(".srow")].some((r) => !r.hidden);
+      section.hidden = !!q && !hasRow && !title.includes(q);
+      // A section whose title matches, but none of its rows do, shows all its rows.
+      if (q && !hasRow && title.includes(q)) for (const r of section.querySelectorAll<HTMLElement>(".srow")) r.hidden = false;
+    }
+    for (const group of panel.querySelectorAll<HTMLElement>(".sres-tab")) group.hidden = !!q && ![...group.querySelectorAll<HTMLElement>(".sset")].some((s) => !s.hidden);
+    setNoResults(!!q && ![...panel.querySelectorAll<HTMLElement>(".sset")].some((s) => !s.hidden));
+  };
+  createEffect(() => {
+    query();
+    queueMicrotask(() => {
+      if (panel) applyFilter();
+    });
+  });
+
+  const scan = () => {
+    applyFilter();
+    const found = [...panel.querySelectorAll<HTMLElement>(".sset-title")].filter((el) => !el.closest<HTMLElement>(".sset")?.hidden);
+    const same = (a: HTMLElement[], b: HTMLElement[]) => a.length === b.length && a.every((el, i) => el === b[i]);
+    if (!same(found, outline())) setOutline(found);
+    spy();
+  };
+  const spy = () => {
+    const items = outline();
+    const top = panel.getBoundingClientRect().top + 24;
+    let active = 0;
+    items.forEach((el, i) => {
+      if (el.getBoundingClientRect().top <= top) active = i;
+    });
+    if (panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 2 && items.length) active = items.length - 1;
+    setCurrent(active);
+  };
+  const jump = (el: HTMLElement) => {
+    const section = el.closest<HTMLElement>(".sset") ?? el;
+    section.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  onMount(() => {
+    const mo = new MutationObserver(scan);
+    mo.observe(panel, { childList: true, subtree: true });
+    panel.addEventListener("scroll", spy, { passive: true });
+    scan();
+    onCleanup(() => {
+      mo.disconnect();
+      panel.removeEventListener("scroll", spy);
+    });
   });
 
   const onKey = (e: KeyboardEvent) => {
@@ -62,6 +125,21 @@ export function SettingsModal() {
       <div ref={dialog} class="dialog settings-modal" role="dialog" aria-modal="true" aria-label="Settings" onKeyDown={onKey}>
         <nav class="srail" aria-label="Settings sections">
           <div class="srail-title">Settings</div>
+          <input
+            class="text-input ssearch"
+            type="search"
+            placeholder="Search settings"
+            aria-label="Search settings"
+            spellcheck={false}
+            value={query()}
+            onInput={(e) => setQuery(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && query()) {
+                e.stopPropagation();
+                setQuery("");
+              }
+            }}
+          />
           <div class="srail-tabs" role="tablist" aria-orientation="vertical" style={{ "--i": index() }} onKeyDown={onRailKey}>
             <For each={TABS}>
               {(t) => (
@@ -74,6 +152,19 @@ export function SettingsModal() {
               )}
             </For>
           </div>
+          <Show when={outline().length > 1}>
+            <div class="srail-divider" role="separator" />
+            <div class="srail-title">On this page</div>
+            <div class="sout">
+              <For each={outline()}>
+                {(el, i) => (
+                  <button class="sout-link" classList={{ on: current() === i() }} aria-current={current() === i() ? "location" : undefined} onClick={() => jump(el)}>
+                    {el.textContent}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
         </nav>
         <div class="spane">
           <header class="spane-head">
@@ -83,6 +174,18 @@ export function SettingsModal() {
             </button>
           </header>
           <div ref={panel} class="spanel" id="spanel" role="tabpanel" aria-labelledby={`stab-${tab()}`}>
+            <Show when={searching()}>
+              <For each={TABS.filter((t) => t.id !== "about" && t.id !== "updates")}>
+                {(t) => (
+                  <section class="sres-tab" data-tab={t.id}>
+                    <h2 class="sres-head">{t.label}</h2>
+                    <Dynamic component={PANELS[t.id]} />
+                  </section>
+                )}
+              </For>
+              <p class="muted sres-none" hidden={!noResults()}>No setting matches "{query().trim()}"</p>
+            </Show>
+            <Show when={!searching()}>
             <Switch>
               <Match when={tab() === "general"}>
                 <GeneralTab />
@@ -103,6 +206,7 @@ export function SettingsModal() {
                 <AboutTab />
               </Match>
             </Switch>
+            </Show>
           </div>
         </div>
       </div>

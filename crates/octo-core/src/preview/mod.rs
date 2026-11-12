@@ -3,6 +3,7 @@
 
 pub mod highlight;
 pub mod markdown;
+pub mod office;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {

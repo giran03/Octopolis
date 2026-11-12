@@ -1,5 +1,6 @@
-// Icons are glyphs from the Segoe Fluent Icons font (Segoe MDL2 Assets on Windows 10), not SVGs.
-// Each export keeps the old `size` prop; `Glyph` takes a raw hex code point for anything else.
+// Icons are Material Symbols (outlined, weight 100) from a bundled font subset. Colored icons (files, folders,
+// drives, places) keep the Segoe Fluent Icons font and are drawn by `SegoeGlyph`, `FileGlyph` and friends.
+// Each export keeps the old `size` prop; `Glyph` takes the legacy Segoe hex code and `MaterialIcon` takes a symbol name.
 import { type JSX, Show } from "solid-js";
 import { categoryOf, type FileCategory } from "../lib/format";
 import { fileIconSpec } from "../lib/fileicons";
@@ -8,14 +9,77 @@ import { iconFor } from "../state/icons";
 
 type P = { size?: number; class?: string };
 
-/** One icon-font glyph. Pass the code point as hex, e.g. "E74D" for the trash can. */
-export const Glyph = (p: { code: string; size?: number; class?: string }) => (
+/**
+ * One Material Symbol by name (https://fonts.google.com/icons). Only the names listed in
+ * `src/assets/fonts/material-symbols-outlined.woff2` exist; add a name there before using a new one.
+ */
+export const MaterialIcon = (p: { name: string; size?: number; class?: string; fill?: boolean }) => (
+  <span class={`ms${p.fill ? " ms-fill" : ""}${p.class ? ` ${p.class}` : ""}`} style={{ "font-size": `calc(${p.size ?? 16}px * var(--icon-scale, 1))` }} aria-hidden="true">
+    {p.name}
+  </span>
+);
+
+/** Segoe Fluent Icons code points used for the plain UI icons, and the Material Symbol that replaces each. */
+const SYMBOL_FOR_CODE: Record<string, { name: string; fill?: boolean }> = {
+  E710: { name: "add" },
+  E711: { name: "close" },
+  E8BB: { name: "close" },
+  E70D: { name: "expand_more" },
+  E70E: { name: "expand_less" },
+  E72A: { name: "arrow_forward" },
+  E72B: { name: "arrow_back" },
+  E74A: { name: "arrow_upward" },
+  E72C: { name: "refresh" },
+  E76C: { name: "chevron_right" },
+  E721: { name: "search" },
+  E74D: { name: "delete" },
+  E81E: { name: "layers" },
+  E7B3: { name: "visibility" },
+  E89F: { name: "left_panel_open" },
+  E8A0: { name: "left_panel_close" },
+  E80F: { name: "home" },
+  E734: { name: "star" },
+  E735: { name: "star", fill: true },
+  E718: { name: "push_pin" },
+  E121: { name: "schedule" },
+  E713: { name: "settings" },
+  EC4F: { name: "fork_right" },
+  E7B8: { name: "inventory_2" },
+  E8C8: { name: "content_copy" },
+  E8EC: { name: "sell" },
+  E8B7: { name: "draft" },
+  E790: { name: "palette" },
+  E765: { name: "keyboard" },
+  E9E9: { name: "tune" },
+  E895: { name: "sync" },
+  E946: { name: "info" },
+  E73E: { name: "check" },
+  E783: { name: "error" },
+  E753: { name: "cloud" },
+  E930: { name: "check_circle" },
+  E921: { name: "remove" },
+  E922: { name: "crop_square" },
+  E923: { name: "filter_none" },
+  E756: { name: "terminal" },
+  EDA2: { name: "hard_drive" },
+};
+
+/** A plain UI icon, by its legacy Segoe code point. Pass the code as hex, e.g. "E74D" for the trash can. */
+export const Glyph = (p: { code: string; size?: number; class?: string }) => {
+  const sym = SYMBOL_FOR_CODE[p.code.toUpperCase()];
+  return <MaterialIcon name={sym?.name ?? "help"} fill={sym?.fill} size={p.size} class={p.class} />;
+};
+
+/** One Segoe Fluent Icons glyph, for the colored icons (files, folders, drives, places). */
+export const SegoeGlyph = (p: { code: string; size?: number; class?: string }) => (
   <span class={`gi${p.class ? ` ${p.class}` : ""}`} style={{ "font-size": `${p.size ?? 16}px` }} aria-hidden="true">
     {String.fromCodePoint(parseInt(p.code, 16))}
   </span>
 );
 
 const make = (code: string, extra = "") => (p: P) => <Glyph code={code} size={p.size} class={[extra, p.class].filter(Boolean).join(" ") || undefined} />;
+/** An icon drawn from a Material Symbol name. */
+const sym = (name: string, fill = false) => (p: P) => <MaterialIcon name={name} fill={fill} size={p.size} class={p.class} />;
 
 export const IconBack = make("E72B");
 export const IconForward = make("E72A");
@@ -27,8 +91,8 @@ export const IconClose = make("E711");
 export const IconChevron = make("E76C");
 export const IconSearch = make("E721");
 export const IconLayers = make("E81E");
-export const IconSplitRow = make("F57C");
-export const IconSplitCol = make("F57C", "gi-rot");
+export const IconSplitRow = sym("vertical_split");
+export const IconSplitCol = sym("horizontal_split");
 export const IconEye = make("E7B3");
 export const IconSidebar = make("E89F");
 export const IconSidebarClose = make("E8A0");
@@ -43,59 +107,17 @@ export const IconTray = make("E7B8");
 export const IconCopy = make("E8C8");
 export const IconMove = make("E72A");
 export const IconTrash = make("E74D");
+export const IconDiskSpace = sym("hard_disk");
+/** A mop, for the Free up space button. */
+export const IconMop = sym("mop");
+export const IconZoomIn = sym("zoom_in");
+export const IconZoomOut = sym("zoom_out");
+export const IconFit = sym("fit_screen");
+export const IconInfo = sym("info");
+export const IconGitIgnore = sym("hide_source");
+export const IconGitCommit = sym("commit");
 
-/** Clean donut-sector icon for the Disk Space Preview footer button. */
-export const IconDiskSpace = (p: P) => (
-  <svg class={p.class} width={p.size ?? 17} height={p.size ?? 17} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="10" cy="10" r="7.25" />
-    <circle cx="10" cy="10" r="2.75" />
-    <path d="M10 2.75v4.5M12.75 10h4.5M8.05 11.95l-3.2 3.2" />
-  </svg>
-);
-
-export const IconZoomIn = (p: P) => (
-  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="7" cy="7" r="4.5" />
-    <path d="M10.4 10.4L14 14M7 5v4M5 7h4" />
-  </svg>
-);
-
-export const IconZoomOut = (p: P) => (
-  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="7" cy="7" r="4.5" />
-    <path d="M10.4 10.4L14 14M5 7h4" />
-  </svg>
-);
-
-export const IconFit = (p: P) => (
-  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M2.5 5.5V3a.5.5 0 0 1 .5-.5h2.5M10.5 2.5H13a.5.5 0 0 1 .5.5v2.5M13.5 10.5V13a.5.5 0 0 1-.5.5h-2.5M5.5 13.5H3a.5.5 0 0 1-.5-.5v-2.5" />
-  </svg>
-);
-
-export const IconInfo = (p: P) => (
-  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="8" cy="8" r="5.75" />
-    <path d="M8 7.5v3.5" />
-    <circle cx="8" cy="5.1" r="0.6" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-export const IconGitIgnore = (p: P) => (
-  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M4.5 2.5h4.75l2.75 2.75v7.25a1 1 0 0 1-1 1h-6.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" />
-    <path d="M2.25 13.75l11.5-11.5" />
-  </svg>
-);
-
-export const IconGitCommit = (p: P) => (
-  <svg class={p.class} width={p.size ?? 14} height={p.size ?? 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="8" cy="8" r="2.75" />
-    <path d="M1.5 8h3.75M10.75 8h3.75" />
-  </svg>
-);
-
-export const IconDrive = (p: P & { kind?: string }) => <Glyph code={p.kind === "removable" ? "E88E" : "EDA2"} size={p.size} class={p.class} />;
+export const IconDrive = (p: P & { kind?: string }) => <SegoeGlyph code={p.kind === "removable" ? "E88E" : "EDA2"} size={p.size} class={p.class} />;
 
 /** Which font glyph stands for each kind of file. */
 const CATEGORY_GLYPH: Record<FileCategory, string> = {
@@ -159,7 +181,7 @@ const PLACE_GLYPH: Record<string, { code: string; tone: string }> = {
 
 export function PlaceGlyph(p: { id: string; size?: number }) {
   const place = () => PLACE_GLYPH[p.id] ?? { code: "E8D5", tone: "folder" };
-  return <Glyph code={place().code} size={p.size ?? 18} class={`place place-${place().tone}`} />;
+  return <SegoeGlyph code={place().code} size={p.size ?? 18} class={`place place-${place().tone}`} />;
 }
 
 /** A folder's chosen emoji, drawn in place of its normal icon. */

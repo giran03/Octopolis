@@ -68,3 +68,10 @@ export function inferPathIsDir(path: string, knownDirs?: ReadonlySet<string>): b
   const name = baseName(norm);
   return fileIconSpec(name) === null && categoryOf(name, false) === "file";
 }
+
+/** A file name without its last extension (kept whole for folders, dotfiles and names with no extension). */
+export function withoutExtension(name: string, isDir: boolean): string {
+  if (isDir) return name;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(0, dot) : name;
+}

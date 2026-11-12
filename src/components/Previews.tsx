@@ -8,13 +8,16 @@ import { ui } from "../state/ui";
 /** "UTF-8 · Windows (CRLF) · 120 lines" and an Open in editor button. */
 export function TextDetails(props: { path: string; details: readonly [string, string][] }) {
   const get = (k: string) => props.details.find(([n]) => n === k)?.[1];
-  const summary = () => [get("Encoding"), get("Line endings"), get("Lines") && `${get("Lines")} lines`].filter(Boolean).join(" · ");
+  const summary = () => [get("Type"), get("Encoding"), get("Line endings"), get("Lines") && `${get("Lines")} lines`].filter(Boolean).join(" · ");
   return (
     <div class="text-details small">
       <span class="muted">{summary()}</span>
-      <button class="link-btn" title="Open in editor (Ctrl+Shift+O)" onClick={() => void editFiles([props.path])}>
-        Open in editor
-      </button>
+      {/* Office documents show extracted text, so opening them as text in an editor makes no sense. */}
+      <Show when={!get("Type")}>
+        <button class="link-btn" title="Open in editor (Ctrl+Shift+O)" onClick={() => void editFiles([props.path])}>
+          Open in editor
+        </button>
+      </Show>
     </div>
   );
 }

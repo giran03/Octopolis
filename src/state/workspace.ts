@@ -2,7 +2,9 @@
 import { batch, createRoot, createSignal, type Accessor } from "solid-js";
 import { leaf, leaves, removePane, resizeSplit, splitPane, type Direction, type LayoutNode } from "../lib/layout";
 import type { Preset, PresetPane } from "../lib/session";
-import { createTab, type TabModel } from "./tab";
+import { isDir, indexOfName } from "../lib/listing";
+import { baseName, parentPath, samePath } from "../lib/paths";
+import { createTab, setNavigationListener, type TabModel } from "./tab";
 
 export interface PaneModel {
   readonly id: string;
@@ -151,6 +153,46 @@ export const workspace = createRoot(() => {
     setActivePaneId(ids[(at + step + ids.length) % ids.length]);
   }
 
+  /** Swaps what the active pane and the next pane show (all tabs); focus follows the content. */
+  function swapPanes() {
+    const ids = leaves(layout());
+    if (ids.length < 2) return;
+    const a = activePaneId();
+    const b = ids[(ids.indexOf(a) + 1) % ids.length];
+    const sa = state(a);
+    const sb = state(b);
+    if (!sa || !sb || a === b) return;
+    batch(() => {
+      setPanes((m) => new Map(m).set(a, sb).set(b, sa));
+      setActivePaneId(b);
+    });
+  }
+
+  /** Synchronized browsing: going into a subfolder or up in the active pane does the same in the others. */
+  const [synced, setSynced] = createSignal(false);
+  let syncing = false;
+  setNavigationListener((tab, from, to) => {
+    if (!synced() || syncing || tab !== activeTab()) return;
+    const goingDown = !!parentPath(to) && samePath(parentPath(to)!, from);
+    const goingUp = !!parentPath(from) && samePath(parentPath(from)!, to);
+    if (!goingDown && !goingUp) return;
+    syncing = true;
+    try {
+      for (const id of leaves(layout())) {
+        const other = id === activePaneId() ? undefined : paneModel(id).activeTab();
+        if (!other || other === tab) continue;
+        if (goingUp) other.up();
+        else {
+          const l = other.listing();
+          const at = indexOfName(l, baseName(to));
+          if (at >= 0 && isDir(l, at)) void other.navigate(other.pathOf(at));
+        }
+      }
+    } finally {
+      syncing = false;
+    }
+  });
+
   /** Moves a tab within a pane or to another pane, closing a pane it empties. */
   function moveTab(fromPane: string, tabId: string, toPane: string, index: number) {
     const from = state(fromPane);
@@ -263,6 +305,9 @@ export const workspace = createRoot(() => {
     split,
     closePane,
     cyclePane,
+    swapPanes,
+    synced,
+    toggleSynced: () => setSynced((s) => !s),
     focusPane: setActivePaneId,
     resize: (path: readonly number[], index: number, delta: number) => setLayout((t) => resizeSplit(t, path, index, delta)),
   };

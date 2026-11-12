@@ -2,7 +2,7 @@
 // DOM; the same row nodes are reused as the list scrolls.
 import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import * as A from "../actions";
-import { formatDate, formatSize, typeLabel } from "../lib/format";
+import { formatDate, formatSize, typeLabel, withoutExtension } from "../lib/format";
 import { ATTR_REPARSE, baseOf, cloudState, dirOf, isDir, isHidden } from "../lib/listing";
 import { attributeLetters, clampWidth, columnDef, DEFAULT_COLUMNS, gridTemplate, OPTIONAL_COLUMNS, toggleColumn, visibleColumns, type ColumnKey } from "../lib/columns";
 import { baseName, extensionOf, joinPath, parentPath, sameVolume, samePath, stemLength } from "../lib/paths";
@@ -21,7 +21,7 @@ import { isPinned } from "../lib/sidebar";
 import { iconFor } from "../state/icons";
 import { cancelSpring, DRAG_MIME, dragState, springLoad } from "../state/drag";
 import { fileIconSpec } from "../lib/fileicons";
-import { FileGlyph, FileIcon, FolderEmoji, Glyph } from "./Icons";
+import { FileGlyph, FileIcon, FolderEmoji, Glyph, MaterialIcon } from "./Icons";
 import { folderIcons } from "../state/folderIcons";
 
 /** Row height in pixels, from the density setting. */
@@ -298,6 +298,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                       focused: props.active && tab().focus() === pos(),
                       dim: isHidden(l(), entry()) || ops.isCut(joinPath(l().path, name())),
                       "drop-row": dropTarget() === pos(),
+                      "group-start": pos() > 0 && tab().groupStarts().has(pos()),
                       [`cmp-${compare.statusOf(tab())?.get(baseOf(name()).toLowerCase()) ?? "none"}`]: !!compare.statusOf(tab()),
                     }}
                     onMouseDown={(e) => {
@@ -329,7 +330,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                   >
                     <div role="gridcell" class="cell name">
                       <RowIcon path={tab().pathOf(entry())} name={baseOf(name())} isDir={dir()} virtual={!!tab().archive()} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
-                      <Show when={tab().renaming() === entry()} fallback={<><NameLabel name={name()} /><GitBadge tab={tab()} name={name()} /><CloudBadge attrs={l().attrs[entry()]} /><TagMarks tags={dirTags()?.get(baseOf(name()).toLowerCase())} /></>}>
+                      <Show when={tab().renaming() === entry()} fallback={<><NameLabel name={name()} dir={isDir(l(), entry())} /><GitBadge tab={tab()} name={name()} /><CloudBadge attrs={l().attrs[entry()]} /><TagMarks tags={dirTags()?.get(baseOf(name()).toLowerCase())} /><Show when={tab().groupStarts().get(pos())}>{(g) => <span class="group-chip" title={`${g().count} in this group`}>{g().label} · {g().count.toLocaleString()}</span>}</Show></>}>
                         <RenameInput name={baseOf(name())} isDir={dir()} onDone={(v) => (v === null ? tab().setRenaming(null) : void A.commitRename(tab(), entry(), v))} />
                       </Show>
                     </div>
@@ -429,13 +430,35 @@ function ListState(props: { tab: TabModel }) {
       </div>
     </Show>
     <Show when={empty() && !(s().loading && !s().error)}>
-      <div class="list-state">
+      <div class="list-state empty-state">
         <Show
           when={s().error}
-          fallback={<span>{props.tab.filter() ? "No items match the filter" : "This folder is empty"}</span>}
+          fallback={
+            <>
+              <MaterialIcon name={props.tab.filter() ? "search_off" : "folder_open"} size={44} class="empty-icon" />
+              <strong>{props.tab.filter() ? "No items match the filter" : "This folder is empty"}</strong>
+              <span class="muted small">{props.tab.filter() ? "Clear the filter with Esc to see everything again" : "Drop files here, or press Ctrl+Shift+N for a new folder"}</span>
+            </>
+          }
         >
-          <span class="error-text">{s().error}</span>
-          <button class="btn" onClick={() => void props.tab.refresh()}>Try again</button>
+          {(() => {
+            const text = s().error ?? "";
+            const denied = /denied|not permitted|privilege|os error 5\b/i.test(text);
+            const missing = /not found|cannot find|no such|does not exist|os error [23]\b/i.test(text);
+            return (
+              <>
+                <MaterialIcon name={denied ? "lock" : missing ? "folder_off" : "error"} size={44} class="empty-icon" />
+                <strong>{denied ? "You don't have access to this folder" : missing ? "This folder isn't there anymore" : "Couldn't open this folder"}</strong>
+                <span class="error-text small">{text}</span>
+                <span class="empty-actions">
+                  <button class="btn" onClick={() => void props.tab.refresh()}>Try again</button>
+                  <Show when={missing || denied}>
+                    <button class="btn" onClick={() => props.tab.up()}>Go up</button>
+                  </Show>
+                </span>
+              </>
+            );
+          })()}
         </Show>
       </div>
     </Show>
@@ -493,6 +516,22 @@ function fileOpenEntries(tab: TabModel): MenuEntry[] {
   ];
 }
 
+/** "Open in editor" and "Open terminal here" for a folder (the selected one, or the current one). */
+function folderToolEntries(tab: TabModel, explicit?: string): MenuEntry[] {
+  const path = explicit ?? A.singleFolderPath(tab);
+  if (!path || tab.archive()) return [];
+  return [
+    { label: "Open folder in editor", run: () => void A.openFolderInEditor(path) },
+    { label: "Open terminal here", run: () => A.openTerminalAt(path) },
+  ];
+}
+
+/** "Resize or convert…" when the selection holds at least one picture. */
+function imageToolEntries(tab: TabModel): MenuEntry[] {
+  if (tab.archive()) return [];
+  return A.targets(tab).some((p) => /\.(jpe?g|png|gif|bmp|webp)$/i.test(p)) ? [{ label: "Resize or convert pictures…", run: () => A.openImageTools(tab) }] : [];
+}
+
 /** "Pin to sidebar" when exactly one folder is selected. */
 function pinEntry(tab: TabModel): MenuEntry[] {
   const picked = [...tab.selection()];
@@ -520,6 +559,7 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         { label: "Open", shortcut: "Enter", run: () => A.openSelection(tab) },
         ...openInTabEntry(tab),
         ...fileOpenEntries(tab),
+        ...folderToolEntries(tab),
         "separator",
         // Clipboard
         { label: "Cut", shortcut: "Ctrl+X", run: () => A.copySelection(tab, "cut") },
@@ -535,9 +575,12 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         // Transfer & archive
         { label: "Add to shelf", shortcut: "Ctrl+Shift+D", run: () => A.addToShelf(tab) },
         ...(A.otherPaneTab() ? [{ label: "Copy to the other pane", shortcut: "Ctrl+Shift+→", run: () => A.sendToOtherPane(tab, "copy") }, { label: "Move to the other pane", run: () => A.sendToOtherPane(tab, "move") }] : []),
+        { label: "Copy to…", run: () => void A.transferToPicked(tab, "copy") },
+        ...(tab.archive() ? [] : [{ label: "Move to…", run: () => void A.transferToPicked(tab, "move") }]),
         ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : [{ label: "Compress to…", run: () => A.openCompressMenu(tab, menuX, menuY) }]),
         "separator",
         // Organize & customize
+        ...imageToolEntries(tab),
         ...(tab.archive() ? [] : [{ label: "Tags…", shortcut: "Ctrl+Shift+G", run: () => A.editTags(tab) }]),
         ...pinEntry(tab),
         ...folderIconEntries(tab),
@@ -569,6 +612,7 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         "separator",
         // View & compare
         { label: "Refresh", shortcut: "F5", run: () => void tab.refresh() },
+        { label: tab.groupBy() === "none" ? "Group by…" : `Grouped by ${tab.groupBy()}…`, run: () => A.openGroupMenu(tab, menuX, menuY) },
         { label: tab.sizesLive() ? "Hide folder sizes" : "Calculate folder sizes", shortcut: "Ctrl+Shift+S", run: () => (tab.sizesLive() ? tab.clearSizes() : tab.computeSizes()) },
         ...(A.otherPaneTab() ? [{ label: compare.active() ? "Stop comparing" : "Compare with the other pane", run: A.toggleCompare }, ...(compare.statusOf(tab) ? [{ label: "Select differences", run: () => A.selectDifferences(tab) }] : [])] : []),
         "separator",
@@ -580,15 +624,16 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         { label: isPinned(sidebar.pins(), tab.path()) ? "Unpin folder from sidebar" : "Pin folder to sidebar", run: () => sidebar.togglePin(tab.path()) },
         { label: "Copy folder path", run: () => void A.copyPaths(tab, [tab.path()]) },
         { label: "Open in Explorer", run: () => A.reveal(tab, tab.path()) },
+        ...folderToolEntries(tab, tab.path()),
       ];
   return items;
 }
 
 /** A plain name, or for search results the name plus its folder, dimmed. */
-function NameLabel(props: { name: string }) {
+function NameLabel(props: { name: string; dir: boolean }) {
   return (
     <span class="label">
-      {baseOf(props.name)}
+      {settings.showExtensions() ? baseOf(props.name) : withoutExtension(baseOf(props.name), props.dir)}
       <Show when={dirOf(props.name)}>{(d) => <span class="label-dir">{d()}</span>}</Show>
     </span>
   );
@@ -612,10 +657,15 @@ function RowIcon(props: { path: string; name: string; isDir: boolean; virtual: b
 /** File size, or a folder's computed size with a proportional bar. */
 function SizeCell(props: { tab: TabModel; entry: number; name: string; dir: boolean }) {
   const known = () => (props.dir ? props.tab.dirSizes()?.get(props.name.toLowerCase()) : undefined);
+  // A folder's size is being worked out (no number yet) or rechecked (a remembered number not yet confirmed).
+  const scanning = () => props.dir && props.tab.sizesLive() && (known() === undefined || props.tab.dirSizeStale(props.name));
   return (
-    <div role="gridcell" class="cell end muted num size-cell">
+    <div role="gridcell" class="cell end muted num size-cell" aria-busy={scanning()}>
       <Show when={known() !== undefined}>
         <span class="size-bar" style={{ width: `${(known()! / props.tab.dirSizeMax()) * 100}%` }} />
+      </Show>
+      <Show when={scanning()}>
+        <MaterialIcon name="search" size={13} class="size-scan" />
       </Show>
       <span class="size-text" classList={{ stale: props.dir && props.tab.dirSizeStale(props.name) }}>{props.dir ? (known() === undefined ? "" : formatSize(known()!)) : formatSize(props.tab.listing().sizes[props.entry])}</span>
     </div>

@@ -18,6 +18,45 @@ pub async fn open_in_editor(path: PathBuf, editor: Option<String>) -> Result<(),
     crate::off_main(move || shell::edit_path(&path, editor.as_deref()).map_err(|e| e.to_string())).await
 }
 
+/// Opens a terminal window in a folder.
+#[tauri::command]
+pub async fn open_terminal_here(path: PathBuf) -> Result<(), String> {
+    crate::off_main(move || {
+        let dir = if path.is_dir() { path } else { path.parent().map(PathBuf::from).unwrap_or(path) };
+        shell::open_terminal_at(&dir).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Shows the Windows folder picker and returns the chosen folder, or None if cancelled.
+#[tauri::command]
+pub async fn pick_folder_dialog(window: tauri::WebviewWindow, initial: Option<PathBuf>) -> Result<Option<String>, String> {
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let res = shell::pick_folder(hwnd, initial.as_deref()).map_err(|e| e.to_string());
+            let _ = tx.send(res);
+        })
+        .map_err(|e| e.to_string())?;
+    let picked = crate::off_main(move || rx.recv().map_err(|e| e.to_string())).await??;
+    Ok(picked.map(|p| p.to_string_lossy().into_owned()))
+}
+
+#[derive(Serialize)]
+pub struct DetectedEditor {
+    name: String,
+    path: String,
+}
+
+/// Editors found on this PC, for the Editor setting.
+#[tauri::command]
+pub async fn detect_editors() -> Vec<DetectedEditor> {
+    crate::off_main(|| Ok::<_, String>(octo_core::editors::detect().into_iter().map(|e| DetectedEditor { name: e.name, path: e.path.to_string_lossy().into_owned() }).collect()))
+        .await
+        .unwrap_or_default()
+}
+
 /// Keeps the PC awake while transfers run.
 #[tauri::command]
 pub fn set_keep_awake(on: bool) {

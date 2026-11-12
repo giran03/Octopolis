@@ -6,7 +6,7 @@ import { settings } from "../state/settings";
 import type { SearchState } from "../state/tab";
 import { workspace } from "../state/workspace";
 import { StatusHints } from "./StatusHints";
-import { IconBranch, IconEye, IconGitCommit, IconGitIgnore, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow } from "./Icons";
+import { IconBranch, MaterialIcon, IconEye, IconGitCommit, IconGitIgnore, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow } from "./Icons";
 
 export function StatusBar() {
   const tab = () => workspace.activeTab();
@@ -95,6 +95,21 @@ export function StatusBar() {
       <button class="icon-btn" title="Split down (Ctrl+Shift+\)" onClick={() => workspace.split("column")}>
         <IconSplitCol size={14} />
       </button>
+      <Show when={workspace.paneCount() > 1}>
+        <button class="icon-btn" title="Swap the two panes" aria-label="Swap panes" onClick={() => workspace.swapPanes()}>
+          <MaterialIcon name="swap_horiz" size={14} />
+        </button>
+        <button
+          class="icon-btn"
+          classList={{ on: workspace.synced() }}
+          title={workspace.synced() ? "Synchronized browsing is on: going into a folder or up does the same in the other pane" : "Synchronized browsing: move both panes together"}
+          aria-label="Synchronized browsing"
+          aria-pressed={workspace.synced()}
+          onClick={() => workspace.toggleSynced()}
+        >
+          <MaterialIcon name={workspace.synced() ? "link" : "link_off"} size={14} />
+        </button>
+      </Show>
     </footer>
   );
 }

@@ -1,5 +1,5 @@
 import { createResource, createSignal, Show } from "solid-js";
-import { errorText, explorerMenuSet, explorerModeSet, explorerModeStatus, type SummonKey } from "../../lib/ipc";
+import { detectEditors, errorText, explorerMenuSet, explorerModeSet, explorerModeStatus, type SummonKey } from "../../lib/ipc";
 import { ui } from "../../state/ui";
 import { type StartFolder, settings, type TerminalShell } from "../../state/settings";
 import { Section, Segmented, Select, SettingRow, Toggle, type Option } from "./controls";
@@ -94,6 +94,57 @@ function ExplorerModeSection() {
   );
 }
 
+const EDITOR_DEFAULT = "";
+const EDITOR_CUSTOM = "\u0000custom";
+
+/** Editor preference: each file type's editor, an installed editor found on this PC, or any program. */
+function EditorRows() {
+  const [found] = createResource(() => detectEditors().catch(() => []));
+  const [custom, setCustom] = createSignal(false);
+  const path = () => settings.editorPath();
+  const isDetected = () => (found() ?? []).some((e) => e.path.toLowerCase() === path().toLowerCase());
+  const showCustom = () => custom() || (!!path() && !isDetected() && !found.loading);
+  const options = (): Option<string>[] => [
+    { value: EDITOR_DEFAULT, label: "Each file type's editor" },
+    ...(found() ?? []).map((e) => ({ value: e.path, label: e.name })),
+    { value: EDITOR_CUSTOM, label: "Custom program…" },
+  ];
+  const selected = () => (showCustom() ? EDITOR_CUSTOM : path());
+  const choose = (value: string) => {
+    if (value === EDITOR_CUSTOM) {
+      setCustom(true);
+      return;
+    }
+    setCustom(false);
+    settings.set({ editorPath: value });
+  };
+  return (
+    <>
+      <SettingRow label="Editor" hint="Program used by Open in editor (Ctrl+Shift+O) and the Open in editor buttons. Installed editors are detected automatically">
+        <Select label="Editor" value={selected()} options={options()} onChange={choose} />
+      </SettingRow>
+      <Show when={path()}>
+        <SettingRow label="Double-click on text and code files" hint="What opens .txt, .md, .json, source code and similar files. Other files always use their Windows default app">
+          <Select
+            label="Double-click on text and code files"
+            value={settings.editorOpensText() ? "editor" : "windows"}
+            options={[
+              { value: "windows", label: "Windows default" },
+              { value: "editor", label: "The editor above" },
+            ]}
+            onChange={(v) => settings.set({ editorOpensText: v === "editor" })}
+          />
+        </SettingRow>
+      </Show>
+      <Show when={showCustom()}>
+        <SettingRow label="Editor program" hint="Full path to the program, for example C:\Program Files\Microsoft VS Code\Code.exe" stacked>
+          <input class="text-input wide" spellcheck={false} placeholder="Path to an .exe" value={path()} onChange={(e) => settings.set({ editorPath: e.currentTarget.value.trim().replace(/^"|"$/g, "") })} />
+        </SettingRow>
+      </Show>
+    </>
+  );
+}
+
 export function GeneralTab() {
   return (
     <>
@@ -116,6 +167,9 @@ export function GeneralTab() {
       <Section title="Files and folders">
         <SettingRow label="Show hidden files" hint="Items marked hidden or system. Also Ctrl+H">
           <Toggle label="Show hidden files" checked={settings.showHidden()} onChange={(showHidden) => settings.set({ showHidden })} />
+        </SettingRow>
+        <SettingRow label="Show file extensions" hint="Off hides the last extension (.txt, .png) in names. Renaming still shows the full name">
+          <Toggle label="Show file extensions" checked={settings.showExtensions()} onChange={(showExtensions) => settings.set({ showExtensions })} />
         </SettingRow>
         <SettingRow label="Calculate folder sizes automatically" hint="Fills in the Size column for folders as soon as you open one. Slower on big drives">
           <Toggle label="Calculate folder sizes automatically" checked={settings.autoFolderSizes()} onChange={(autoFolderSizes) => settings.set({ autoFolderSizes })} />
@@ -153,9 +207,7 @@ export function GeneralTab() {
         <SettingRow label="Follow the current folder" hint="The terminal changes directory when you browse">
           <Toggle label="Follow the current folder" checked={settings.terminalSync()} onChange={(terminalSync) => settings.set({ terminalSync })} />
         </SettingRow>
-        <SettingRow label="Editor" hint="Program for Open in editor (Ctrl+Shift+O), for example C:\Program Files\Microsoft VS Code\Code.exe. Leave empty to use each file type's editor" stacked>
-          <input class="text-input wide" spellcheck={false} placeholder="Each file type's editor" value={settings.editorPath()} onChange={(e) => settings.set({ editorPath: e.currentTarget.value.trim() })} />
-        </SettingRow>
+        <EditorRows />
         <SettingRow label="Hide files Git ignores" hint="In Git folders, leave out build output, dependencies and other ignored files">
           <Toggle label="Hide files Git ignores" checked={settings.hideGitIgnored()} onChange={(hideGitIgnored) => settings.set({ hideGitIgnored })} />
         </SettingRow>

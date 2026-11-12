@@ -281,6 +281,12 @@ export function AdvancedTab() {
       </Section>
 
       <Section title="Clean up">
+        <SettingRow label="Folder rules" hint="Move or delete old files that match name patterns, like PDFs untouched for 30 days in Downloads. You preview every run">
+          <button class="btn" onClick={() => (ui.closeSettings(), ui.setRulesOpen(true))}>Open…</button>
+        </SettingRow>
+        <SettingRow label="Free up space" hint="Find caches, Windows Update leftovers, browser caches and the Recycle Bin that are safe to delete. Nothing is removed until you confirm">
+          <button class="btn" onClick={() => (ui.closeSettings(), ui.setSystemCleanupOpen(true))}>Open…</button>
+        </SettingRow>
         <SettingRow label="Recent folders" hint="Clears the Recent list and what Ctrl+P learned about the folders you visit">
           <ActionButton label="Clear" confirm="Press again to clear" onClick={() => (history.clear(), ui.toast("Recent folders cleared"))} />
         </SettingRow>

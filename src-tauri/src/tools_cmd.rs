@@ -70,6 +70,22 @@ fn build_preview(path: &Path) -> Result<PreviewDto, String> {
             dto.details = meta::media_details(path);
         }
     }
+    // Word, PowerPoint, Excel and OpenDocument files show their text.
+    if !in_archive {
+        let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+        if let Some(label) = preview::office::document_label(&ext) {
+            dto.size = std::fs::metadata(path).map_or(0, |m| m.len());
+            dto.details.push(("Type".to_string(), label.to_string()));
+            if let Ok(Some(text)) = preview::office::extract_text(path, &ext) {
+                let truncated = text.len() > TEXT_LIMIT;
+                let text: String = if truncated { text.chars().take(TEXT_LIMIT).collect() } else { text };
+                dto.kind = Kind::Text.tag();
+                dto.truncated = truncated;
+                dto.text = Some(text);
+                return Ok(dto);
+            }
+        }
+    }
     match kind {
         Kind::Code(_) | Kind::Markdown | Kind::Text | Kind::Table => {
             let (bytes, size) = read_head(path, TEXT_LIMIT)?;
@@ -332,7 +348,7 @@ pub struct ScanState {
     running: std::sync::Mutex<HashMap<String, octo_core::ops::CancelToken>>,
 }
 
-fn begin_scan(state: &tauri::State<'_, ScanState>, id: &str) -> octo_core::ops::CancelToken {
+pub(crate) fn begin_scan(state: &tauri::State<'_, ScanState>, id: &str) -> octo_core::ops::CancelToken {
     let token = octo_core::ops::CancelToken::default();
     let mut running = state.running.lock().unwrap_or_else(|e| e.into_inner());
     // A new scan with the same id replaces (and stops) the old one.
@@ -355,6 +371,12 @@ pub struct DupeGroupDto {
     size: u64,
     /// [path, modified ms], newest first.
     files: Vec<(String, i64)>,
+}
+
+impl DupeGroupDto {
+    pub(crate) fn new(size: u64, files: Vec<(String, i64)>) -> Self {
+        Self { size, files }
+    }
 }
 
 /// Finds duplicate files under `root`; progress is (bytes read, bytes to read).

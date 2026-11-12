@@ -11,3 +11,16 @@ export const COFFEE_URL = "https://buymeacoffee.com/cafetako";
 export const REPO = "";
 export const LICENSE = "MIT";
 export const COPYRIGHT = "Copyright (c) 2026 giran03";
+
+/** Shows progress (0-100) on the taskbar button, "indeterminate" for a busy spinner, or null to clear it. */
+export async function setTaskbarProgress(value: number | "indeterminate" | null): Promise<void> {
+  try {
+    const { getCurrentWindow, ProgressBarStatus } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    if (value === null) await win.setProgressBar({ status: ProgressBarStatus.None });
+    else if (value === "indeterminate") await win.setProgressBar({ status: ProgressBarStatus.Indeterminate });
+    else await win.setProgressBar({ status: ProgressBarStatus.Normal, progress: value });
+  } catch {
+    // Not running inside the app window (browser preview or tests).
+  }
+}

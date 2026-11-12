@@ -12,6 +12,7 @@ import { keybindings } from "./keybindings";
 import { settings } from "./settings";
 import { ui } from "./ui";
 import { workspace } from "./workspace";
+import { setTaskbarProgress } from "../lib/app";
 
 export type OpState = "queued" | "running" | "paused" | "finished";
 
@@ -27,6 +28,15 @@ export interface OpView {
   readonly current: string | null;
   readonly cancelled: boolean;
   readonly errors: readonly { path: string; message: string }[];
+}
+
+/** One finished operation in the activity list. */
+export interface ActivityEntry {
+  readonly key: number;
+  readonly label: string;
+  readonly at: number;
+  readonly cancelled: boolean;
+  readonly errors: readonly string[];
 }
 
 export interface OpOutcome {
@@ -56,11 +66,25 @@ const describe = (paths: readonly string[]) => (paths.length === 1 ? `"${baseNam
 export const ops = createRoot(() => {
   const [list, setList] = createSignal<readonly OpView[]>([]);
   const [clip, setClipRaw] = createSignal<Clip | null>(null);
+  /** Finished operations, newest first, for the activity list. */
+  const [activity, setActivity] = createSignal<readonly ActivityEntry[]>([]);
   /** Windows clipboard sequence number right after Octopolis last wrote files to it. */
   let ownSequence: number | null = null;
   // Keep the PC awake while anything is queued or running.
   const busy = () => settings.keepAwake() && list().some((o) => o.state !== "finished");
   createEffect(on(busy, (on) => void ipc.setKeepAwake(on).catch(() => undefined)));
+
+  // Progress on the taskbar button, from the operations that are running or queued.
+  createEffect(() => {
+    const active = list().filter((o) => o.state !== "finished");
+    if (active.length === 0) return void setTaskbarProgress(null);
+    const bytes = active.reduce((s, o) => s + o.totalBytes, 0);
+    const done = active.reduce((s, o) => s + o.doneBytes, 0);
+    const items = active.reduce((s, o) => s + o.totalItems, 0);
+    const doneItems = active.reduce((s, o) => s + o.doneItems, 0);
+    const fraction = bytes > 0 ? done / bytes : items > 0 ? doneItems / items : null;
+    setTaskbarProgress(fraction === null ? "indeterminate" : Math.min(100, Math.max(0, Math.round(fraction * 100))));
+  });
 
   /** Whether the Windows clipboard holds files from another app, checked when the window gets focus. */
   const [externalFiles, setExternalFiles] = createSignal(false);
@@ -233,6 +257,7 @@ export const ops = createRoot(() => {
         return patch(key, (o) => ({ ...o, ...fields, state: o.state === "queued" ? "running" : o.state }));
       }
       patch(key, (o) => ({ ...o, state: "finished", cancelled: e.cancelled, errors: e.errors, current: null }));
+      setActivity((a) => [{ key, label, at: Date.now(), cancelled: e.cancelled, errors: e.errors.map((x) => x.message) }, ...a].slice(0, 100));
       if (remember) recordFinished(request, label, e);
       const notice = finishNotice(
         { kind: request.kind, label, elapsedMs: Date.now() - startedAt, errors: e.errors.length, cancelled: e.cancelled },
@@ -359,6 +384,8 @@ export const ops = createRoot(() => {
 
   return {
     list,
+    activity,
+    clearActivity: () => setActivity([]),
     clip,
     setClip,
     /** True when Paste has something to paste, from Octopolis or another app. */

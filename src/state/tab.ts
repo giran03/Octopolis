@@ -3,6 +3,7 @@ import { batch, createEffect, createMemo, createRoot, createSignal } from "solid
 import { cachedFolderSizes, cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
+import { groupStarts, type GroupKey } from "../lib/group";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
 import { parseFolderViews, rememberView, viewFor, type FolderViews, type ViewMode } from "../lib/folderViews";
 import { history as visits } from "./history";
@@ -57,9 +58,17 @@ interface History {
 
 export type TabModel = ReturnType<typeof createTab>;
 
+/** Told whenever a tab moves to a different folder (used by synchronized browsing). */
+let navigationListener: ((tab: unknown, from: string, to: string) => void) | null = null;
+export function setNavigationListener(fn: ((tab: unknown, from: string, to: string) => void) | null) {
+  navigationListener = fn;
+}
+
 export function createTab(initialPath: string) {
   return createRoot((dispose) => {
     const id = `tab-${nextTabId++}`;
+    /** This tab's own model, for telling the navigation listener which tab moved. */
+    let selfRef: unknown;
     const [history, setHistory] = createSignal<History>({ entries: [initialPath], index: 0 });
     const path = () => history().entries[history().index];
     const [listing, setListing] = createSignal<Listing>(emptyListing(initialPath));
@@ -90,10 +99,12 @@ export function createTab(initialPath: string) {
     const [git, setGit] = createSignal<GitInfo | null>(null);
     const [commits, setCommits] = createSignal<Readonly<Record<string, CommitInfo>> | null>(null);
     const [viewMode, setViewMode] = createSignal<ViewMode>("details");
+    /** Items of the same kind, date, size or first letter sit together under a label. */
+    const [groupBy, setGroupByRaw] = createSignal<GroupKey>("none");
     /** Remembers this folder's view and sort, so it opens the same way next time. */
     const rememberFolderView = () => {
       if (search() || archive()) return;
-      folderViews = rememberView(folderViews, path(), { mode: viewMode(), sort: sort() });
+      folderViews = rememberView(folderViews, path(), { mode: viewMode(), sort: sort(), ...(groupBy() !== "none" ? { group: groupBy() } : {}) });
       saveJson(FOLDER_VIEWS_KEY, folderViews);
     };
 
@@ -132,13 +143,15 @@ export function createTab(initialPath: string) {
     let folderSort: SortSpec = DEFAULT_SORT;
 
     const view = createMemo(() => {
-      const v = buildView(listing(), { sort: sort(), showHidden: settings.showHidden(), filter: search() ? "" : filter(), dirSizes: search() ? null : dirSizes() });
+      const v = buildView(listing(), { sort: sort(), showHidden: settings.showHidden(), filter: search() ? "" : filter(), dirSizes: search() ? null : dirSizes(), group: search() ? "none" : groupBy() });
       // Optionally leave out what Git ignores (build output, dependencies).
       const g = settings.hideGitIgnored() && !search() ? git() : null;
       if (!g) return v;
       const l = listing();
       return v.filter((e) => g.children[l.names[e].toLowerCase()] !== "I");
     });
+    /** Where each group starts in the view (empty when not grouping). */
+    const groupStartsMap = createMemo(() => (search() ? new Map<number, { label: string; count: number }>() : groupStarts(listing(), view(), groupBy(), Date.now())));
     let generation = 0;
     let watchedPath: string | null = null;
     let sizesHidden = false;
@@ -205,6 +218,7 @@ export function createTab(initialPath: string) {
           const remembered = viewFor(folderViews, dir);
           if (remembered) {
             setViewMode(remembered.mode);
+            setGroupByRaw(remembered.group ?? "none");
             setSort(remembered.sort);
             folderSort = remembered.sort;
           }
@@ -419,6 +433,7 @@ export function createTab(initialPath: string) {
     function navigate(dir: string, select?: readonly string[]): Promise<void> {
       dropSearch();
       if (samePath(dir, path())) return load(dir, select);
+      navigationListener?.(selfRef, path(), dir);
       setHistory((h) => ({ entries: [...h.entries.slice(0, h.index + 1), dir], index: h.index + 1 }));
       return load(dir, select ?? []);
     }
@@ -457,7 +472,7 @@ export function createTab(initialPath: string) {
 
     const pathOf = (entry: number) => joinPath(listing().path, listing().names[entry]);
 
-    return {
+    const model = {
       id,
       path,
       listing,
@@ -500,8 +515,30 @@ export function createTab(initialPath: string) {
       },
       runSearch,
       exitSearch,
+      groupBy,
+      setGroupBy: (key: GroupKey) => {
+        setGroupByRaw(key);
+        rememberFolderView();
+      },
+      groupStarts: groupStartsMap,
       back: () => go(-1),
       forward: () => go(1),
+      /** The folders before (nearest first) or after the current one, for the Back / Forward lists. */
+      historyList: (dir: -1 | 1) => {
+        const h = history();
+        const out: { offset: number; path: string }[] = [];
+        for (let i = h.index + dir, n = 1; i >= 0 && i < h.entries.length && n <= 15; i += dir, n++) out.push({ offset: n * dir, path: h.entries[i] });
+        return out;
+      },
+      /** Jumps `offset` steps along the history (negative goes back). */
+      goBy: (offset: number) => {
+        const h = history();
+        const index = h.index + offset;
+        if (index < 0 || index >= h.entries.length) return;
+        dropSearch();
+        setHistory({ ...h, index });
+        void load(h.entries[index], []);
+      },
       canBack: () => history().index > 0,
       canForward: () => history().index < history().entries.length - 1,
       up,
@@ -516,5 +553,7 @@ export function createTab(initialPath: string) {
       pathOf,
       title: () => baseName(path()) || path(),
     };
+    selfRef = model;
+    return model;
   });
 }

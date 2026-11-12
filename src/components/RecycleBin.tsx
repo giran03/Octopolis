@@ -90,7 +90,21 @@ export function RecycleBin() {
                       <FileGlyph category={categoryOf(i.name, i.isDir)} size={18} />
                       <span class="bin-names">
                         <span class="bin-name">{i.name}</span>
-                        <span class="muted small bin-from">{parentPath(i.originalPath) ?? i.originalPath}</span>
+                        <button
+                          class="link-btn bin-from bin-folder"
+                          title="Show the folder it was deleted from"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onDblClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const dir = parentPath(i.originalPath);
+                            if (!dir) return;
+                            close();
+                            void workspace.activeTab()?.navigate(dir);
+                          }}
+                        >
+                          {parentPath(i.originalPath) ?? i.originalPath}
+                        </button>
                       </span>
                       <span class="muted small bin-meta">{i.size === null ? "Folder" : formatSize(i.size)}</span>
                       <span class="muted small bin-meta">{formatDate(i.deletedMs)}</span>

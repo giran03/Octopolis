@@ -1,6 +1,7 @@
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { BUILT_IN_THEMES, DENSITIES, parseTheme, type Density } from "../../lib/themes";
-import { type MotionPref, settings } from "../../state/settings";
+import { ICON_WEIGHT_MAX, ICON_WEIGHT_MIN, type IconStyle, type MotionPref, settings } from "../../state/settings";
+import { MaterialIcon } from "../Icons";
 import { sidebar } from "../../state/sidebar";
 import { ui } from "../../state/ui";
 import { Section, Segmented, Select, SettingRow, Slider, Toggle, type Option } from "./controls";
@@ -9,6 +10,25 @@ const MOTION: readonly Option<MotionPref>[] = [
   { value: "system", label: "Follow Windows" },
   { value: "reduce", label: "Reduced" },
   { value: "full", label: "Full" },
+];
+
+const ICON_STYLES: readonly Option<IconStyle>[] = [
+  { value: "outlined", label: "Outlined" },
+  { value: "rounded", label: "Rounded" },
+  { value: "sharp", label: "Sharp" },
+];
+
+const ICON_PRESETS: readonly { label: string; values: { iconStyle: IconStyle; iconWeight: number; iconFill: boolean; iconScale: number } }[] = [
+  { label: "Thin outlines", values: { iconStyle: "outlined", iconWeight: 100, iconFill: false, iconScale: 100 } },
+  { label: "Default", values: { iconStyle: "outlined", iconWeight: 200, iconFill: false, iconScale: 100 } },
+  { label: "Soft", values: { iconStyle: "rounded", iconWeight: 300, iconFill: false, iconScale: 110 } },
+  { label: "Bold solid", values: { iconStyle: "rounded", iconWeight: 500, iconFill: true, iconScale: 110 } },
+  { label: "Crisp", values: { iconStyle: "sharp", iconWeight: 400, iconFill: false, iconScale: 100 } },
+];
+
+const FONTS: readonly Option<string>[] = [
+  { value: "", label: "Default (Segoe UI Variable)" },
+  ...["Segoe UI", "Arial", "Calibri", "Verdana", "Tahoma", "Trebuchet MS", "Cambria", "Georgia", "Consolas"].map((f) => ({ value: f, label: f })),
 ];
 
 const SCALE_PRESETS: readonly Option<number>[] = [85, 100, 115, 130].map((v) => ({ value: v, label: `${v}%` }));
@@ -62,8 +82,45 @@ export function AppearanceTab() {
             <Segmented label="Text size presets" btnClass="seg-preset num" value={settings.uiScale()} options={SCALE_PRESETS} onChange={settings.setUiScale} />
           </div>
         </SettingRow>
+        <SettingRow label="Interface font" hint="Used for names, menus and settings. Fonts that aren't installed fall back to the default">
+          <Select label="Interface font" value={settings.uiFont()} options={FONTS} onChange={(uiFont) => settings.set({ uiFont })} />
+        </SettingRow>
         <SettingRow label="Density" hint="How tightly rows, sidebar, tabs and toolbars are packed">
           <Segmented label="Density" value={settings.density()} options={densities()} onChange={settings.setDensity} />
+        </SettingRow>
+      </Section>
+
+      <Section title="Icons" note="Applies to button and menu icons. File, folder and drive icons keep their own colors.">
+        <SettingRow label="Style" hint="Outlined has straight corners with open shapes, Rounded softens every end, Sharp uses square corners">
+          <Segmented label="Icon style" value={settings.iconStyle()} options={ICON_STYLES} onChange={(iconStyle) => settings.set({ iconStyle })} />
+        </SettingRow>
+        <SettingRow label="Weight" hint="Line thickness, from hairline (100) to bold (700)">
+          <Slider label="Icon weight" min={ICON_WEIGHT_MIN} max={ICON_WEIGHT_MAX} step={100} value={settings.iconWeight()} onChange={(iconWeight) => settings.set({ iconWeight })} />
+        </SettingRow>
+        <SettingRow label="Size" hint="Scales every button and menu icon">
+          <Slider label="Icon size" min={80} max={140} step={10} value={settings.iconScale()} format={(v) => `${v}%`} onChange={(iconScale) => settings.set({ iconScale })} />
+        </SettingRow>
+        <SettingRow label="Presets" hint="One click to a complete look">
+          <span class="inline">
+            <For each={ICON_PRESETS}>
+              {(p) => (
+                <button class="btn small" onClick={() => settings.set(p.values)}>
+                  {p.label}
+                </button>
+              )}
+            </For>
+          </span>
+        </SettingRow>
+        <SettingRow label="Filled icons" hint="Solid shapes instead of outlines, where an icon has a filled form">
+          <Toggle label="Filled icons" checked={settings.iconFill()} onChange={(iconFill) => settings.set({ iconFill })} />
+        </SettingRow>
+        <SettingRow label="Preview" hint="How the current choices look">
+          <span class="icon-preview" aria-hidden="true">
+            <For each={["home", "search", "settings", "delete", "mop", "star", "push_pin", "cloud"]}>{(n) => <MaterialIcon name={n} size={22} />}</For>
+          </span>
+        </SettingRow>
+        <SettingRow label="Reset icons" hint="Back to Outlined, weight 200, size 100%, not filled">
+          <button class="btn" onClick={() => settings.set({ iconStyle: "outlined", iconWeight: 200, iconFill: false, iconScale: 100 })}>Reset</button>
         </SettingRow>
       </Section>
 

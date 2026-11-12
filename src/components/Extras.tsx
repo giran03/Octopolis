@@ -1,7 +1,7 @@
 // Text prompt, grid and Miller views.
 import { createEffect, createMemo, createResource, createSignal, Index, on, onCleanup, onMount, Show } from "solid-js";
 import * as A from "../actions";
-import { formatSize } from "../lib/format";
+import { formatSize, withoutExtension } from "../lib/format";
 import { listDir, thumbnail } from "../lib/ipc";
 import { baseOf, createBuilder, decodeBatch, isDir, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath } from "../lib/paths";
@@ -207,7 +207,7 @@ export function GridView(props: { tab: TabModel; active: boolean; onReady: (colu
                   data-tooltip-truncated={l().names[entry()].includes("\\") ? undefined : ".grid-name"}
                 >
                   <GridThumb path={props.tab.pathOf(entry())} modified={l().mtimes[entry()]} virtual={!!props.tab.archive()} name={l().names[entry()]} dir={isDir(l(), entry())} online={cloudState(l().attrs[entry()]) === "online"} />
-                  <span class="grid-name">{baseOf(l().names[entry()])}</span>
+                  <span class="grid-name">{settings.showExtensions() ? baseOf(l().names[entry()]) : withoutExtension(baseOf(l().names[entry()]), isDir(l(), entry()))}</span>
                 </div>
               </Show>
             );

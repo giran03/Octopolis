@@ -168,6 +168,27 @@ export interface Preview {
 export const previewFile = (path: string) => invoke<Preview>("preview_file", { path });
 /** Opens a file in `editor`, or the file type's editor (Notepad if it has none). Never runs the file. */
 export const openInEditor = (path: string, editor: string | null) => invoke<void>("open_in_editor", { path, editor });
+/** Opens a terminal window (Windows Terminal when installed) in a folder. */
+export const openTerminalHere = (path: string) => invoke<void>("open_terminal_here", { path });
+/** The Windows folder picker; null when cancelled. */
+export const pickFolderDialog = (initial?: string) => invoke<string | null>("pick_folder_dialog", { initial: initial ?? null });
+export interface DetectedEditor {
+  name: string;
+  path: string;
+}
+let editorsCache: Promise<DetectedEditor[]> | null = null;
+/** Editors installed on this PC. The search takes a moment, so it runs once per session; pass `refresh` to search again. */
+export const detectEditors = (refresh = false): Promise<DetectedEditor[]> => {
+  if (!editorsCache || refresh) {
+    const run = invoke<DetectedEditor[]>("detect_editors");
+    editorsCache = run;
+    // A failed search shouldn't stick: the next call tries again.
+    run.catch(() => {
+      if (editorsCache === run) editorsCache = null;
+    });
+  }
+  return editorsCache;
+};
 /** Adds a line to the local diagnostics log (paths are removed before writing). */
 export const diagLog = (level: "info" | "warn" | "error", message: string) => invoke<void>("diag_log", { level, message });
 /** Logs how long after process start a startup stage was reached; returns those ms. */
@@ -443,3 +464,49 @@ export const setAppIcon = (rgba: Uint8ClampedArray | Uint8Array, width: number, 
   invoke<void>("set_app_icon", new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength), {
     headers: { width: String(width), height: String(height) },
   });
+
+export interface SystemCleanupCategory {
+  id: string;
+  label: string;
+  note: string;
+  group: "safe" | "recycle" | "browsers" | "developer" | "windows";
+  admin: boolean;
+  reportOnly: boolean;
+  bytes: number;
+  files: number;
+  folders: string[];
+  /** An action whose size can't be known in advance. */
+  action: boolean;
+}
+export interface SystemCleanupResult {
+  freedBytes: number;
+  freedFiles: number;
+  skippedFiles: number;
+  errors: string[];
+}
+/** Sizes the caches and leftovers that can be cleaned. Nothing is deleted. */
+export const systemCleanupScan = () => invoke<SystemCleanupCategory[]>("system_cleanup_scan");
+export const systemCleanupCancel = () => invoke<void>("system_cleanup_cancel");
+/** Cleans the categories with these ids. Windows items ask for administrator rights. */
+export const systemCleanupRun = (ids: string[]) => invoke<SystemCleanupResult>("system_cleanup_run", { ids });
+export interface RuleMatch {
+  path: string;
+  size: number;
+  modifiedMs: number;
+}
+/** Files a folder rule matches right now (name patterns separated by `;`, older than N days). Nothing is changed. */
+export const ruleMatches = (folder: string, patterns: string, olderThanDays: number, recursive: boolean) => invoke<RuleMatch[]>("rule_matches", { folder, patterns, olderThanDays, recursive });
+
+/** Pictures under `root` that look alike (distance 0-16: lower is stricter). `onProgress(read, found)` counts pictures. */
+export function findSimilarImages(id: string, root: string, maxDistance: number, onProgress: (read: number, total: number) => void): Promise<DupeGroup[]> {
+  const channel = new Channel<[number, number]>();
+  channel.onmessage = ([read, total]) => onProgress(read, total);
+  return invoke<DupeGroup[]>("find_similar_images", { id, root, maxDistance, onProgress: channel });
+}
+export interface ConvertImagesResult {
+  created: string[];
+  errors: string[];
+}
+/** Writes resized and/or converted copies of pictures (originals are untouched). `format` is "same", "jpeg", "png" or "webp". */
+export const convertImages = (paths: string[], maxEdge: number | null, format: string, quality: number, outDir: string | null) =>
+  invoke<ConvertImagesResult>("convert_images", { paths, maxEdge, format, quality, outDir });

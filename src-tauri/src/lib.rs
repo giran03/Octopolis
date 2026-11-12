@@ -12,6 +12,9 @@ mod term_cmd;
 mod tools_cmd;
 mod size_cmd;
 mod cache_cmd;
+mod imgtools_cmd;
+mod rules_cmd;
+mod syscleanup_cmd;
 mod update_cmd;
 mod watch;
 
@@ -102,6 +105,12 @@ pub fn run() {
             tools_cmd::cancel_scan,
             tools_cmd::find_duplicates,
             tools_cmd::scan_cleanup,
+            imgtools_cmd::find_similar_images,
+            imgtools_cmd::convert_images,
+            rules_cmd::rule_matches,
+            syscleanup_cmd::system_cleanup_scan,
+            syscleanup_cmd::system_cleanup_cancel,
+            syscleanup_cmd::system_cleanup_run,
             tools_cmd::tags_in_dir,
             tools_cmd::set_tag,
             tools_cmd::all_tags,
@@ -133,6 +142,9 @@ pub fn run() {
             ops_cmd::templates_folder,
             system::open_path,
             system::open_in_editor,
+            system::detect_editors,
+            system::open_terminal_here,
+            system::pick_folder_dialog,
             system::install_font,
             system::set_keep_awake,
             system::notify,
