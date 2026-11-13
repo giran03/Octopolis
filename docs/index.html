@@ -76,6 +76,12 @@
       font: 16px/1.65 var(--font);
       transition: background-color var(--t-med) var(--ease-out), color var(--t-med) var(--ease-out);
       -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input, textarea {
+      -webkit-user-select: text;
+      user-select: text;
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
