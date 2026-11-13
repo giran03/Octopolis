@@ -1,10 +1,12 @@
 // One browsing tab: location, history, streamed listing, sort and selection.
 import { batch, createEffect, createMemo, createRoot, createSignal } from "solid-js";
-import { cachedFolderSizes, cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
+import { cachedFolderSizes, cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, insideRepository, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
 import { groupStarts, type GroupKey } from "../lib/group";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
+import { chooseView, folderStats } from "../lib/autoView";
+import { clampIcon, ICON_DEFAULT, VIEW_LABELS } from "../lib/viewZoom";
 import { parseFolderViews, rememberView, viewFor, type FolderViews, type ViewMode } from "../lib/folderViews";
 import { history as visits } from "./history";
 import { loadJson, saveJson, settings } from "./settings";
@@ -99,12 +101,20 @@ export function createTab(initialPath: string) {
     const [git, setGit] = createSignal<GitInfo | null>(null);
     const [commits, setCommits] = createSignal<Readonly<Record<string, CommitInfo>> | null>(null);
     const [viewMode, setViewMode] = createSignal<ViewMode>("details");
+    /** Size of the pictures in the icon view, in pixels. */
+    const [iconSize, setIconSize] = createSignal(ICON_DEFAULT);
+    /** The view was picked by Auto (from the folder's contents), not by the user. */
+    const [viewIsAuto, setViewIsAuto] = createSignal(false);
+    /** Why Auto chose the view it did, for the View menu. */
+    const [autoNote, setAutoNote] = createSignal<string | null>(null);
+    /** A new folder is being opened and Auto still has to look at what is in it. */
+    let autoPending = false;
     /** Items of the same kind, date, size or first letter sit together under a label. */
     const [groupBy, setGroupByRaw] = createSignal<GroupKey>("none");
     /** Remembers this folder's view and sort, so it opens the same way next time. */
     const rememberFolderView = () => {
       if (search() || archive()) return;
-      folderViews = rememberView(folderViews, path(), { mode: viewMode(), sort: sort(), ...(groupBy() !== "none" ? { group: groupBy() } : {}) });
+      folderViews = rememberView(folderViews, path(), { mode: viewMode(), size: iconSize(), ...(viewIsAuto() ? {} : { manual: true }), sort: sort(), ...(groupBy() !== "none" ? { group: groupBy() } : {}) });
       saveJson(FOLDER_VIEWS_KEY, folderViews);
     };
 
@@ -216,8 +226,14 @@ export function createTab(initialPath: string) {
           setTreemap(false);
           // A folder opens the way it was last shown; others keep the tab's current view.
           const remembered = viewFor(folderViews, dir);
+          // With Auto on, a folder keeps a view only if the user gave it one; otherwise its contents decide, once listed.
+          const byHand = remembered && (remembered.manual || !settings.autoView());
+          autoPending = !byHand && settings.autoView();
+          setViewIsAuto(autoPending);
+          if (!autoPending) setAutoNote(null);
           if (remembered) {
-            setViewMode(remembered.mode);
+            if (byHand) setViewMode(remembered.mode);
+            if (remembered.size) setIconSize(remembered.size);
             setGroupByRaw(remembered.group ?? "none");
             setSort(remembered.sort);
             folderSort = remembered.sort;
@@ -259,6 +275,10 @@ export function createTab(initialPath: string) {
             void folderSizes(id, "", () => undefined).catch(() => undefined);
           }
           if (!sameDir) setCommits(null);
+          if (autoPending) {
+            autoPending = false;
+            void applyAuto();
+          }
           if (explicit?.length) selectNames(explicit, listing());
           else restoreByName(names, focusName);
         });
@@ -273,6 +293,21 @@ export function createTab(initialPath: string) {
         if (gen !== generation) return;
         setStatus({ loading: false, error: errorText(e), elapsedMs: null });
       }
+    }
+
+    /** Looks at what the folder holds and shows it the way that suits it. */
+    async function applyAuto() {
+      const l = listing();
+      const dir = l.path;
+      const stats = folderStats(l.names, l.kinds, l.count);
+      // A repository, or any folder inside one, is shown as details: one quick question to the disk.
+      const inside = stats.repo || (await insideRepository(dir).catch(() => false));
+      if (!viewIsAuto() || !samePath(listing().path, dir)) return;
+      const choice = chooseView(inside ? { ...stats, repo: true } : stats);
+      if (!choice) return;
+      setViewMode(choice.mode);
+      if (choice.size) setIconSize(choice.size);
+      setAutoNote(`${VIEW_LABELS[choice.mode]}: ${choice.reason}`);
     }
 
     function selectedNames(): string[] {
@@ -495,6 +530,24 @@ export function createTab(initialPath: string) {
       commits,
       viewMode,
       setViewMode: (mode: ViewMode) => {
+        // A view picked by hand stays for this folder.
+        setViewIsAuto(false);
+        setViewMode(mode);
+        rememberFolderView();
+      },
+      /** Whether this folder's view was picked by Auto, and why. */
+      viewIsAuto,
+      autoNote,
+      /** Hands this folder's view back to Auto. */
+      useAutoView: () => {
+        setViewIsAuto(true);
+        void applyAuto().then(rememberFolderView);
+      },
+      iconSize,
+      /** Switches view and, for the icon view, its picture size, in one step (what the zoom slider does). */
+      setView: (mode: ViewMode, size?: number) => {
+        setViewIsAuto(false);
+        if (size !== undefined) setIconSize(clampIcon(size));
         setViewMode(mode);
         rememberFolderView();
       },

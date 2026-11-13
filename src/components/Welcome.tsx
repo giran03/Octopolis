@@ -1,7 +1,8 @@
 // First-run welcome: a short tour of what makes Octopolis different, with the look-and-feel choices people change first.
 import { createSignal, For, Show } from "solid-js";
-import { BUILT_IN_THEMES } from "../lib/themes";
+import { themeChoices } from "../lib/themeTools";
 import { type IconStyle, settings } from "../state/settings";
+import { guide } from "../state/guide";
 import { ui } from "../state/ui";
 import { MaterialIcon } from "./Icons";
 import { Segmented, Select, type Option } from "./settings/controls";
@@ -32,7 +33,7 @@ export function Welcome() {
     ui.setWelcomeOpen(false);
   };
   const next = () => (step() >= last ? finish() : setStep(step() + 1));
-  const themes = (): Option<string>[] => [{ value: "System", label: "Follow Windows" }, ...BUILT_IN_THEMES.map((t) => ({ value: t.name, label: t.name }))];
+  const themes = (): Option<string>[] => themeChoices([], { system: true });
 
   return (
     <div class="scrim">
@@ -80,6 +81,7 @@ export function Welcome() {
             <For each={[...STEPS, null]}>{(_, i) => <span classList={{ on: i() === step() }} />}</For>
           </span>
           <span class="bin-spacer" />
+          <button class="btn" onClick={() => void guide.open(null)} title="Opens the full guide in your browser">Open the guide</button>
           <button class="btn" onClick={finish}>Skip</button>
           <button class="btn primary" onClick={next}>{step() >= last ? "Start using Octopolis" : "Next"}</button>
         </div>

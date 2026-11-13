@@ -1,46 +1,40 @@
-// Folder rules: tidy a folder by moving or deleting the files that match name patterns and are old enough.
+// Folder rules: the saved list. The model and its checks are in lib/rules.ts.
 import { createRoot, createSignal } from "solid-js";
+import { ui } from "./ui";
+import { newRuleId, parseRules, type Rule } from "../lib/rules";
 import { loadJson, saveJson } from "./settings";
-
-export interface Rule {
-  readonly id: string;
-  readonly name: string;
-  readonly folder: string;
-  /** Name patterns separated by `;`, such as `*.pdf; invoice*`. Empty matches every file. */
-  readonly patterns: string;
-  readonly olderThanDays: number;
-  readonly recursive: boolean;
-  readonly action: "move" | "recycle";
-  /** Where moved files go (for `move`). */
-  readonly dest: string;
-  readonly enabled: boolean;
-}
 
 const KEY = "octopolis.rules.v1";
 
-export function blankRule(): Rule {
-  return { id: `r${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`, name: "", folder: "", patterns: "", olderThanDays: 30, recursive: false, action: "move", dest: "", enabled: true };
-}
-
-/** Whether a rule has what it needs to run. */
-export function ruleProblem(r: Rule): string | null {
-  if (!r.folder.trim()) return "Choose the folder to tidy";
-  if (r.action === "move" && !r.dest.trim()) return "Choose where the files go";
-  if (r.action === "move" && r.dest.trim().toLowerCase() === r.folder.trim().toLowerCase()) return "The destination is the folder itself";
-  if (!Number.isFinite(r.olderThanDays) || r.olderThanDays < 0) return "Days must be 0 or more";
-  return null;
-}
-
 export const rules = createRoot(() => {
-  const [list, setList] = createSignal<readonly Rule[]>(loadJson<Rule[]>(KEY, []).filter((r) => r && typeof r.id === "string"));
+  const [list, setList] = createSignal<readonly Rule[]>(parseRules(loadJson<unknown>(KEY, [])));
   const save = (next: readonly Rule[]) => {
     setList(next);
     saveJson(KEY, next);
   };
+  // A rule picked from the command palette: the dialog opens on its preview.
+  let pendingRun: string | null = null;
   return {
     list,
-    upsert: (rule: Rule) => save(list().some((r) => r.id === rule.id) ? list().map((r) => (r.id === rule.id ? rule : r)) : [...list(), rule]),
+    save,
+    /** Opens Folder rules on the preview of one rule. */
+    requestRun: (id: string) => {
+      pendingRun = id;
+      ui.setRulesOpen(true);
+    },
+    /** The rule the dialog should preview as it opens, once. */
+    takePendingRun: () => {
+      const id = pendingRun;
+      pendingRun = null;
+      return id;
+    },
+    /** Adds a rule (giving it an id when it has none) or replaces the one with its id. */
+    upsert: (rule: Rule) => {
+      const r = rule.id ? rule : { ...rule, id: newRuleId() };
+      save(list().some((x) => x.id === r.id) ? list().map((x) => (x.id === r.id ? r : x)) : [...list(), r]);
+    },
+    patch: (id: string, change: Partial<Rule>) => save(list().map((r) => (r.id === id ? { ...r, ...change } : r))),
     remove: (id: string) => save(list().filter((r) => r.id !== id)),
-    toggle: (id: string) => save(list().map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))),
+    recordRun: (id: string, count: number) => save(list().map((r) => (r.id === id ? { ...r, lastRun: { at: Date.now(), count } } : r))),
   };
 });

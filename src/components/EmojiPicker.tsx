@@ -1,7 +1,10 @@
-import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
+import { IconUp } from "./Icons";
 import { createSupportCheck, loadEmojiFonts } from "../lib/emojiSupport";
 import { baseName } from "../lib/paths";
+import { iconFor } from "../state/icons";
 import { folderIcons } from "../state/folderIcons";
+import { WindowsIcons } from "./WindowsIcons";
 import { ui } from "../state/ui";
 
 type Entry = readonly [emoji: string, label: string, tags?: string];
@@ -24,6 +27,8 @@ export const EMOJI_GROUPS = [
 const NO_GLYPH = new Set(["🇨🇶"]);
 const SEARCH_LIMIT = 240;
 const RECENT = -1;
+/** The Windows folder icons (Documents, Downloads, 3D Objects...) the PC has. */
+const SYSTEM = -2;
 
 /** Hair styles and skin tones: building blocks, not useful as icons on their own. */
 const HIDDEN_GROUPS = new Set<string>(["Component"]);
@@ -88,15 +93,30 @@ if (typeof window !== "undefined") {
   setTimeout(() => ("requestIdleCallback" in window ? requestIdleCallback(warm, { timeout: 10_000 }) : warm()), 4000);
 }
 
+/** The Windows icon of a special folder, at `size` pixels. */
+function SystemPicture(props: { path: string; label: string; size: number }) {
+  const url = iconFor(props.path, props.label, true, true);
+  return <Show when={url()} fallback={<span class="sys-blank" style={{ width: `${props.size}px`, height: `${props.size}px` }} />}>{(u) => <img src={u()} alt="" width={props.size} height={props.size} draggable={false} />}</Show>;
+}
+
 export function EmojiPicker(props: { path: string }) {
   let search!: HTMLInputElement;
+  let grid!: HTMLDivElement;
+  const [scrolled, setScrolled] = createSignal(false);
   const [data] = createResource(getEmoji);
   const [query, setQuery] = createSignal("");
   const hasRecent = () => folderIcons.recent().length > 0;
-  const [group, setGroup] = createSignal<number>(hasRecent() ? RECENT : 0);
+  const styles = () => folderIcons.styles();
+  // Opens on the Windows icons when the folder wears one, else on the recent emoji, else on the first group.
+  const [group, setGroup] = createSignal<number>(folderIcons.systemValueOf(props.path) ? SYSTEM : hasRecent() ? RECENT : 0);
   const current = () => folderIcons.get(props.path);
+  const currentSystem = () => folderIcons.systemValueOf(props.path);
 
   onMount(() => search.focus());
+  const chooseSystem = (value: string) => {
+    folderIcons.set(props.path, value);
+    close();
+  };
 
   const results = createMemo<readonly (readonly [string, string])[]>(() => {
     const all = data();
@@ -115,9 +135,16 @@ export function EmojiPicker(props: { path: string }) {
       }
       return [...named, ...tagged].slice(0, SEARCH_LIMIT);
     }
+    if (group() === SYSTEM) return [];
     if (group() === RECENT) return folderIcons.recent().map((e) => [e, ""] as const);
     return (all[group()] ?? []).map(([e, l]) => [e, l] as const);
   });
+
+  // A new tab or search starts at the top.
+  createEffect(on([group, query], () => {
+    grid?.scrollTo({ top: 0 });
+    setScrolled(false);
+  }, { defer: true }));
 
   const close = () => ui.setEmojiTarget(null);
   const choose = (emoji: string | null) => {
@@ -161,6 +188,18 @@ export function EmojiPicker(props: { path: string }) {
               <span class="emoji">🕘</span>
             </button>
           </Show>
+          <Show when={styles().length > 0}>
+            <button
+              class="emoji-tab"
+              classList={{ active: !query() && group() === SYSTEM }}
+              role="tab"
+              aria-selected={!query() && group() === SYSTEM}
+              data-tooltip="Windows folder icons"
+              onClick={() => (setQuery(""), setGroup(SYSTEM))}
+            >
+              <SystemPicture path={styles()[0].path} label={styles()[0].label} size={22} />
+            </button>
+          </Show>
           <For each={EMOJI_GROUPS}>
             {(g, i) => (
               <Show when={!isHidden(i())}>
@@ -178,20 +217,30 @@ export function EmojiPicker(props: { path: string }) {
             )}
           </For>
         </div>
-        <div class="emoji-heading">{query() ? `Results for “${query().trim()}”` : group() === RECENT ? "Recent" : EMOJI_GROUPS[group()].name}</div>
-        <div class="emoji-grid" role="listbox" aria-label="Emoji">
-          <Show when={!data.loading} fallback={<div class="emoji-empty">Loading…</div>}>
-            <For each={results()} fallback={<div class="emoji-empty">No emoji match that</div>}>
-              {([emoji, label]) => (
-                <button class="emoji-cell" classList={{ chosen: emoji === current() }} role="option" aria-selected={emoji === current()} title={label} onClick={() => choose(emoji)}>
-                  <span class="emoji">{emoji}</span>
-                </button>
-              )}
-            </For>
+        <div class="emoji-heading">{query() ? `Results for “${query().trim()}”` : group() === RECENT ? "Recent" : group() === SYSTEM ? "Windows folder icons" : EMOJI_GROUPS[group()].name}</div>
+        <div ref={grid} class="emoji-grid" role="listbox" aria-label="Emoji" onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 160)}>
+          <Show when={group() === SYSTEM || query().trim() !== ""}>
+            <WindowsIcons query={query()} current={currentSystem()} onPick={chooseSystem} />
+          </Show>
+          <Show when={group() !== SYSTEM}>
+            <Show when={!data.loading} fallback={<div class="emoji-empty">Loading…</div>}>
+              <For each={results()} fallback={<Show when={!query().trim() || styles().length === 0}><div class="emoji-empty">No emoji match that</div></Show>}>
+                {([emoji, label]) => (
+                  <button class="emoji-cell" classList={{ chosen: emoji === current() }} role="option" aria-selected={emoji === current()} title={label} onClick={() => choose(emoji)}>
+                    <span class="emoji">{emoji}</span>
+                  </button>
+                )}
+              </For>
+            </Show>
           </Show>
         </div>
         <div class="dialog-actions">
-          <Show when={current()}>
+          <Show when={scrolled()}>
+            <button class="btn small icon-btn to-top" title="Back to the top" aria-label="Back to the top" onClick={() => grid.scrollTo({ top: 0, behavior: document.documentElement.classList.contains("reduce-motion") ? "auto" : "smooth" })}>
+              <IconUp size={16} />
+            </button>
+          </Show>
+          <Show when={current() || currentSystem()}>
             <button class="btn" onClick={() => choose(null)}>
               Use the default icon
             </button>

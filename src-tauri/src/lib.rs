@@ -12,6 +12,10 @@ mod term_cmd;
 mod tools_cmd;
 mod size_cmd;
 mod cache_cmd;
+mod dragout_cmd;
+mod fonts_cmd;
+mod guide_cmd;
+mod webdrop_cmd;
 mod imgtools_cmd;
 mod rules_cmd;
 mod syscleanup_cmd;
@@ -49,6 +53,7 @@ pub fn run() {
         .manage(watch::WatchState::default())
         .manage(search_cmd::SearchState::default())
         .manage(cache_cmd::CacheState::default())
+        .manage(fonts_cmd::FontsState::default())
         .manage(size_cmd::SizesState::default())
         .manage(term_cmd::TermState::default())
         .on_window_event(|window, event| match event {
@@ -64,6 +69,7 @@ pub fn run() {
             diag::init(app.handle());
             launch::init(app.handle());
             icon_cmd::restore(app.handle());
+            dormant::watch_failures(app.handle());
             std::thread::spawn(system::repair_explorer_mode);
             size_cmd::warm_cache(app.handle());
             cache_cmd::startup_cleanup(app.handle());
@@ -97,6 +103,7 @@ pub fn run() {
             tools_cmd::kill_process,
             tools_cmd::file_tags,
             tools_cmd::file_properties,
+            tools_cmd::file_properties_many,
             tools_cmd::set_file_attributes,
             tools_cmd::set_file_times,
             tools_cmd::file_checksum,
@@ -105,6 +112,12 @@ pub fn run() {
             tools_cmd::cancel_scan,
             tools_cmd::find_duplicates,
             tools_cmd::scan_cleanup,
+            fonts_cmd::google_font_faces,
+            fonts_cmd::google_font_bytes,
+            fonts_cmd::google_font_save,
+            fonts_cmd::google_font_remove,
+            fonts_cmd::google_fonts_saved,
+            fonts_cmd::open_fonts_folder,
             imgtools_cmd::find_similar_images,
             imgtools_cmd::convert_images,
             rules_cmd::rule_matches,
@@ -140,10 +153,15 @@ pub fn run() {
             ops_cmd::recycle_bin_empty,
             ops_cmd::list_templates,
             ops_cmd::templates_folder,
+            guide_cmd::open_guide,
+            guide_cmd::update_guide_theme,
             system::open_path,
             system::open_in_editor,
+            system::open_in_editor_many,
+            system::open_paths,
             system::detect_editors,
             system::open_terminal_here,
+            system::paths_are_dirs,
             system::pick_folder_dialog,
             system::install_font,
             system::set_keep_awake,
@@ -153,7 +171,12 @@ pub fn run() {
             system::run_as_admin,
             system::eject_drive,
             system::open_in_explorer,
+            dragout_cmd::start_native_drag,
+            webdrop_cmd::save_dropped_file,
+            webdrop_cmd::download_dropped_url,
             system::run_custom_action,
+            system::write_temp_list,
+            system::program_exists,
             system::map_network_drive,
             system::disconnect_network_drive,
             system::wsl_distros,
@@ -166,6 +189,9 @@ pub fn run() {
             system::paste_clipboard_as_file,
             system::list_drives,
             system::known_folders,
+            system::folder_icon_styles,
+            system::system_icon_catalog,
+            system::inside_repository,
             system::open_data_folder,
             system::debug_info,
             cache_cmd::cache_info,

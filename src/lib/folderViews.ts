@@ -2,10 +2,14 @@
 import { GROUP_KEYS, type GroupKey } from "./group";
 import type { SortKey, SortSpec } from "./sort";
 
-export type ViewMode = "details" | "grid" | "columns";
+export type ViewMode = "details" | "grid" | "columns" | "list" | "tiles" | "content" | "bento";
 
 export interface FolderView {
   readonly mode: ViewMode;
+  /** Icon size in pixels for the icon view. */
+  readonly size?: number;
+  /** Chosen by the user for this folder (not picked by Auto), so Auto leaves it alone. */
+  readonly manual?: boolean;
   readonly sort: SortSpec;
   /** Group by, when the folder is shown grouped. */
   readonly group?: GroupKey;
@@ -29,7 +33,7 @@ export function rememberView(all: FolderViews, path: string, view: FolderView, m
   return [[key, view] as const, ...all.filter(([k]) => k !== key)].slice(0, max);
 }
 
-const MODES: readonly ViewMode[] = ["details", "grid", "columns"];
+const MODES: readonly ViewMode[] = ["details", "grid", "columns", "list", "tiles", "content", "bento"];
 const KEYS: readonly SortKey[] = ["name", "modified", "type", "size"];
 
 /** Keeps only well-formed entries from stored JSON. */
@@ -42,7 +46,8 @@ export function parseFolderViews(raw: unknown): FolderViews {
     const sort = v?.sort as Partial<SortSpec> | undefined;
     if (!v || !MODES.includes(v.mode as ViewMode) || !sort || !KEYS.includes(sort.key as SortKey) || (sort.dir !== 1 && sort.dir !== -1)) continue;
     const group = GROUP_KEYS.includes(v.group as GroupKey) && v.group !== "none" ? (v.group as GroupKey) : undefined;
-    out.push([item[0], { mode: v.mode as ViewMode, sort: { key: sort.key as SortKey, dir: sort.dir }, ...(group ? { group } : {}) }]);
+    const size = typeof v.size === "number" && Number.isFinite(v.size) ? Math.min(256, Math.max(40, Math.round(v.size))) : undefined;
+    out.push([item[0], { mode: v.mode as ViewMode, ...(size ? { size } : {}), ...(v.manual === true ? { manual: true } : {}), sort: { key: sort.key as SortKey, dir: sort.dir }, ...(group ? { group } : {}) }]);
   }
   return out.slice(0, MAX_FOLDER_VIEWS);
 }

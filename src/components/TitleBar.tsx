@@ -1,5 +1,6 @@
 // Custom title bar drawn over the native frame: mark, command pill and window controls.
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { parentPath } from "../lib/paths";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
 import { AppMark, Glyph, IconSearch } from "./Icons";
@@ -27,6 +28,10 @@ export function TitleBar() {
   };
 
   const place = () => workspace.activeTab()?.title() ?? "";
+  const parent = () => {
+    const p = workspace.activeTab()?.path();
+    return p ? parentPath(p) : null;
+  };
 
   return (
     <header class="titlebar" data-tauri-drag-region>
@@ -39,7 +44,15 @@ export function TitleBar() {
         <IconSearch size={14} />
         <span class="tb-pill-text">
           <Show when={place()} fallback="Go to folder or run a command">
-            {place()}
+            <Show when={parent()}>
+              {(par) => (
+                <>
+                  <span class="tb-pill-parent">{par()}</span>
+                  <span class="tb-pill-sep"> / </span>
+                </>
+              )}
+            </Show>
+            <span class="tb-pill-leaf">{place()}</span>
           </Show>
         </span>
         <kbd>Ctrl P</kbd>

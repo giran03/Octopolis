@@ -1,11 +1,12 @@
 // Keyboard shortcuts editor: record a new key or chord for any command.
-import { createSignal, For, onCleanup, Show } from "solid-js";
-import { COMMANDS, commandById } from "../commands";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { allCommands, commandById } from "../commands";
 import { fuzzyRank } from "../lib/fuzzy";
 import { eventToKey, formatKeys } from "../lib/keymap";
 import { keybindings } from "../state/keybindings";
 import { settings } from "../state/settings";
 import { ui } from "../state/ui";
+import { IconReset } from "./Icons";
 
 const CHORD_WAIT_MS = 900;
 
@@ -13,11 +14,34 @@ export function ShortcutsPanel() {
   const [filter, setFilter] = createSignal("");
   const [recording, setRecording] = createSignal<string | null>(null);
   const [captured, setCaptured] = createSignal<string[]>([]);
+  let filterInput!: HTMLInputElement;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastNonce = 0;
   onCleanup(() => clearTimeout(timer));
 
+  createEffect(() => {
+    const req = ui.shortcutFilter();
+    if (!req || req.nonce === lastNonce) return;
+    lastNonce = req.nonce;
+    setFilter(req.filter);
+    queueMicrotask(() => {
+      const row = req.commandId
+        ? document.querySelector<HTMLElement>(`.shortcut-row[data-command-id="${CSS.escape(req.commandId)}"]`)
+        : null;
+      if (row) {
+        row.scrollIntoView({ block: "center", behavior: "smooth" });
+        row.classList.add("srow-flash");
+        setTimeout(() => row.classList.remove("srow-flash"), 1400);
+        row.querySelector<HTMLButtonElement>(".shortcut-actions button")?.focus();
+      } else {
+        filterInput?.focus();
+      }
+      ui.clearShortcutFilter();
+    });
+  });
+
   const visible = () => {
-    const list = COMMANDS.filter((c) => !c.hidden || c.vimKeys);
+    const list = allCommands().filter((c) => !c.hidden || c.vimKeys);
     return filter() ? fuzzyRank(filter(), list, (c) => `${c.category} ${c.title}`).map((r) => r.item) : list;
   };
 
@@ -53,15 +77,16 @@ export function ShortcutsPanel() {
   return (
     <div class="shortcuts-panel" onKeyDown={onKey}>
         <input
+          ref={filterInput}
           class="text-input"
           placeholder="Filter commands"
           value={filter()}
-                    onInput={(e) => setFilter(e.currentTarget.value)}
+          onInput={(e) => setFilter(e.currentTarget.value)}
         />
         <div class="shortcuts-list">
           <For each={visible()}>
             {(c) => (
-              <div class="shortcut-row">
+              <div class="shortcut-row" data-command-id={c.id}>
                 <span class="shortcut-title">
                   <span class="muted">{c.category}:</span> {c.title}
                 </span>
@@ -85,8 +110,8 @@ export function ShortcutsPanel() {
                     Change
                   </button>
                   <Show when={keybindings.isCustom(c.id)}>
-                    <button class="btn small" onClick={() => keybindings.reset(c.id)}>
-                      Reset
+                    <button class="btn small icon-btn" title="Reset to default" aria-label="Reset to default" onClick={() => keybindings.reset(c.id)}>
+                      <IconReset size={16} />
                     </button>
                   </Show>
                 </span>

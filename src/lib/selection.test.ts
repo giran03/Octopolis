@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveFocus, selectAll, selectAt, typeAhead } from "./selection";
+import { entryPattern, moveFocus, selectAll, selectAt, selectEntriesWhere, typeAhead } from "./selection";
 
 const view = Uint32Array.from([10, 11, 12, 13, 14]);
 const none = { ctrl: false, shift: false };
@@ -66,5 +66,39 @@ describe("typeAhead", () => {
   it("extends a longer prefix from the current item", () => {
     expect(typeAhead(names, view, 0, "alpi")).toBe(4);
     expect(typeAhead(names, view, 0, "zzz")).toBe(-1);
+  });
+});
+
+describe("entryPattern", () => {
+  const names: string[] = [];
+  const dirs: boolean[] = [];
+  names[10] = "photo.png";
+  dirs[10] = false;
+  names[11] = "Assets";
+  dirs[11] = true;
+  names[12] = "notes.txt";
+  dirs[12] = false;
+  names[13] = "sub\\icon.PNG";
+  dirs[13] = false;
+  names[14] = "Builds";
+  dirs[14] = true;
+
+  it("matches globs case-insensitively on the basename", () => {
+    const match = entryPattern("*.png");
+    expect([...selectEntriesWhere(view, (e) => match(names[e], dirs[e]))]).toEqual([10, 13]);
+  });
+
+  it("matches type:dir, type:file, and combined patterns", () => {
+    const onlyDirs = entryPattern("type:dir");
+    expect([...selectEntriesWhere(view, (e) => onlyDirs(names[e], dirs[e]))]).toEqual([11, 14]);
+    const onlyFiles = entryPattern("type:file");
+    expect([...selectEntriesWhere(view, (e) => onlyFiles(names[e], dirs[e]))]).toEqual([10, 12, 13]);
+    const combined = entryPattern("type:dir; *.txt");
+    expect([...selectEntriesWhere(view, (e) => combined(names[e], dirs[e]))]).toEqual([11, 12, 14]);
+  });
+
+  it("supports re: regular expressions", () => {
+    const match = entryPattern("re:^(photo|notes)");
+    expect([...selectEntriesWhere(view, (e) => match(names[e], dirs[e]))]).toEqual([10, 12]);
   });
 });

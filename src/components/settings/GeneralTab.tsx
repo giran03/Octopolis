@@ -171,6 +171,9 @@ export function GeneralTab() {
         <SettingRow label="Show file extensions" hint="Off hides the last extension (.txt, .png) in names. Renaming still shows the full name">
           <Toggle label="Show file extensions" checked={settings.showExtensions()} onChange={(showExtensions) => settings.set({ showExtensions })} />
         </SettingRow>
+        <SettingRow label="Pick each folder's view automatically" hint="Opens folders of pictures as a bento, music as rows, and so on. A folder you give a view by hand keeps it">
+          <Toggle label="Pick each folder's view automatically" checked={settings.autoView()} onChange={(autoView) => settings.set({ autoView })} />
+        </SettingRow>
         <SettingRow label="Calculate folder sizes automatically" hint="Fills in the Size column for folders as soon as you open one. Slower on big drives">
           <Toggle label="Calculate folder sizes automatically" checked={settings.autoFolderSizes()} onChange={(autoFolderSizes) => settings.set({ autoFolderSizes })} />
         </SettingRow>
@@ -186,6 +189,9 @@ export function GeneralTab() {
       </Section>
 
       <Section title="Copying and moving">
+        <SettingRow label="Confirm before moving folders" hint="Ask first when a folder is moved into another folder, by dragging, Cut and Paste or Move to…">
+          <Toggle label="Confirm before moving folders" checked={settings.confirmMoveFolders()} onChange={(confirmMoveFolders) => settings.set({ confirmMoveFolders })} />
+        </SettingRow>
         <SettingRow label="Verify copies with checksums" hint="Reads each copy back to make sure it matches. Slower, safer">
           <Toggle label="Verify copies with checksums" checked={settings.verifyCopies()} onChange={(verifyCopies) => settings.set({ verifyCopies })} />
         </SettingRow>

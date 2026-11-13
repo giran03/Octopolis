@@ -25,6 +25,20 @@
       DeleteRegKey HKCU "Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}"
   ${EndIf}
 
+  ; Fonts saved from Google Fonts (Settings > Appearance) live in <app data>\fonts. Ticking "Delete the
+  ; application data" removes them with everything else. When it is left unticked, ask, so the user can keep the
+  ; fonts or remove just them. A silent uninstall keeps them, and an update never touches them.
+  ${If} $UpdateMode <> 1
+  ${AndIf} $DeleteAppDataCheckboxState <> 1
+    Push $3
+    ReadEnvStr $3 APPDATA
+    ${If} ${FileExists} "$3\${BUNDLEID}\fonts\*.*"
+      MessageBox MB_YESNO|MB_ICONQUESTION "Octopolis saved fonts from Google Fonts on this PC.$\r$\n$\r$\nRemove them as well?" /SD IDNO IDNO +2
+      RMDir /r "$3\${BUNDLEID}\fonts"
+    ${EndIf}
+    Pop $3
+  ${EndIf}
+
   ; "Delete the application data" removes the app's own folders afterwards, but not a
   ; cache folder the user moved elsewhere (Settings > Advanced). That folder was the
   ; user's choice and may hold other things, so only Octopolis's files go, and the

@@ -3,26 +3,29 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { baseName, extensionOf, parentPath } from "../lib/paths";
 import { settings } from "../state/settings";
+import { carriesPaths, dragRaw, onDragReset } from "../state/drag";
 import { shelf } from "../state/shelf";
 import { workspace } from "../state/workspace";
 import { Glyph, TypeIcon } from "./Icons";
 
-const DRAG_MIME = "application/x-octopolis-paths";
 
 /** Names without an extension are almost always folders; good enough for an icon. */
 const isFolderLike = (path: string) => extensionOf(baseName(path)) === "";
 
 export function Shelf() {
-  const dest = () => workspace.activeTab()?.path() ?? "";
+  const activeTab = () => workspace.activeTab();
+  const dest = () => activeTab()?.path() ?? "";
   const destName = () => baseName(dest()) || dest();
+  const writable = () => !!dest() && !activeTab()?.archive() && !/^shell:/i.test(dest());
   const [over, setOver] = createSignal(false);
   const count = () => shelf.items().length;
+  const canDeliver = () => count() > 0 && writable();
   const expanded = () => shelf.open() || (shelf.dragging() && shelf.hot());
 
   onMount(() => {
     // Row drags set the payload on the source element, so by the time the event bubbles to the window
     // the types are known and unrelated drags (tabs, text) are ignored.
-    const start = (e: DragEvent) => e.dataTransfer?.types.includes(DRAG_MIME) && settings.shelfAutoOpen() && shelf.setDragging(true);
+    const start = (e: DragEvent) => carriesPaths(e.dataTransfer) && settings.shelfAutoOpen() && shelf.setDragging(true);
     const end = () => {
       shelf.setDragging(false);
       setOver(false);
@@ -35,6 +38,7 @@ export function Shelf() {
     };
     document.addEventListener("pointerdown", outside, true);
     onCleanup(() => document.removeEventListener("pointerdown", outside, true));
+    onCleanup(onDragReset(end));
     window.addEventListener("dragstart", start);
     window.addEventListener("dragend", end);
     window.addEventListener("drop", end, true);
@@ -51,7 +55,7 @@ export function Shelf() {
       ref={(el) => createEffect(() => (el.inert = !expanded()))}
       classList={{ open: expanded(), over: over(), drag: shelf.dragging() }}
       onDragOver={(e) => {
-        if (e.dataTransfer?.types.includes(DRAG_MIME)) {
+        if (carriesPaths(e.dataTransfer)) {
           e.preventDefault();
           e.stopPropagation();
           e.dataTransfer.dropEffect = "copy";
@@ -66,7 +70,7 @@ export function Shelf() {
       }}
       onDrop={(e) => {
         setOver(false);
-        const raw = e.dataTransfer?.getData(DRAG_MIME);
+        const raw = dragRaw(e.dataTransfer);
         if (!raw) return;
         e.preventDefault();
         e.stopPropagation();
@@ -116,16 +120,26 @@ export function Shelf() {
           </Show>
 
           <div class="shelf-foot">
-            <div class="shelf-dest" data-tooltip={dest()}>
+            <div class="shelf-dest" data-tooltip={dest() || "No active folder"}>
               <span>Into</span>
-              <strong>{destName()}</strong>
+              <strong>{writable() ? destName() : activeTab()?.archive() ? `${destName()} (read-only)` : destName() || "No folder"}</strong>
             </div>
             <div class="shelf-actions">
-              <button class="btn small primary" disabled={!count()} onClick={() => shelf.deliver("copy", dest())}>
-                <Glyph code="E8C8" size={13} /> Copy here
+              <button
+                class="btn small primary"
+                disabled={!canDeliver()}
+                data-tooltip={writable() ? `Copy all shelf items into ${destName()}` : "Open a writable folder to copy"}
+                onClick={() => shelf.deliver("copy", dest())}
+              >
+                <Glyph code="E8C8" size={13} /> Copy all here
               </button>
-              <button class="btn small" disabled={!count()} onClick={() => shelf.deliver("move", dest())}>
-                <Glyph code="E72A" size={13} /> Move here
+              <button
+                class="btn small"
+                disabled={!canDeliver()}
+                data-tooltip={writable() ? `Move all shelf items into ${destName()}` : "Open a writable folder to move"}
+                onClick={() => shelf.deliver("move", dest())}
+              >
+                <Glyph code="E72A" size={13} /> Move all here
               </button>
               <button class="icon-btn shelf-clear" disabled={!count()} aria-label="Clear shelf" data-tooltip="Clear shelf" onClick={shelf.clear}>
                 <Glyph code="E74D" size={15} />

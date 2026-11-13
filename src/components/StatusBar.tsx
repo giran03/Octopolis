@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { invertSelected } from "../actions";
 import { formatCount, formatSize } from "../lib/format";
 import { isDir } from "../lib/listing";
 import { ops } from "../state/ops";
@@ -27,13 +28,29 @@ export function StatusBar() {
               {(s) => <SearchStatus s={s()} shown={t().view().length} />}
             </Show>
             <Show when={t().selection().size > 0}>
-              <span>
-                {t().selection().size.toLocaleString()} selected
-                <Show when={selectedBytes() > 0}> · {formatSize(selectedBytes())}</Show>
+              <span class="status-selection">
+                <span>
+                  {t().selection().size.toLocaleString()} selected
+                  <Show when={selectedBytes() > 0}> · {formatSize(selectedBytes())}</Show>
+                </span>
+                <button
+                  class="status-chip"
+                  data-tooltip="Clear selection (Esc)"
+                  onClick={() => t().setSelection(new Set<number>())}
+                >
+                  Clear
+                </button>
+                <button
+                  class="status-chip"
+                  data-tooltip="Invert selection (Ctrl+Shift+I)"
+                  onClick={() => invertSelected(t())}
+                >
+                  Invert
+                </button>
               </span>
             </Show>
             <Show when={t().status().elapsedMs !== null && !t().search()}>
-              <span class="muted" title="Time the engine spent reading the folder">
+              <span class="muted" data-tooltip="Time the engine spent reading the folder">
                 listed in {t().status().elapsedMs!.toFixed(1)} ms
               </span>
             </Show>
@@ -48,7 +65,7 @@ export function StatusBar() {
         )}
       </Show>
       <Show when={tab()?.git()?.branch}>
-        {(b) => <span class="git-branch" title="Git branch"><IconBranch size={12} /> {b()}</span>}
+        {(b) => <span class="git-branch" data-tooltip="Git branch"><IconBranch size={12} /> {b()}</span>}
       </Show>
       <StatusHints />
       <Show when={tab()?.git()}>
@@ -57,7 +74,7 @@ export function StatusBar() {
           classList={{ on: settings.hideGitIgnored() }}
           aria-label="Hide files Git ignores"
           aria-pressed={settings.hideGitIgnored()}
-          title="Hide files Git ignores"
+          data-tooltip="Hide files Git ignores"
           onClick={() => settings.set({ hideGitIgnored: !settings.hideGitIgnored() })}
         >
           <IconGitIgnore size={14} />
@@ -67,14 +84,14 @@ export function StatusBar() {
           classList={{ on: settings.showCommits() }}
           aria-label="Show last commit"
           aria-pressed={settings.showCommits()}
-          title="Show last commit"
+          data-tooltip="Show last commit"
           onClick={settings.toggleCommits}
         >
           <IconGitCommit size={14} />
         </button>
         <span class="status-sep" aria-hidden="true" />
       </Show>
-      <button class="icon-btn" classList={{ on: settings.showHidden() }} title="Show hidden items (Ctrl+H)" onClick={settings.toggleHidden}>
+      <button class="icon-btn" classList={{ on: settings.showHidden() }} data-tooltip="Show hidden items (Ctrl+H)" onClick={settings.toggleHidden}>
         <IconEye size={14} />
       </button>
       <button
@@ -82,27 +99,27 @@ export function StatusBar() {
         classList={{ on: settings.sidebarOpen() }}
         aria-label={settings.sidebarOpen() ? "Collapse sidebar" : "Expand sidebar"}
         aria-pressed={settings.sidebarOpen()}
-        title={settings.sidebarOpen() ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"}
+        data-tooltip={settings.sidebarOpen() ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"}
         onClick={settings.toggleSidebar}
       >
         <Show when={settings.sidebarOpen()} fallback={<IconSidebar size={14} />}>
           <IconSidebarClose size={14} />
         </Show>
       </button>
-      <button class="icon-btn" title="Split right (Ctrl+\)" onClick={() => workspace.split("row")}>
+      <button class="icon-btn" data-tooltip="Split right (Ctrl+\)" onClick={() => workspace.split("row")}>
         <IconSplitRow size={14} />
       </button>
-      <button class="icon-btn" title="Split down (Ctrl+Shift+\)" onClick={() => workspace.split("column")}>
+      <button class="icon-btn" data-tooltip="Split down (Ctrl+Shift+\)" onClick={() => workspace.split("column")}>
         <IconSplitCol size={14} />
       </button>
       <Show when={workspace.paneCount() > 1}>
-        <button class="icon-btn" title="Swap the two panes" aria-label="Swap panes" onClick={() => workspace.swapPanes()}>
+        <button class="icon-btn" data-tooltip="Swap the two panes" aria-label="Swap panes" onClick={() => workspace.swapPanes()}>
           <MaterialIcon name="swap_horiz" size={14} />
         </button>
         <button
           class="icon-btn"
           classList={{ on: workspace.synced() }}
-          title={workspace.synced() ? "Synchronized browsing is on: going into a folder or up does the same in the other pane" : "Synchronized browsing: move both panes together"}
+          data-tooltip={workspace.synced() ? "Synchronized browsing is on: going into a folder or up does the same in the other pane" : "Synchronized browsing: move both panes together"}
           aria-label="Synchronized browsing"
           aria-pressed={workspace.synced()}
           onClick={() => workspace.toggleSynced()}
@@ -127,7 +144,7 @@ function SearchStatus(props: { s: SearchState; shown: number }) {
       </span>
       <Show when={sum()}>
         {(m) => (
-          <span class="muted" title={m().mode === "usn" ? "Indexed from the NTFS change journal" : "Indexed by scanning folders"}>
+          <span class="muted" data-tooltip={m().mode === "usn" ? "Indexed from the NTFS change journal" : "Indexed by scanning folders"}>
             {m().indexed.toLocaleString()} indexed{m().indexMs !== null ? ` in ${(m().indexMs! / 1000).toFixed(1)} s` : ""} · {m().elapsedMs.toFixed(0)} ms
           </span>
         )}

@@ -1,7 +1,8 @@
 // Per-user preferences, remembered in local storage.
 import { createRoot, createSignal } from "solid-js";
 import type { SummonKey } from "../lib/ipc";
-import type { Density, Theme } from "../lib/themes";
+import { DENSITIES, type Density, type Theme } from "../lib/themes";
+import { sanitizeThemes } from "../lib/themeTools";
 
 const KEY = "octopolis.settings.v1";
 
@@ -17,10 +18,15 @@ interface Settings {
   terminalSync: boolean;
   showCommits: boolean;
   theme: string;
-  customTheme: Theme | null;
+  customThemes: Theme[];
+  /** The themes "Follow Windows" uses by day and by night; empty means the built-in look. */
+  systemLight: string;
+  systemDark: string;
   accent: string | null;
   uiScale: number;
   density: Density;
+  /** Exact row height in pixels from the density slider; 0 uses the chosen preset. */
+  densityRow: number;
   pinnedActions: readonly string[];
   startFolder: StartFolder;
   /** Folder used when `startFolder` is "custom". */
@@ -55,10 +61,16 @@ interface Settings {
   iconWeight: number;
   /** Show file extensions in names (off hides the last extension, like Explorer's option). */
   showExtensions: boolean;
+  /** Pick each folder's view from what it holds (Auto), unless that folder was given a view by hand. */
+  autoView: boolean;
+  /** Ask before moving a folder into another folder. */
+  confirmMoveFolders: boolean;
   /** Size of the button icons relative to normal, in percent. */
   iconScale: number;
   /** Font for the interface text; empty uses the default. */
   uiFont: string;
+  /** Allow fonts from Google Fonts (downloaded when chosen; they can be saved on this PC). */
+  googleFonts: boolean;
   /** The first-run welcome has been shown. */
   welcomeSeen: boolean;
   /** Solid icons instead of outlines. */
@@ -75,6 +87,8 @@ interface Settings {
   lastUpdateCheck: number;
 }
 
+export const ROW_MIN = 18;
+export const ROW_MAX = 40;
 export type IconStyle = "outlined" | "rounded" | "sharp";
 export const ICON_WEIGHT_MIN = 100;
 export const ICON_WEIGHT_MAX = 700;
@@ -84,7 +98,7 @@ export type TerminalShell = "powershell" | "pwsh" | "cmd";
 export type MotionPref = "system" | "reduce" | "full";
 export type UpdateMode = "off" | "notify" | "auto";
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customTheme: null, accent: null, uiScale: 100, density: "normal", pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "notify", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, iconScale: 100, uiFont: "", welcomeSeen: false, iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "notify", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true };
 
 export const SETTING_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
@@ -116,11 +130,14 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     const same = fallback === null ? v === null || typeof v === "number" || typeof v === "string" || typeof v === "object" : typeof v === typeof fallback && Array.isArray(v) === Array.isArray(fallback);
     if (same) out[key] = v;
   }
+  if (out.customThemes !== undefined) out.customThemes = sanitizeThemes(out.customThemes);
   return out as Partial<Settings>;
 }
 
 export const settings = createRoot(() => {
-  const [value, setValue] = createSignal<Settings>({ ...DEFAULTS, ...loadJson<Partial<Settings>>(KEY, {}) });
+  const stored = loadJson<Partial<Settings> & { customTheme?: unknown }>(KEY, {});
+  // One saved custom theme (older versions) becomes the first of the list.
+  const [value, setValue] = createSignal<Settings>({ ...DEFAULTS, ...stored, customThemes: sanitizeThemes([...(Array.isArray(stored.customThemes) ? stored.customThemes : []), ...(stored.customTheme ? [stored.customTheme] : [])]) });
   const update = (patch: Partial<Settings>) => {
     const next = { ...value(), ...patch };
     setValue(next);
@@ -137,10 +154,17 @@ export const settings = createRoot(() => {
     terminalSync: () => value().terminalSync,
     showCommits: () => value().showCommits,
     theme: () => value().theme,
-    customTheme: () => value().customTheme,
+    customThemes: () => value().customThemes,
+    systemLight: () => value().systemLight,
+    systemDark: () => value().systemDark,
     accent: () => value().accent,
     uiScale: () => value().uiScale,
     density: () => value().density,
+    /** Row height in pixels: the slider value when set, else the preset's. */
+    rowPx: () => {
+      const custom = value().densityRow;
+      return custom >= ROW_MIN && custom <= ROW_MAX ? Math.round(custom) : DENSITIES[value().density];
+    },
     pinnedActions: () => value().pinnedActions,
     startFolder: () => value().startFolder,
     startPath: () => value().startPath,
@@ -165,8 +189,11 @@ export const settings = createRoot(() => {
     editorPath: () => value().editorPath,
     editorOpensText: () => value().editorOpensText,
     showExtensions: () => value().showExtensions,
+    autoView: () => value().autoView,
+    confirmMoveFolders: () => value().confirmMoveFolders,
     iconScale: () => Math.min(140, Math.max(80, value().iconScale)),
     uiFont: () => value().uiFont,
+    googleFonts: () => value().googleFonts,
     welcomeSeen: () => value().welcomeSeen,
     iconWeight: () => Math.min(ICON_WEIGHT_MAX, Math.max(ICON_WEIGHT_MIN, value().iconWeight)),
     iconFill: () => value().iconFill,
@@ -184,10 +211,10 @@ export const settings = createRoot(() => {
     toggleTerminalSync: () => update({ terminalSync: !value().terminalSync }),
     toggleCommits: () => update({ showCommits: !value().showCommits }),
     setTheme: (theme: string) => update({ theme }),
-    setCustomTheme: (customTheme: Theme) => update({ customTheme }),
+    setCustomThemes: (customThemes: Theme[]) => update({ customThemes: sanitizeThemes(customThemes) }),
     setAccent: (accent: string | null) => update({ accent }),
     setUiScale: (uiScale: number) => update({ uiScale }),
-    setDensity: (density: Density) => update({ density }),
+    setDensity: (density: Density) => update({ density, densityRow: 0 }),
     togglePinned: (label: string) => update({ pinnedActions: value().pinnedActions.includes(label) ? value().pinnedActions.filter((l) => l !== label) : [...value().pinnedActions, label] }),
     toggleInspector: () => update({ inspectorOpen: !value().inspectorOpen }),
     toggleVerify: () => update({ verifyCopies: !value().verifyCopies }),

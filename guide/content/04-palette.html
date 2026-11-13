@@ -1,0 +1,58 @@
+<section id="palette" class="sec" data-title="Command palette" data-group="Browse">
+  <span class="kicker">Browse</span>
+  <h2>The command palette</h2>
+  <p class="lead">One box for folders, files, commands, tabs, pins, shell commands and quick maths. Open it with <span class="keys" data-keys="ctrl+p"></span>, or jump straight to commands with <span class="keys" data-keys="ctrl+shift+p"></span>.</p>
+
+  <div class="demo" id="demo-palette" data-reveal></div>
+  <p class="demo-cap" style="margin-top:-12px">The demo types through the modes below. Click a mode to try it.</p>
+
+  <h3 id="palette-modes">Modes</h3>
+  <p>The first character you type picks the mode. Without one, you are in <b>Go to</b>.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Prefix</th><th>Mode</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><em class="muted">none</em></td><td><b>Go to</b></td><td>Folders you use often and recently, pinned folders, places and drives; files and folders in the current folder; a typed path; a calculator.</td></tr>
+      <!--@modes-->
+    </tbody>
+  </table></div>
+
+  <h3 id="palette-goto">Go to</h3>
+  <ul>
+    <li><b>Folders</b> are ranked by fuzzy match and by how often and recently you used them. A row shows when you last visited, and drives show their free space. The empty palette lists <i>Pinned</i>, <i>Recent</i>, <i>Drives</i> and <i>Recent commands</i>.</li>
+    <li><b>Files</b> in the current folder match too: <kbd>Enter</kbd> opens them, <kbd>Ctrl</kbd> <kbd>Enter</kbd> selects them in the list.</li>
+    <li><b>Paths</b>: type <code>C:\Us</code> and the folders under <code>C:\</code> are offered; <kbd>Tab</kbd> completes. <code>~</code> and <code>%VARIABLES%</code> work, and pasting a file's path opens its folder and selects the file.</li>
+  </ul>
+
+  <h3 id="palette-calc">Calculator and unit converter</h3>
+  <p>Type a sum or a conversion and the answer appears at the top; <kbd>Enter</kbd> copies it.</p>
+  <pre><code>12*8            → 96
+(2+3)^2 / 5     → 5
+sqrt(144) + pi  → 15.14159…
+5 mb in kb      → 5,120 KB
+2 h in min      → 120 min
+100 c to f      → 212 °F</code></pre>
+  <p>Sizes follow Windows (1 KB is 1,024 bytes). Lengths (mm, cm, m, km, in, ft, yd, mi), weights (mg, g, kg, oz, lb), times (ms to weeks) and temperatures (C, F, K) are known. A plain number such as a year is never mistaken for a sum.</p>
+
+  <h3 id="palette-commands">Commands</h3>
+  <p>Every command in Octopolis is here, written as <i>Category: Title</i>, with its shortcut. Commands you use rise to the top and a <i>Recent</i> group appears when the box is empty. When something is selected, the commands that act on it come first; when nothing is, they are shown muted with the reason ("Select something first") instead of disappearing. Your own <a href="#custom-actions">custom actions</a> are listed too.</p>
+
+  <h3 id="palette-keys">Keys inside the palette</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Keys</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><span class="keys" data-keys="ctrl+n"></span> <span class="keys" data-keys="ctrl+j"></span> <kbd>↓</kbd></td><td>Next row</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="ctrl+p"></span> <span class="keys" data-keys="ctrl+k"></span> <kbd>↑</kbd></td><td>Previous row</td></tr>
+      <tr><td class="k"><kbd>PgUp</kbd> <kbd>PgDn</kbd> <kbd>Home</kbd> <kbd>End</kbd></td><td>Jump by a page, or to either end (Home and End need Ctrl once you have typed something)</td></tr>
+      <tr><td class="k"><kbd>Tab</kbd></td><td>Complete the highlighted folder into the box</td></tr>
+      <tr><td class="k"><kbd>Enter</kbd></td><td>Open or run the highlighted row</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="shift+enter"></span></td><td>Open the folder in a new tab</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="ctrl+enter"></span></td><td>Open it in the other pane (or a new split when there is only one); on a file, select it in the list</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="alt+enter"></span></td><td>Properties</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="alt+shift+enter"></span></td><td>Show it in Windows Explorer</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="ctrl+c"></span></td><td>Copy the row's path (or the calculator result)</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="ctrl+d"></span></td><td>Pin or unpin the folder in the sidebar</td></tr>
+      <tr><td class="k"><span class="keys" data-keys="shift+delete"></span></td><td>Forget the folder from your history</td></tr>
+    </tbody>
+  </table></div>
+  <p>A bar at the bottom of the palette always shows which of these apply to the highlighted row. Reopening the palette within 10 seconds keeps what you typed (it is selected, so typing replaces it).</p>
+</section>

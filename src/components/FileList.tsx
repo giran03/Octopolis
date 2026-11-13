@@ -1,31 +1,31 @@
 // Virtualized details list. Only the visible rows (plus overscan) exist in the
 // DOM; the same row nodes are reused as the list scrolls.
-import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import * as A from "../actions";
 import { formatDate, formatSize, typeLabel, withoutExtension } from "../lib/format";
 import { ATTR_REPARSE, baseOf, cloudState, dirOf, isDir, isHidden } from "../lib/listing";
 import { attributeLetters, clampWidth, columnDef, DEFAULT_COLUMNS, gridTemplate, OPTIONAL_COLUMNS, toggleColumn, visibleColumns, type ColumnKey } from "../lib/columns";
-import { baseName, extensionOf, joinPath, parentPath, sameVolume, samePath, stemLength } from "../lib/paths";
+import { baseName, extensionOf, parentPath, sameVolume, samePath, stemLength } from "../lib/paths";
 import { rowsInBand, selectAt } from "../lib/selection";
 import { createMarquee } from "./marquee";
 import { createDirTags, TagMarks } from "./Tags";
 import type { SortKey } from "../lib/sort";
 import { compare } from "../state/compare";
 import { ops } from "../state/ops";
-import type { TabModel } from "../state/tab";
+import { createTab, type TabModel } from "../state/tab";
 import { ui, type MenuEntry } from "../state/ui";
-import { DENSITIES } from "../lib/themes";
 import { settings } from "../state/settings";
 import { sidebar } from "../state/sidebar";
 import { isPinned } from "../lib/sidebar";
 import { iconFor } from "../state/icons";
-import { cancelSpring, DRAG_MIME, dragState, springLoad } from "../state/drag";
+import { cancelSpring, carriesPaths, DRAG_MIME, dragRaw, dragState, isExternalDrag, onDragReset, springLoad, springTarget } from "../state/drag";
+import { readDrop } from "../lib/webdrop";
 import { fileIconSpec } from "../lib/fileicons";
 import { FileGlyph, FileIcon, FolderEmoji, Glyph, MaterialIcon } from "./Icons";
 import { folderIcons } from "../state/folderIcons";
 
 /** Row height in pixels, from the density setting. */
-const rowHeight = () => DENSITIES[settings.density()];
+const rowHeight = () => settings.rowPx();
 const OVERSCAN = 6;
 
 /** Scroll offset per tab, so switching tabs returns to the same place. */
@@ -58,6 +58,8 @@ export interface ListHandle {
   pageRows: () => number;
   /** Grid view only: items per row. */
   columns?: () => number;
+  /** Bento view only: the item above (-1) or below (1) one, since rows hold different numbers of items. */
+  vertical?: (pos: number, dir: 1 | -1) => number;
 }
 
 let listSerial = 0;
@@ -71,6 +73,15 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
   const [height, setHeight] = createSignal(600);
   const [dropTarget, setDropTarget] = createSignal<number | "list" | null>(null);
   const [dropCopy, setDropCopy] = createSignal(false);
+  // If a drag ends without this list seeing it (its row was removed mid-drag), clear the drop highlight.
+  onCleanup(
+    onDragReset(() => {
+      dragging = [];
+      draggingArchive = null;
+      setDropTarget(null);
+      setDropCopy(false);
+    }),
+  );
   /** A ghost row at the end of the list previews dropped items landing in this folder. */
   const ghostItems = () =>
     dropTarget() === "list" && !tab().archive() ? dragState.paths : [];
@@ -197,16 +208,37 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
     dragState.allDirs = !t.archive() && [...t.selection()].every((i) => isDir(t.listing(), i));
     e.dataTransfer!.setData(DRAG_MIME, JSON.stringify(dragging));
     e.dataTransfer!.effectAllowed = "copyMove";
+    // Real files can leave the app: hand the drag to Windows, so Explorer, browsers and chat apps get the files.
+    if (!draggingArchive) {
+      e.preventDefault();
+      void A.dragOut(dragging);
+    }
   };
   const destFor = (target: number | "list") => (target === "list" ? tab().path() : tab().pathOf(view()[target]));
   const dragOver = (e: DragEvent, target: number | "list") => {
-    if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
+    if (!carriesPaths(e.dataTransfer)) {
+      // Something from outside the app (a picture dragged from a web page, files from another program): save it here.
+      if (!isExternalDrag(e.dataTransfer) || tab().archive()) return;
+      if (target !== "list" && !isDir(tab().listing(), view()[target])) target = "list";
+      cancelSpring();
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer!.dropEffect = "copy";
+      setDropCopy(true);
+      setDropTarget(target);
+      return;
+    }
     if (target !== "list" && !isDir(tab().listing(), view()[target])) target = "list";
     const dest = destFor(target);
     // Resting on a folder opens it, so the drop can go deeper.
     if (target === "list" || tab().archive()) cancelSpring();
     else springLoad(`row:${dest}`, () => void tab().navigate(dest));
     if (dragging.some((p) => p.toLowerCase() === dest.toLowerCase())) return; // onto itself
+    // Already in this folder: nothing to move (Ctrl still makes a copy).
+    if (!e.ctrlKey && !draggingArchive && A.alreadyIn(dragging, dest)) {
+      setDropTarget(null);
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = e.ctrlKey || dragging.some((s) => !sameVolume(s, dest)) ? "copy" : "move";
@@ -220,7 +252,11 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
     if (target === null) return;
     e.preventDefault();
     e.stopPropagation();
-    const paths: string[] = JSON.parse(e.dataTransfer?.getData(DRAG_MIME) || "[]");
+    if (!carriesPaths(e.dataTransfer)) {
+      if (e.dataTransfer && isExternalDrag(e.dataTransfer)) void A.dropExternal(tab(), destFor(target), readDrop(e.dataTransfer));
+      return;
+    }
+    const paths: string[] = JSON.parse(dragRaw(e.dataTransfer) || "[]");
     A.dropPaths(paths, destFor(target), e.ctrlKey, draggingArchive, !!tab().archive());
   };
 
@@ -258,6 +294,12 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
         classList={{ "drop-list": dropTarget() === "list" }}
         role="rowgroup"
         onScroll={onScroll}
+        onWheel={(e) => {
+          // Ctrl + wheel zooms through the views, like Explorer.
+          if (!e.ctrlKey) return;
+          e.preventDefault();
+          A.zoomView(tab(), e.deltaY < 0 ? 1 : -1);
+        }}
         onMouseDown={(e) => {
           if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("rows")) {
             if (!e.ctrlKey && !e.shiftKey) tab().setSelection(new Set<number>());
@@ -296,8 +338,10 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                     classList={{
                       selected: tab().selection().has(entry()),
                       focused: props.active && tab().focus() === pos(),
-                      dim: isHidden(l(), entry()) || ops.isCut(joinPath(l().path, name())),
+                      dim: isHidden(l(), entry()) || ops.isCut(tab().pathOf(entry())),
+                      cut: ops.isCut(tab().pathOf(entry())),
                       "drop-row": dropTarget() === pos(),
+                      spring: dir() && springTarget() === `row:${tab().pathOf(entry())}`,
                       "group-start": pos() > 0 && tab().groupStarts().has(pos()),
                       [`cmp-${compare.statusOf(tab())?.get(baseOf(name()).toLowerCase()) ?? "none"}`]: !!compare.statusOf(tab()),
                     }}
@@ -410,11 +454,51 @@ export function contextMenu(t: TabModel, e: MouseEvent, pos: number | null) {
   ui.openMenu(e.clientX, e.clientY, menuFor(t, pos !== null));
 }
 
+let scratchDispose: (() => void) | null = null;
+
+/**
+ * The full folder menu (the one a folder gets in the file list) for a folder somewhere else, such as the sidebar.
+ * It is built from a hidden listing of the folder's parent with the folder selected. "Open" and "Paste" are pointed
+ * at the folder itself. Null for a drive root or when the parent can't be listed.
+ */
+export async function folderMenuEntries(path: string, x: number, y: number, open: () => void): Promise<MenuEntry[] | null> {
+  const parent = parentPath(path);
+  if (!parent) return null;
+  scratchDispose?.();
+  let tab!: TabModel;
+  scratchDispose = createRoot((dispose) => {
+    tab = createTab(parent);
+    return dispose;
+  });
+  try {
+    await tab.navigate(parent, [baseName(path)]);
+    const picked = A.singleFolderPath(tab);
+    if (!picked || !samePath(picked, path)) return null;
+    menuX = x;
+    menuY = y;
+    return menuFor(tab, true).map((e) => {
+      if (e === "separator") return e;
+      if (e.label === "Open") return { ...e, run: open };
+      if (e.label === "Paste") return { ...e, run: () => ops.paste(path) };
+      return e;
+    });
+  } catch {
+    return null;
+  }
+}
+
 const SKELETON_WIDTHS = [34, 52, 28, 44, 38, 56, 30, 48, 36, 42];
 
-function ListState(props: { tab: TabModel }) {
+export function ListState(props: { tab: TabModel }) {
   const s = () => props.tab.status();
   const empty = () => props.tab.view().length === 0;
+  const search = () => props.tab.search();
+  const filter = () => props.tab.filter();
+  const searchSubfolders = () => {
+    const q = props.tab.filter();
+    props.tab.setFilter("");
+    void props.tab.runSearch(q);
+  };
   return (
     <>
     <Show when={empty() && s().loading && !s().error}>
@@ -434,11 +518,40 @@ function ListState(props: { tab: TabModel }) {
         <Show
           when={s().error}
           fallback={
-            <>
-              <MaterialIcon name={props.tab.filter() ? "search_off" : "folder_open"} size={44} class="empty-icon" />
-              <strong>{props.tab.filter() ? "No items match the filter" : "This folder is empty"}</strong>
-              <span class="muted small">{props.tab.filter() ? "Clear the filter with Esc to see everything again" : "Drop files here, or press Ctrl+Shift+N for a new folder"}</span>
-            </>
+            <Show
+              when={search()}
+              fallback={
+                <Show
+                  when={filter()}
+                  fallback={
+                    <>
+                      <MaterialIcon name="folder_open" size={44} class="empty-icon" />
+                      <strong>This folder is empty</strong>
+                      <span class="muted small">Drop files here, or press Ctrl+Shift+N for a new folder</span>
+                    </>
+                  }
+                >
+                  <MaterialIcon name="search_off" size={44} class="empty-icon" />
+                  <strong>No items match the filter</strong>
+                  <span class="muted small">Clear the filter with Esc, or search in subfolders</span>
+                  <span class="empty-actions">
+                    <button class="btn" onClick={() => props.tab.setFilter("")}>Clear filter</button>
+                    <button class="btn" onClick={searchSubfolders}>Search in subfolders (Ctrl+Shift+F)</button>
+                  </span>
+                </Show>
+              }
+            >
+              {(sr) => (
+                <>
+                  <MaterialIcon name="search_off" size={44} class="empty-icon" />
+                  <strong>{sr().error ? "Search query isn't valid" : "No items match the search"}</strong>
+                  <span class="muted small">{sr().error ?? "Clear the search or press Esc to return to this folder"}</span>
+                  <span class="empty-actions">
+                    <button class="btn" onClick={() => props.tab.exitSearch()}>Clear search</button>
+                  </span>
+                </>
+              )}
+            </Show>
           }
         >
           {(() => {
@@ -545,8 +658,9 @@ function folderIconEntries(tab: TabModel): MenuEntry[] {
   const path = A.singleFolderPath(tab);
   if (!path) return [];
   return [
-    { label: "Change icon…", run: () => ui.setEmojiTarget(path) },
-    ...(folderIcons.get(path) ? [{ label: "Reset icon", run: () => folderIcons.set(path, null) }] : []),
+    // A folder with its own icon says which one, next to the entry that changes it.
+    { label: "Change icon…", shortcut: folderIcons.describe(path), run: () => ui.setEmojiTarget(path) },
+    ...(folderIcons.has(path) ? [{ label: "Reset icon", shortcut: "Default", run: () => folderIcons.set(path, null) }] : []),
   ];
 }
 
@@ -643,7 +757,8 @@ function NameLabel(props: { name: string; dir: boolean }) {
 function RowIcon(props: { path: string; name: string; isDir: boolean; virtual: boolean; link: boolean }) {
   // Types Octopolis knows get its own icon; the rest use the Windows icon for their type.
   const own = () => !props.isDir && fileIconSpec(props.name) !== null;
-  const url = () => (props.virtual || own() ? null : iconFor(props.path, props.name, props.isDir)());
+  const borrowed = () => (props.isDir && !props.virtual ? folderIcons.source(props.path) : undefined);
+  const url = () => (props.virtual || own() ? null : borrowed() ? iconFor(borrowed()!, props.name, true, true)() : iconFor(props.path, props.name, props.isDir)());
   const emoji = () => (props.isDir && !props.virtual ? folderIcons.get(props.path) : undefined);
   return (
     <Show when={!emoji()} fallback={<FolderEmoji emoji={emoji()!} size={16} class="row-icon" />}>

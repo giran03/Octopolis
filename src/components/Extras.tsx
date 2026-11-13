@@ -1,18 +1,16 @@
 // Text prompt, grid and Miller views.
 import { createEffect, createMemo, createResource, createSignal, Index, on, onCleanup, onMount, Show } from "solid-js";
 import * as A from "../actions";
-import { formatSize, withoutExtension } from "../lib/format";
+import { formatSize } from "../lib/format";
 import { listDir, thumbnail } from "../lib/ipc";
 import { baseOf, createBuilder, decodeBatch, isDir, snapshot, type Listing } from "../lib/listing";
 import { baseName, joinPath, parentPath } from "../lib/paths";
-import { cloudState } from "../lib/listing";
-import { cellsInRect, selectAt } from "../lib/selection";
-import { DENSITIES } from "../lib/themes";
-import { createMarquee } from "./marquee";
+import { selectAt } from "../lib/selection";
 import { settings } from "../state/settings";
 import type { TabModel } from "../state/tab";
 import { folderIcons } from "../state/folderIcons";
 import { FileIcon, FolderEmoji } from "./Icons";
+import { thumbBucket } from "../lib/viewZoom";
 import { ui } from "../state/ui";
 
 export function PromptDialog(props: { title: string; label: string; initial?: string; submitLabel?: string; onSubmit: (value: string) => void }) {
@@ -28,7 +26,7 @@ export function PromptDialog(props: { title: string; label: string; initial?: st
     props.onSubmit(v);
   };
   return (
-    <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && ui.closePrompt()}>
+    <div class="scrim scrim-top" onMouseDown={(e) => e.target === e.currentTarget && ui.closePrompt()}>
       <div class="dialog" role="dialog" aria-label={props.title} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") ui.closePrompt(); if (e.key === "Enter") submit(); }}>
         <h2>{props.title}</h2>
         <label class="settings-import">{props.label}<input ref={input} class="text-input" spellcheck={false} value={props.initial ?? ""} /></label>
@@ -41,11 +39,21 @@ export function PromptDialog(props: { title: string; label: string; initial?: st
   );
 }
 
-const CELL = 124;
-const CELL_H = 128;
-const THUMB_PX = 96;
-const OVERSCAN_ROWS = 1;
-const MAX_THUMBS = 400;
+const MAX_THUMBS = 1500;
+/** Icons and thumbnails asked of Windows at once: a picker full of them must not flood the shell. */
+const MAX_AT_ONCE = 8;
+let running = 0;
+const waiting: (() => void)[] = [];
+const turn = async <T,>(job: () => Promise<T>): Promise<T> => {
+  if (running >= MAX_AT_ONCE) await new Promise<void>((resolve) => waiting.push(resolve));
+  running++;
+  try {
+    return await job();
+  } finally {
+    running--;
+    waiting.shift()?.();
+  }
+};
 /** Thumbnail URLs, oldest first. Visible cells stay recent, so they are never evicted. */
 const thumbs = new Map<string, string>();
 const thumbBytes = new Map<string, number>();
@@ -60,7 +68,7 @@ export function clearGridThumbs() {
   pendingThumbs.clear();
 }
 
-function loadThumb(key: string, path: string): Promise<string | null> {
+export function loadThumb(key: string, path: string, px: number, iconOnly = false): Promise<string | null> {
   if (!settings.showThumbnails()) return Promise.resolve(null);
   const known = thumbs.get(key);
   if (known) {
@@ -70,7 +78,7 @@ function loadThumb(key: string, path: string): Promise<string | null> {
   }
   let pending = pendingThumbs.get(key);
   if (!pending) {
-    pending = thumbnail(path, THUMB_PX, false)
+    pending = turn(() => thumbnail(path, px, iconOnly))
       .then(
         (b) => {
           if (thumbs.size >= MAX_THUMBS) {
@@ -92,128 +100,33 @@ function loadThumb(key: string, path: string): Promise<string | null> {
   return pending;
 }
 
-function GridThumb(props: { path: string; modified: number; virtual: boolean; name: string; dir: boolean; online?: boolean }) {
+/** The picture of an item at `size` pixels: its thumbnail (made in a few set sizes, so zooming reuses them), else its icon. */
+export function GridThumb(props: { path: string; modified: number; virtual: boolean; name: string; dir: boolean; online?: boolean; size: number }) {
   const [url, setUrl] = createSignal<string | null>(null);
-  const key = () => `${props.path}|${props.modified}`;
+  const px = () => thumbBucket(props.size);
+  // A folder can wear the Windows icon of a special folder; its picture is then that folder's.
+  const source = () => (props.dir ? folderIcons.source(props.path) : undefined);
+  const key = () => `${source() ?? props.path}|${props.modified}|${px()}|${source() ? "i" : "t"}`;
   createEffect(
     on(key, (k) => {
       setUrl(null);
       // Reading an online-only file would download it just to draw a thumbnail.
       if (props.virtual || props.online) return;
-      void loadThumb(k, props.path).then((u) => {
+      void loadThumb(k, source() ?? props.path, px(), source() !== undefined).then((u) => {
         if (key() === k) setUrl(u);
       });
     }),
   );
+  const iconPx = () => Math.round(Math.min(96, Math.max(16, props.size * 0.42)));
   return (
-    <div class="grid-thumb">
+    <div class="grid-thumb" style={{ width: `${props.size}px`, height: `${props.size}px`, "--thumb": `${props.size}px` }}>
       <Show when={props.dir && folderIcons.get(props.path)} fallback={
-        <Show when={url()} fallback={<span class="grid-fallback"><FileIcon name={props.name} isDir={props.dir} size={40} /></span>}>
+        <Show when={url()} fallback={<span class="grid-fallback"><FileIcon name={props.name} isDir={props.dir} size={iconPx()} /></span>}>
           {(u) => <img src={u()} alt="" draggable={false} />}
         </Show>
       }>
-        {(e) => <span class="grid-fallback"><FolderEmoji emoji={e()} size={44} /></span>}
+        {(e) => <span class="grid-fallback"><FolderEmoji emoji={e()} size={Math.round(iconPx() * 1.1)} /></span>}
       </Show>
-    </div>
-  );
-}
-
-/** Virtualized thumbnail grid; rows of the same model the details list uses. */
-export function GridView(props: { tab: TabModel; active: boolean; onReady: (columns: () => number, ensureVisible: (pos: number) => void, pageRows: () => number) => void; onMenu: (e: MouseEvent, pos: number | null) => void }) {
-  let scroller!: HTMLDivElement;
-  const [scrollTop, setScrollTop] = createSignal(0);
-  const [size, setSize] = createSignal({ w: 800, h: 600 });
-  const columns = () => Math.max(1, Math.floor(size().w / CELL));
-  const view = () => props.tab.view();
-  const rows = () => Math.ceil(view().length / columns());
-  const firstRow = () => Math.max(0, Math.floor(scrollTop() / CELL_H) - OVERSCAN_ROWS);
-  const visibleRows = () => Math.ceil(size().h / CELL_H) + OVERSCAN_ROWS * 2;
-  const positions = createMemo(() => {
-    const start = firstRow() * columns();
-    const end = Math.min(view().length, start + visibleRows() * columns());
-    return Array.from({ length: Math.max(0, end - start) }, (_, i) => start + i);
-  });
-
-  const ensureVisible = (pos: number) => {
-    const top = Math.floor(pos / columns()) * CELL_H;
-    if (top < scroller.scrollTop) scroller.scrollTop = top;
-    else if (top + CELL_H > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = top + CELL_H - scroller.clientHeight;
-  };
-
-  onMount(() => {
-    const ro = new ResizeObserver(() => setSize({ w: scroller.clientWidth, h: scroller.clientHeight }));
-    ro.observe(scroller);
-    onCleanup(() => ro.disconnect());
-    props.onReady(columns, ensureVisible, () => Math.max(1, Math.floor(scroller.clientHeight / CELL_H)) * columns());
-  });
-
-  // Drag a box on empty space between tiles to select them. The grid has 6px of padding.
-  const PAD = 6;
-  const marquee = createMarquee({
-    scroller: () => scroller,
-    tab: () => props.tab,
-    positionsFor: (x1, y1, x2, y2) => cellsInRect(view().length, columns(), CELL, CELL_H, x1 - PAD, y1 - PAD, x2 - PAD, y2 - PAD),
-  });
-
-  const click = (e: MouseEvent, pos: number) => {
-    const t = props.tab;
-    const r = selectAt(view(), t.selection(), t.anchor(), pos, { ctrl: e.ctrlKey, shift: e.shiftKey });
-    t.setSelection(r.selection);
-    t.setAnchor(r.anchor);
-    t.setFocus(pos);
-  };
-
-  return (
-    <div
-      ref={scroller}
-      class="grid-view"
-      onScroll={() => setScrollTop(scroller.scrollTop)}
-      onContextMenu={(e) => props.onMenu(e, null)}
-      onMouseDown={(e) => {
-        const bg = e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("grid-rows");
-        if (!bg || e.button !== 0) return;
-        if (!e.ctrlKey && !e.shiftKey) props.tab.setSelection(new Set<number>());
-        e.preventDefault();
-        marquee.start(e);
-      }}
-    >
-      <div class="grid-rows" style={{ height: `${rows() * CELL_H}px` }}>
-        <Show when={marquee.box()}>
-          {(b) => <div class="marquee" style={{ left: `${b().left - PAD}px`, top: `${b().top - PAD}px`, width: `${b().width}px`, height: `${b().height}px` }} />}
-        </Show>
-        <Index each={positions()}>
-          {(pos) => {
-            const entry = () => view()[pos()];
-            const l = () => props.tab.listing();
-            return (
-              <Show when={entry() !== undefined}>
-                <div
-                  class="grid-cell"
-                  classList={{ selected: props.tab.selection().has(entry()), focused: props.active && props.tab.focus() === pos() }}
-                  style={{ transform: `translate(${(pos() % columns()) * CELL}px, ${Math.floor(pos() / columns()) * CELL_H}px)` }}
-                  onMouseDown={(e) => {
-                    if (e.button === 1) {
-                      e.preventDefault();
-                      return A.openEntryInTab(props.tab, entry(), !e.shiftKey);
-                    }
-                    if (e.button === 0) click(e, pos());
-                  }}
-                  onDblClick={(e) => (e.ctrlKey ? A.openEntryInTab(props.tab, entry(), !e.shiftKey) : A.openEntry(props.tab, entry()))}
-                  onContextMenu={(e) => {
-                    e.stopPropagation();
-                    props.onMenu(e, pos());
-                  }}
-                  data-tooltip={l().names[entry()]}
-                  data-tooltip-truncated={l().names[entry()].includes("\\") ? undefined : ".grid-name"}
-                >
-                  <GridThumb path={props.tab.pathOf(entry())} modified={l().mtimes[entry()]} virtual={!!props.tab.archive()} name={l().names[entry()]} dir={isDir(l(), entry())} online={cloudState(l().attrs[entry()]) === "online"} />
-                  <span class="grid-name">{settings.showExtensions() ? baseOf(l().names[entry()]) : withoutExtension(baseOf(l().names[entry()]), isDir(l(), entry()))}</span>
-                </div>
-              </Show>
-            );
-          }}
-        </Index>
-      </div>
     </div>
   );
 }
@@ -264,7 +177,7 @@ function MillerRows(props: {
   let el!: HTMLDivElement;
   const [top, setTop] = createSignal(0);
   const [height, setHeight] = createSignal(600);
-  const rowPx = () => DENSITIES[settings.density()];
+  const rowPx = () => settings.rowPx();
   const first = () => Math.max(0, Math.floor(top() / rowPx()) - MILLER_OVERSCAN);
   const slots = createMemo(() => {
     const n = Math.max(0, Math.min(props.count - first(), Math.ceil(height() / rowPx()) + MILLER_OVERSCAN * 2));

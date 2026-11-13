@@ -3,7 +3,10 @@
 import * as A from "./actions";
 import { listHandles } from "./components/Pane";
 import { quitApp } from "./lib/ipc";
+import { rules } from "./state/rules";
 import { moveFocus, selectAll, selectAt, type NavKey } from "./lib/selection";
+import { customActions } from "./state/customActions";
+import { guide } from "./state/guide";
 import { ops } from "./state/ops";
 import { settings } from "./state/settings";
 import { shelf } from "./state/shelf";
@@ -13,7 +16,7 @@ import { ui } from "./state/ui";
 import { inspector } from "./state/inspector";
 import { workspace } from "./state/workspace";
 
-export type Category = "File" | "Navigate" | "Tabs" | "Panes" | "View" | "Search" | "App" | "List";
+export type Category = "File" | "Navigate" | "Tabs" | "Panes" | "View" | "Search" | "App" | "List" | "Actions";
 
 export interface Command {
   readonly id: string;
@@ -104,7 +107,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "file.selectAll", title: "Select all", category: "File", keys: ["ctrl+a"], run: withTab((t) => t.setSelection(selectAll(t.view()))) },
   { id: "file.invertSelection", title: "Invert selection", category: "File", keys: ["ctrl+shift+i"], run: withTab(A.invertSelected) },
   { id: "file.selectSameType", title: "Select items of the same type", category: "File", run: withTab(A.selectSameType) },
-  { id: "file.selectPattern", title: "Select by pattern…", category: "File", keys: ["ctrl+shift+a"], run: withTab(A.selectByPattern) },
+  { id: "file.selectPattern", title: "Select matching…", category: "File", keys: ["ctrl+shift+a"], run: withTab(A.selectByPattern) },
 
   // Search and view
   { id: "view.filter", title: "Filter this folder", category: "Search", keys: ["ctrl+f"], vimKeys: ["/"], global: true, run: () => ui.requestFocus(workspace.activePaneId(), "filter") },
@@ -142,7 +145,19 @@ export const COMMANDS: readonly Command[] = [
     } },
   { id: "view.terminal", title: "Show or hide the terminal", category: "View", keys: ["ctrl+`"], global: true, run: settings.toggleTerminal },
   { id: "view.details", title: "Details view", category: "View", keys: ["ctrl+1"], run: withTab((t) => t.setViewMode("details")) },
-  { id: "view.grid", title: "Thumbnail grid view", category: "View", keys: ["ctrl+2"], run: withTab((t) => t.setViewMode("grid")) },
+  { id: "view.grid", title: "Icon view (keeps the current icon size)", category: "View", keys: ["ctrl+2"], run: withTab((t) => t.setViewMode("grid")) },
+  { id: "view.auto", title: "Auto view (choose from what the folder holds)", category: "View", keys: ["ctrl+shift+0"], run: withTab((t) => { settings.set({ autoView: true }); t.useAutoView(); }) },
+  { id: "view.xl", title: "Extra large icons", category: "View", keys: ["ctrl+shift+1"], run: withTab((t) => t.setView("grid", 256)) },
+  { id: "view.large", title: "Large icons", category: "View", keys: ["ctrl+shift+2"], run: withTab((t) => t.setView("grid", 160)) },
+  { id: "view.medium", title: "Medium icons", category: "View", keys: ["ctrl+shift+3"], run: withTab((t) => t.setView("grid", 96)) },
+  { id: "view.small", title: "Small icons", category: "View", keys: ["ctrl+shift+4"], run: withTab((t) => t.setView("grid", 56)) },
+  { id: "view.list", title: "List view", category: "View", keys: ["ctrl+shift+5"], run: withTab((t) => t.setViewMode("list")) },
+  { id: "view.detailsAlt", title: "Details view (Explorer shortcut)", category: "View", keys: ["ctrl+shift+6"], run: withTab((t) => t.setViewMode("details")) },
+  { id: "view.tiles", title: "Tiles view", category: "View", keys: ["ctrl+shift+7"], run: withTab((t) => t.setViewMode("tiles")) },
+  { id: "view.bento", title: "Bento view (pictures that fill each row)", category: "View", keys: ["ctrl+shift+9"], run: withTab((t) => t.setViewMode("bento")) },
+  { id: "view.content", title: "Content view", category: "View", keys: ["ctrl+shift+8"], run: withTab((t) => t.setViewMode("content")) },
+  { id: "view.zoomIn", title: "Zoom the view in (larger icons)", category: "View", run: withTab((t) => A.zoomView(t, 1)) },
+  { id: "view.zoomOut", title: "Zoom the view out (smaller icons, then List)", category: "View", run: withTab((t) => A.zoomView(t, -1)) },
   { id: "view.columns", title: "Column (Miller) view", category: "View", keys: ["ctrl+3"], run: withTab((t) => t.setViewMode("columns")) },
   { id: "shelf.toggle", title: "Show or hide the shelf", category: "File", run: () => shelf.setOpen(!shelf.open()) },
   { id: "shelf.add", title: "Add selection to the shelf", category: "File", keys: ["ctrl+shift+d"], run: withTab(A.addToShelf) },
@@ -195,6 +210,7 @@ export const COMMANDS: readonly Command[] = [
 
   // App
   { id: "palette.commands", title: "Show all commands", category: "App", keys: ["ctrl+shift+p"], global: true, run: () => ui.openPalette("commands") },
+  { id: "app.guide", title: "Open the Octopolis guide", category: "App", keys: ["f1"], global: true, run: () => void guide.open() },
   { id: "app.shortcuts", title: "Keyboard shortcuts", category: "App", keys: ["ctrl+k ctrl+s"], global: true, run: () => ui.openSettings("shortcuts") },
   { id: "app.vim", title: "Toggle Vim keys (h j k l, gg, G, yy, dd, p, v)", category: "App", run: () => {
       settings.toggleVim();
@@ -215,9 +231,30 @@ export const COMMANDS: readonly Command[] = [
       if (ui.visual()) return ui.setVisual(false);
       if (t.search()) return t.exitSearch();
       if (t.filter()) return t.setFilter("");
+      if (ops.clip()) return ops.clearClip();
       t.setSelection(new Set<number>());
     }) },
 ];
 
 const byId = new Map(COMMANDS.map((c) => [c.id, c]));
-export const commandById = (id: string) => byId.get(id);
+/** One palette entry (and shortcut slot) for each enabled custom action. */
+export const actionCommands = (): Command[] =>
+  customActions.list().filter((a) => a.enabled).map((a) => ({
+    id: `action:${a.id}`,
+    title: a.name,
+    category: "Actions" as const,
+    run: () => {
+      const t = workspace.activeTab();
+      if (t) A.runActionById(t, a.id);
+    },
+  }));
+/** One palette entry for each enabled folder rule: it opens that rule's preview, so nothing runs unseen. */
+export const ruleCommands = (): Command[] =>
+  rules.list().filter((r) => r.enabled).map((r) => ({
+    id: `rule:${r.id}`,
+    title: `Run folder rule: ${r.name}…`,
+    category: "Actions" as const,
+    run: () => rules.requestRun(r.id),
+  }));
+export const allCommands = (): readonly Command[] => [...COMMANDS, ...actionCommands(), ...ruleCommands()];
+export const commandById = (id: string) => byId.get(id) ?? (id.startsWith("action:") ? actionCommands().find((c) => c.id === id) : id.startsWith("rule:") ? ruleCommands().find((c) => c.id === id) : undefined);

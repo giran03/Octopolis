@@ -1,0 +1,66 @@
+<section id="power-tools" class="sec" data-title="Power tools" data-group="Power">
+  <span class="kicker">Power</span>
+  <h2>Power tools</h2>
+  <p class="lead">The things you reach for when a folder gets out of hand.</p>
+
+  <h3 id="duplicates">Duplicate finder</h3>
+  <p>Groups identical files under a folder, biggest waste first, and moves the extra copies to the Recycle Bin. It can also look for <b>similar pictures</b>.</p>
+
+  <h3 id="free-space">Disk space, sizes and clean-up</h3>
+  <ul>
+    <li><b>Folder sizes</b> (<span class="keys" data-keys="ctrl+shift+s"></span>) add a size to every folder with proportional bars; a setting can calculate them automatically. The <b>treemap</b> (<span class="keys" data-keys="ctrl+shift+m"></span>) draws the folder as blocks.</li>
+    <li><b>Clean up a folder</b> finds rebuildable folders, largest files, old large files, temporary files and empty folders, ready to move to the Recycle Bin.</li>
+    <li><b>Free up space</b> (the broom button in the sidebar footer) finds caches, Windows Update leftovers, browser caches, developer caches and the Recycle Bin that are safe to delete, and <b>previews everything before anything is removed</b>.</li>
+  </ul>
+
+  <h3 id="folder-rules">Folder rules</h3>
+  <p>Tidy a folder by moving old files elsewhere or sending them to the Recycle Bin. Open it from the <b>rule button</b> in the sidebar footer, the command palette (<code>Folder rules</code>) or Settings › Advanced. Every run is <b>previewed first</b>: you see the files and where each would go, and nothing changes until you confirm. A run can be undone with <span class="keys" data-keys="ctrl+z"></span>.</p>
+  <ul>
+    <li><b>Presets</b> give you a start: old installers, old PDFs to Documents, unfinished downloads, big and old files, pictures sorted by month and more. Adding one fills in your real Downloads, Documents and Pictures folders, and you can change anything afterwards.</li>
+    <li><b>Conditions:</b> file names (<code>*.pdf; invoice*</code>), how long since the file last changed, an optional newest age, a minimum size in MB, and whether to include subfolders.</li>
+    <li><b>Sorted destinations:</b> a move destination can use <code>{year}</code>, <code>{month}</code> and <code>{ext}</code>, so <code>Pictures\{year}\{month}</code> files each picture by the date it last changed.</li>
+    <li>Switch rules on and off in the list, <b>Run all enabled</b> to preview them together, or run one from the command palette (<code>Run folder rule</code>). Each rule remembers when it last ran.</li>
+    <li>Filter, duplicate, <b>import and export</b> rules as JSON, the same way as custom actions.</li>
+  </ul>
+
+  <h3 id="who-locks">What is locking this?</h3>
+  <p><span class="keys" data-keys="ctrl+shift+l"></span> shows which programs hold a file open, with the option to end them.</p>
+
+  <h3 id="custom-actions">Custom actions</h3>
+  <p>Your own commands in the right-click menu, in the command palette and on a shortcut. Open the manager with the button in the sidebar footer or <i>Edit custom actions…</i> in the palette.</p>
+  <ul>
+    <li><b>Presets.</b> 20 ready-made ones to start from, using only Windows' own <code>cmd</code> and <code>PowerShell</code>.</li>
+    <li><b>Each action</b> can run in cmd or PowerShell, as administrator, with a confirmation, <b>once per item</b>, in a chosen folder, and can reload the folder when finished.</li>
+    <li><b>Limits.</b> Restrict it to files or folders, to file types, to name patterns and to item counts.</li>
+    <li><b>Manage.</b> Search, switch each on or off, duplicate, import and export as JSON. Every action gets a palette entry and a shortcut slot in Settings › Shortcuts.</li>
+  </ul>
+  <p>Placeholders are replaced when the action runs, and the editor shows a live preview of the finished command and warns when its program is missing:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Placeholder</th><th>Becomes</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><code>{path}</code> <code>{paths}</code></td><td>The selected path, or all selected paths</td></tr>
+      <tr><td class="k"><code>{dir}</code> <code>{parent}</code></td><td>The current folder; the folder above the item</td></tr>
+      <tr><td class="k"><code>{name}</code> <code>{stem}</code> <code>{ext}</code></td><td>The file name, without extension, and the extension</td></tr>
+      <tr><td class="k"><code>{list}</code> <code>{pslist}</code></td><td>A list of the selected paths for cmd, or for PowerShell</td></tr>
+      <tr><td class="k"><code>{pickfolder}</code></td><td>A folder you choose when the action runs</td></tr>
+      <tr><td class="k"><code>{prompt:Label}</code></td><td>Text you are asked for when the action runs</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="terminal">Built-in terminal</h3>
+  <p><span class="keys" data-keys="ctrl+`"></span> opens a terminal that follows the folder you browse, and moves the file list when you <code>cd</code>. Choose the shell in Settings. Folders can also open in your editor or an external terminal from the right-click menu.</p>
+
+  <h3 id="git">Git</h3>
+  <ul>
+    <li><b>Status badges</b> on files and folders, the <b>current branch</b> in the status bar, and an optional <b>last commit</b> column.</li>
+    <li>Right-click to <b>stage, unstage and discard</b> changes; the inspector shows a file's changes.</li>
+    <li>A command hides files Git ignores. In <a href="#auto-view">Auto view</a>, repositories always use Details.</li>
+  </ul>
+
+  <h3 id="more-tools">And more</h3>
+  <ul>
+    <li><b>Image tools</b>: resize or convert pictures.</li>
+    <li><b>Properties</b>, <b>Open with</b>, <b>Run as administrator</b> and <b>Copy as</b> (see <a href="#file-operations">File operations</a>).</li>
+    <li><b>Shelf</b> and <b>Tags</b> (see <a href="#organize">Organize</a>).</li>
+  </ul>
+</section>

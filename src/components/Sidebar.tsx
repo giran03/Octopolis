@@ -1,11 +1,12 @@
 // Places: pinned folders, quick access, recent folders and drives, in collapsible sections.
+import { DENSITIES } from "../lib/themes";
 import { createEffect, createResource, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { formatSize } from "../lib/format";
 import { disconnectNetworkDrive, errorText, knownFolders, listDrives, mapNetworkDrive, wslDistros, type Drive } from "../lib/ipc";
 import { baseName, parentPath, samePath } from "../lib/paths";
 import { DEFAULT_SIDEBAR_WIDTH, isPinned, type Pin } from "../lib/sidebar";
 import * as A from "../actions";
-import { DRAG_MIME, dragState, PIN_MIME } from "../state/drag";
+import { carriesPaths, dragRaw, dragState, onDragReset, PIN_MIME } from "../state/drag";
 import { history } from "../state/history";
 import { settings } from "../state/settings";
 import { shelf } from "../state/shelf";
@@ -13,10 +14,11 @@ import { type SectionId, sidebar } from "../state/sidebar";
 import { ui, type MenuEntry } from "../state/ui";
 import { folderIcons } from "../state/folderIcons";
 import { workspace } from "../state/workspace";
+import { folderMenuEntries } from "./FileList";
 import { savedSearches } from "../state/savedSearches";
 import { tags } from "../state/tags";
 import { SearchItems, TagItems } from "./Tags";
-import { FileGlyph, Glyph, IconMop, IconChevron, IconDiskSpace, IconDrive, IconPin, IconPlus, IconTrash, PathIcon, PlaceGlyph } from "./Icons";
+import { FileGlyph, Glyph, MaterialIcon, IconMop, IconBolt, IconChevron, IconDiskSpace, IconDrive, IconPin, IconPlus, IconTrash, PathIcon, PlaceGlyph } from "./Icons";
 
 /** Opens a place; Ctrl+click opens it in a new tab (Ctrl+Shift in front). */
 const go = (path: string, e?: MouseEvent) => (e?.ctrlKey ? A.openInNewTab(path, !e.shiftKey) : void workspace.activeTab()?.navigate(path));
@@ -69,7 +71,7 @@ const pinDnd = {
   section: {
     onDragEnter(e: DragEvent) {
       const types = e.dataTransfer?.types ?? [];
-      if (types.includes(PIN_MIME) || (types.includes(DRAG_MIME) && dragState.allDirs)) e.preventDefault();
+      if (types.includes(PIN_MIME) || (carriesPaths(e.dataTransfer) && dragState.allDirs)) e.preventDefault();
     },
     onDragOver(e: DragEvent) {
       const types = e.dataTransfer?.types ?? [];
@@ -78,7 +80,7 @@ const pinDnd = {
         e.preventDefault();
         e.dataTransfer!.dropEffect = "move";
         setPinDrop({ kind: "at", index: pinIndexAt(section, e.clientY) });
-      } else if (types.includes(DRAG_MIME)) {
+      } else if (carriesPaths(e.dataTransfer)) {
         const item = (e.target as HTMLElement).closest<HTMLElement>(".side-item[data-pin]");
         if (item) {
           const r = item.getBoundingClientRect();
@@ -127,12 +129,18 @@ export function Sidebar() {
     // Drives come and go (USB sticks); recheck when the window regains focus.
     const onFocus = () => void refetch();
     const dragStart = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes(DRAG_MIME) && !dragState.archive) setBinDrag(true);
+      if (carriesPaths(e.dataTransfer) && !dragState.archive) setBinDrag(true);
     };
     const dragEnd = () => {
       setBinDrag(false);
       setBinHot(false);
     };
+    // A drag that ends without a dragend reaching the window (its source vanished) still clears these.
+    onCleanup(onDragReset(() => {
+      setBinDrag(false);
+      setBinHot(false);
+      setPinDrop(null);
+    }));
     window.addEventListener("focus", onFocus);
     window.addEventListener("dragstart", dragStart);
     window.addEventListener("dragend", dragEnd);
@@ -253,14 +261,14 @@ export function Sidebar() {
           data-shelf-toggle
           classList={{ on: shelf.open(), calling: shelf.dragging(), hot: shelf.dragging() && shelf.hot() }}
           onDragOver={(e) => {
-            if (!shelf.dragging() || !e.dataTransfer?.types.includes(DRAG_MIME)) return;
+            if (!shelf.dragging() || !carriesPaths(e.dataTransfer)) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
             shelf.setHot(true);
           }}
           onDragLeave={() => shelf.setHot(false)}
           onDrop={(e) => {
-            const raw = e.dataTransfer?.getData(DRAG_MIME);
+            const raw = dragRaw(e.dataTransfer);
             if (!raw) return;
             e.preventDefault();
             shelf.add(JSON.parse(raw) as string[]);
@@ -279,7 +287,7 @@ export function Sidebar() {
           class="icon-btn foot-btn bin-btn"
           classList={{ on: ui.recycleBinOpen(), calling: binDrag(), hot: binDrag() && binHot() }}
           onDragOver={(e) => {
-            if (!binDrag() || !e.dataTransfer?.types.includes(DRAG_MIME)) return;
+            if (!binDrag() || !carriesPaths(e.dataTransfer)) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
             setBinHot(true);
@@ -288,7 +296,7 @@ export function Sidebar() {
           onDrop={(e) => {
             setBinHot(false);
             setBinDrag(false);
-            const raw = e.dataTransfer?.getData(DRAG_MIME);
+            const raw = dragRaw(e.dataTransfer);
             if (!raw || dragState.archive) return;
             e.preventDefault();
             A.recyclePaths(JSON.parse(raw) as string[]);
@@ -320,7 +328,26 @@ export function Sidebar() {
         >
           <IconMop size={17} />
         </button>
-        <span class="spacer" />
+        <button
+          class="icon-btn foot-btn"
+          classList={{ on: ui.actionsEditorOpen() }}
+          aria-label="Custom actions"
+          aria-pressed={ui.actionsEditorOpen()}
+          data-tooltip="Custom actions · your own commands, presets and shortcuts"
+          onClick={() => ui.setActionsEditorOpen(true)}
+        >
+          <IconBolt size={17} />
+        </button>
+        <button
+          class="icon-btn foot-btn"
+          classList={{ on: ui.rulesOpen() }}
+          aria-label="Folder rules"
+          aria-pressed={ui.rulesOpen()}
+          data-tooltip="Folder rules · tidy old files, always previewed first"
+          onClick={() => ui.setRulesOpen(true)}
+        >
+          <MaterialIcon name="rule" size={17} />
+        </button>
         <button class="icon-btn foot-btn" aria-label="Settings" data-tooltip="Settings · Ctrl+," onClick={() => ui.openSettings()}>
           <Glyph code="E713" size={17} />
         </button>
@@ -330,12 +357,29 @@ export function Sidebar() {
   );
 }
 
+/** Right-click a sidebar section header to hide/show optional sections. */
+function sectionMenu(e: MouseEvent, id: SectionId, title: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  const hideCurrent: MenuEntry[] =
+    id === "pinned"
+      ? [{ label: `Hide ${title}`, run: () => settings.set({ showPinned: false }) }, "separator"]
+      : id === "recent"
+        ? [{ label: `Hide ${title}`, run: () => settings.set({ showRecent: false }) }, "separator"]
+        : [];
+  ui.openMenu(e.clientX, e.clientY, [
+    ...hideCurrent,
+    { label: `${settings.showPinned() ? "✓ " : "    "}Pinned section`, run: () => settings.set({ showPinned: !settings.showPinned() }) },
+    { label: `${settings.showRecent() ? "✓ " : "    "}Recent section`, run: () => settings.set({ showRecent: !settings.showRecent() }) },
+  ]);
+}
+
 /** A collapsible group. The body animates its height and is inert while collapsed. */
 function Section(props: { id: SectionId; title: string; code: string; count?: number; action?: JSX.Element; drag?: JSX.HTMLAttributes<HTMLElement>; children: JSX.Element }) {
   const open = () => !sidebar.isCollapsed(props.id);
   return (
     <section class="side-section" classList={{ collapsed: !open() }} {...props.drag}>
-      <div class="side-head">
+      <div class="side-head" onContextMenu={(e) => sectionMenu(e, props.id, props.title)}>
         <button class="side-toggle" aria-expanded={open()} aria-controls={`side-${props.id}`} onClick={() => sidebar.toggleSection(props.id)}>
           <span class="side-chevron">
             <IconChevron size={12} />
@@ -357,8 +401,15 @@ function Section(props: { id: SectionId; title: string; code: string; count?: nu
 
 function placeMenu(e: MouseEvent, path: string, extra: MenuEntry[] = []) {
   e.preventDefault();
+  const { clientX: x, clientY: y } = e;
+  const basic = () => basicPlaceMenu(x, y, path, extra);
+  // A folder gets everything the file list offers; drives and unreadable places keep the short menu.
+  void folderMenuEntries(path, x, y, () => go(path)).then((full) => (full ? ui.openMenu(x, y, [...full, ...extra]) : basic()), basic);
+}
+
+function basicPlaceMenu(x: number, y: number, path: string, extra: MenuEntry[]) {
   const pinned = isPinned(sidebar.pins(), path);
-  ui.openMenu(e.clientX, e.clientY, [
+  ui.openMenu(x, y, [
     { label: "Open", run: () => go(path) },
     { label: "Open in new tab", run: () => A.openInNewTab(path, false) },
     "separator",
@@ -366,8 +417,8 @@ function placeMenu(e: MouseEvent, path: string, extra: MenuEntry[] = []) {
     ...(/^[a-z]:[\\/]?$/i.test(path)
       ? []
       : [
-          { label: "Change icon…", run: () => ui.setEmojiTarget(path) },
-          ...(folderIcons.get(path) ? [{ label: "Reset icon", run: () => folderIcons.set(path, null) }] : []),
+          { label: "Change icon…", shortcut: folderIcons.describe(path), run: () => ui.setEmojiTarget(path) },
+          ...(folderIcons.has(path) ? [{ label: "Reset icon", shortcut: "Default", run: () => folderIcons.set(path, null) }] : []),
         ]),
     ...extra,
   ]);
@@ -376,6 +427,10 @@ function placeMenu(e: MouseEvent, path: string, extra: MenuEntry[] = []) {
 function PinnedItem(props: { pin: Pin; current: string }) {
   const pin = () => props.pin;
   const [dragging, setDragging] = createSignal(false);
+  onCleanup(onDragReset(() => {
+    draggedPin = null;
+    setDragging(false);
+  }));
   const dropInto = () => {
     const d = pinDrop();
     return d?.kind === "into" && samePath(d.path, pin().path);
@@ -425,7 +480,7 @@ function PinnedItem(props: { pin: Pin; current: string }) {
 }
 
 /** Whether the sidebar hides secondary details (parent path, usage bar, free space). */
-const sidebarDetailsHidden = () => settings.density() === "compact" || settings.sidebarNamesOnly();
+const sidebarDetailsHidden = () => settings.rowPx() <= DENSITIES.compact || settings.sidebarNamesOnly();
 
 function RecentSection(props: { current: string }) {
   const recent = () => sidebar.recent(8);
@@ -510,7 +565,7 @@ function DriveItem(props: { drive: Drive; current: string; home: string; onEject
           {d().label || (d().kind === "removable" ? "USB drive" : "Local Disk")} ({letter()})
         </span>
         <Show when={d().totalBytes > 0}>
-          <span class="usage" classList={{ full: used() > 0.9 }}>
+          <span class="usage" classList={{ warn: used() > 0.85 && used() <= 0.95, full: used() > 0.95 }}>
             <span style={{ width: `${used() * 100}%` }} />
           </span>
           <span class="drive-free">{formatSize(d().freeBytes)} free of {formatSize(d().totalBytes)}</span>

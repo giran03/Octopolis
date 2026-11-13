@@ -1,6 +1,6 @@
 // Panes (each with tabs) arranged in a split layout tree.
 import { batch, createRoot, createSignal, type Accessor } from "solid-js";
-import { leaf, leaves, removePane, resizeSplit, splitPane, type Direction, type LayoutNode } from "../lib/layout";
+import { edgeSplit, leaf, leaves, removePane, resizeSplit, splitPane, type Direction, type Edge, type LayoutNode } from "../lib/layout";
 import type { Preset, PresetPane } from "../lib/session";
 import { isDir, indexOfName } from "../lib/listing";
 import { baseName, parentPath, samePath } from "../lib/paths";
@@ -55,11 +55,11 @@ export const workspace = createRoot(() => {
     },
   });
 
-  function newPane(path: string): string {
+  function newPane(path: string, select?: readonly string[]): string {
     const id = `pane-${nextPaneId++}`;
     const tab = createTab(path);
     setPanes((m) => new Map(m).set(id, { tabs: [tab], activeTabId: tab.id }));
-    tab.navigate(path);
+    tab.navigate(path, select);
     return id;
   }
 
@@ -129,6 +129,59 @@ export const workspace = createRoot(() => {
       setLayout((t) => splitPane(t, paneId, id, dir));
       setActivePaneId(id);
     });
+  }
+
+  /** What a drop on a pane's edge puts into the new pane. */
+  type SplitContent =
+    | { readonly kind: "tab"; readonly fromPane: string; readonly tabId: string }
+    | { readonly kind: "folders"; readonly paths: readonly string[] }
+    | { readonly kind: "files"; readonly folder: string; readonly names: readonly string[] };
+
+  /** Beyond this many panes each one gets too small to use. */
+  const MAX_PANES = 6;
+  const canSplit = () => leaves(layout()).length < MAX_PANES;
+
+  /**
+   * Splits `target` along one of its edges and fills the new pane: a dragged tab moves into it, dragged folders
+   * open in it, and dragged files open their folder with those files selected. Returns false when nothing was done.
+   */
+  function splitAt(target: string, edge: Edge, content: SplitContent): boolean {
+    if (!state(target) || !canSplit()) return false;
+    const { dir, before } = edgeSplit(edge);
+    if (content.kind === "tab") {
+      const from = state(content.fromPane);
+      const tab = from?.tabs.find((t) => t.id === content.tabId);
+      // A pane's only tab can't leave it to make a split of itself.
+      if (!from || !tab || (content.fromPane === target && from.tabs.length < 2)) return false;
+      const id = `pane-${nextPaneId++}`;
+      batch(() => {
+        const rest = from.tabs.filter((t) => t.id !== content.tabId);
+        let next = layout();
+        if (rest.length) {
+          updatePane(content.fromPane, (p) => ({ tabs: rest, activeTabId: p.activeTabId === tab.id ? rest[0].id : p.activeTabId }));
+        } else {
+          next = removePane(next, content.fromPane) ?? next;
+          setPanes((m) => {
+            const copy = new Map(m);
+            copy.delete(content.fromPane);
+            return copy;
+          });
+        }
+        setPanes((m) => new Map(m).set(id, { tabs: [tab], activeTabId: tab.id }));
+        setLayout(splitPane(next, target, id, dir, before));
+        setActivePaneId(id);
+      });
+      return true;
+    }
+    const first = content.kind === "folders" ? content.paths[0] : content.folder;
+    if (!first) return false;
+    const id = newPane(first, content.kind === "files" ? content.names : undefined);
+    if (content.kind === "folders") for (const extra of content.paths.slice(1)) newTab(id, extra, true);
+    batch(() => {
+      setLayout((t) => splitPane(t, target, id, dir, before));
+      setActivePaneId(id);
+    });
+    return true;
   }
 
   function closePane(paneId: string) {
@@ -248,6 +301,15 @@ export const workspace = createRoot(() => {
     for (const t of p.tabs) if (t.id !== tabId && !metaOf(t.id).pinned) closeTab(paneId, t.id);
   }
 
+  /** Closes every unpinned tab to the right of `tabId` in the pane. */
+  function closeToRight(paneId: string, tabId: string) {
+    const p = state(paneId);
+    if (!p) return;
+    const at = p.tabs.findIndex((t) => t.id === tabId);
+    if (at < 0) return;
+    for (const t of p.tabs.slice(at + 1)) if (!metaOf(t.id).pinned) closeTab(paneId, t.id);
+  }
+
   /** Replaces every pane with the preset's. False (and nothing changes) if the preset is unusable. */
   function restoreLayout(preset: Preset): boolean {
     const old = allTabs();
@@ -289,6 +351,8 @@ export const workspace = createRoot(() => {
     paneModel,
     allTabs,
     paneCount: () => leaves(layout()).length,
+    /** Ids of the panes, in layout order. */
+    paneIds: () => leaves(layout()),
     init,
     newTab,
     closeTab,
@@ -300,12 +364,15 @@ export const workspace = createRoot(() => {
     togglePin,
     setTabColor: (tabId: string, color: string | null) => setMeta(tabId, { color }),
     closeOthers,
+    closeToRight,
     selectTab,
     cycleTab,
     split,
     closePane,
     cyclePane,
     swapPanes,
+    splitAt,
+    canSplit,
     synced,
     toggleSynced: () => setSynced((s) => !s),
     focusPane: setActivePaneId,

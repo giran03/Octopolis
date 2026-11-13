@@ -170,6 +170,8 @@ export const previewFile = (path: string) => invoke<Preview>("preview_file", { p
 export const openInEditor = (path: string, editor: string | null) => invoke<void>("open_in_editor", { path, editor });
 /** Opens a terminal window (Windows Terminal when installed) in a folder. */
 export const openTerminalHere = (path: string) => invoke<void>("open_terminal_here", { path });
+/** For each path, whether it is a folder. */
+export const pathsAreDirs = (paths: string[]) => invoke<boolean[]>("paths_are_dirs", { paths });
 /** The Windows folder picker; null when cancelled. */
 export const pickFolderDialog = (initial?: string) => invoke<string | null>("pick_folder_dialog", { initial: initial ?? null });
 export interface DetectedEditor {
@@ -202,6 +204,13 @@ export const notify = (title: string, body: string) => invoke<void>("notify", { 
 export const installFont = (path: string) => invoke<void>("install_font", { path });
 export const readBytes = (path: string) => invoke<ArrayBuffer>("read_bytes", { path });
 export const thumbnail = (path: string, size: number, iconOnly: boolean) => invoke<ArrayBuffer>("thumbnail", { path, size, iconOnly });
+/** Starts a Windows drag of real files out of the window; resolves true when they were dropped somewhere. */
+export const startNativeDrag = (paths: string[]) => invoke<boolean>("start_native_drag", { paths });
+/** Saves a dropped file's bytes in a folder under an unused name; returns the new path. */
+export const saveDroppedFile = (dir: string, name: string, data: Uint8Array) =>
+  invoke<string>("save_dropped_file", data, { headers: { "x-dir": encodeURIComponent(dir), "x-name": encodeURIComponent(name) } });
+/** Downloads a picture, video or audio file from a link into a folder; returns the new path. */
+export const downloadDroppedUrl = (url: string, dir: string) => invoke<string>("download_dropped_url", { url, dir });
 export const extractAndOpen = (path: string) => invoke<void>("extract_and_open", { path });
 
 export interface Locker {
@@ -274,7 +283,13 @@ export const createLinks = (kind: LinkKind, targets: string[], dest: string) => 
 export const listTemplates = () => invoke<string[]>("list_templates");
 /** The templates folder's path (created if missing). */
 export const templatesFolder = () => invoke<string>("templates_folder");
+import type { RuleQuery } from "./rules";
 import type { LatestRelease } from "./update";
+
+/** Writes the offline guide next to its theme file (`theme` is the JSON from guideTheme) and opens it in the default browser. */
+export const openGuide = (theme: string) => invoke<void>("open_guide", { theme });
+/** Refreshes the theme the guide follows. */
+export const updateGuideTheme = (theme: string) => invoke<void>("update_guide_theme", { theme });
 
 /** Opens an https: or mailto: link in the user's default app. */
 export const openExternal = (url: string) => invoke<void>("open_path", { path: url });
@@ -309,6 +324,10 @@ export const setCacheDir = (path: string | null) => invoke<CacheInfo>("set_cache
 export const clearCache = (scope: "sizes" | "updates" | "search" | "all") => invoke<CacheInfo>("clear_cache", { scope });
 
 export const openPath = (path: string) => invoke<void>("open_path", { path });
+/** Opens many files with their own apps in one call; resolves with a message for each that failed. */
+export const openPaths = (paths: string[]) => invoke<string[]>("open_paths", { paths });
+/** Opens many files in one launch of the chosen editor (or each file type's editor). */
+export const openInEditorMany = (paths: string[], editor: string | null) => invoke<void>("open_in_editor_many", { paths, editor });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
 /** Windows' "Open with" dialog for a file. */
 export const openWith = (path: string) => invoke<void>("open_with", { path });
@@ -346,6 +365,18 @@ export interface KnownFolder {
   path: string;
 }
 export const knownFolders = () => invoke<KnownFolder[]>("known_folders");
+export interface IconCatalog {
+  /** System icon files and how many icons each holds. */
+  resources: { dll: string; count: number }[];
+  /** Apps in the Start menu, by name and Windows' id for them. */
+  apps: { id: string; label: string }[];
+}
+/** Every other icon Windows offers to borrow: the Start menu's apps and the icons inside its icon files. Takes a moment. */
+export const systemIconCatalog = () => invoke<IconCatalog>("system_icon_catalog");
+/** Whether a folder is a repository, or inside one (a .git, .hg or .svn in it or above it). */
+export const insideRepository = (path: string) => invoke<boolean>("inside_repository", { path });
+/** The folders whose Windows icons other folders can borrow, limited to the ones this PC has. */
+export const folderIconStyles = () => invoke<KnownFolder[]>("folder_icon_styles");
 
 export interface FileAttributes {
   readOnly: boolean;
@@ -368,6 +399,8 @@ export interface FileProperties {
 }
 export type ChecksumKind = "blake3" | "sha256" | "md5";
 export const fileProperties = (path: string) => invoke<FileProperties>("file_properties", { path });
+/** Properties of many paths in one call; null for one that can't be read. */
+export const filePropertiesMany = (paths: string[]) => invoke<(FileProperties | null)[]>("file_properties_many", { paths });
 export const setFileAttributes = (paths: string[], attributes: FileAttributes) => invoke<void>("set_file_attributes", { paths, attributes });
 export const setFileTimes = (path: string, times: { createdMs?: number; modifiedMs?: number; accessedMs?: number }) =>
   invoke<void>("set_file_times", { path, createdMs: times.createdMs ?? null, modifiedMs: times.modifiedMs ?? null, accessedMs: times.accessedMs ?? null });
@@ -421,7 +454,12 @@ export type SummonKey = "off" | "ctrlE" | "ctrlAltE";
 /** Sets the system-wide shortcut that brings Octopolis forward. */
 export const setSummon = (mode: SummonKey) => invoke<void>("set_summon", { mode });
 /** Runs a filled-in custom action command from `cwd`, hidden or in a new console. */
-export const runCustomAction = (command: string, cwd: string, console: boolean) => invoke<void>("run_custom_action", { command, cwd, console });
+/** Runs a custom action's finished command line. Hidden runs that are waited for return the exit code. */
+export const runCustomAction = (command: string, cwd: string, console: boolean, shell: string, elevate: boolean, wait: boolean) => invoke<number | null>("run_custom_action", { command, cwd, console, shell, elevate, wait });
+/** Saves paths, one per line, in a temp file and returns its path. */
+export const writeTempList = (paths: string[]) => invoke<string>("write_temp_list", { paths });
+/** Whether a program is on the PATH or exists at that path. */
+export const programExists = (name: string) => invoke<boolean>("program_exists", { name });
 /** Windows' Map Network Drive dialog. */
 export const mapNetworkDrive = () => invoke<void>("map_network_drive");
 export const disconnectNetworkDrive = (root: string, force = false) => invoke<void>("disconnect_network_drive", { root, force });
@@ -494,8 +532,8 @@ export interface RuleMatch {
   size: number;
   modifiedMs: number;
 }
-/** Files a folder rule matches right now (name patterns separated by `;`, older than N days). Nothing is changed. */
-export const ruleMatches = (folder: string, patterns: string, olderThanDays: number, recursive: boolean) => invoke<RuleMatch[]>("rule_matches", { folder, patterns, olderThanDays, recursive });
+/** Files a folder rule matches right now (see `ruleQuery`). Nothing is changed. */
+export const ruleMatches = (folder: string, query: RuleQuery) => invoke<RuleMatch[]>("rule_matches", { folder, query });
 
 /** Pictures under `root` that look alike (distance 0-16: lower is stricter). `onProgress(read, found)` counts pictures. */
 export function findSimilarImages(id: string, root: string, maxDistance: number, onProgress: (read: number, total: number) => void): Promise<DupeGroup[]> {
@@ -510,3 +548,29 @@ export interface ConvertImagesResult {
 /** Writes resized and/or converted copies of pictures (originals are untouched). `format` is "same", "jpeg", "png" or "webp". */
 export const convertImages = (paths: string[], maxEdge: number | null, format: string, quality: number, outDir: string | null) =>
   invoke<ConvertImagesResult>("convert_images", { paths, maxEdge, format, quality, outDir });
+
+export interface GoogleFontFace {
+  file: string;
+  weight: string;
+  style: string;
+  subset: string;
+  range: string;
+  size: number;
+}
+export interface GoogleFontInfo {
+  faces: GoogleFontFace[];
+  /** True when the files are saved on this PC (they load offline). */
+  saved: boolean;
+  bytes: number;
+}
+export interface SavedFont {
+  family: string;
+  bytes: number;
+}
+/** The files of a Google font: the saved copy, this session's download, or (when `allowDownload`) a fresh download. */
+export const googleFontFaces = (family: string, allowDownload: boolean) => invoke<GoogleFontInfo>("google_font_faces", { family, allowDownload });
+export const googleFontBytes = (family: string, file: string) => invoke<ArrayBuffer>("google_font_bytes", { family, file });
+export const googleFontSave = (family: string) => invoke<GoogleFontInfo>("google_font_save", { family });
+export const googleFontRemove = (family: string) => invoke<void>("google_font_remove", { family });
+export const googleFontsSaved = () => invoke<SavedFont[]>("google_fonts_saved");
+export const openFontsFolder = () => invoke<void>("open_fonts_folder");

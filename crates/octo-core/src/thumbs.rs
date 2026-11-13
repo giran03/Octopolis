@@ -4,9 +4,37 @@ use std::path::Path;
 
 use crate::error::Result;
 
-/// A PNG of the item's thumbnail, or just its icon when `icon_only` is set.
+/// The system files whose icons can be borrowed, in the order they are offered.
+pub const ICON_DLLS: &[&str] = &["imageres", "shell32", "ddores", "moricons", "pifmgr"];
+const MAX_ICON_INDEX: u32 = 20_000;
+
+/// "res:imageres,123" → the file (one of [`ICON_DLLS`]) and the icon's number in it.
+pub fn parse_resource_ref(text: &str) -> Option<(&'static str, u32)> {
+    let rest = text.strip_prefix("res:")?;
+    let (name, index) = rest.split_once(',')?;
+    let dll = ICON_DLLS.iter().find(|d| d.eq_ignore_ascii_case(name))?;
+    let index: u32 = index.parse().ok()?;
+    (index < MAX_ICON_INDEX).then_some((dll, index))
+}
+
+/// A PNG of the item's thumbnail, or just its icon when `icon_only` is set. A path of the form
+/// "res:imageres,123" is icon number 123 inside that system file.
 pub fn thumbnail_png(path: &Path, size: u32, icon_only: bool) -> Result<Vec<u8>> {
+    if let Some((dll, index)) = path.to_str().and_then(parse_resource_ref) {
+        return imp::resource_icon_png(dll, index, size);
+    }
     imp::thumbnail_png(path, size, icon_only)
+}
+
+/// Whether text is the id of an app in the Start menu ("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", a path
+/// to a program...): printable text without anything that could steer the shell somewhere else.
+pub fn is_app_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 260 && !id.contains("..") && !id.contains('/') && id.chars().all(|c| c.is_alphanumeric() || " ._!{}-\\:()&'+,".contains(c))
+}
+
+/// How many icons a system file holds (0 when it is missing).
+pub fn resource_icon_count(dll: &str) -> u32 {
+    ICON_DLLS.iter().find(|d| d.eq_ignore_ascii_case(dll)).map_or(0, |d| imp::resource_icon_count(d))
 }
 
 /// Encodes straight-alpha RGBA pixels as PNG.
@@ -70,10 +98,10 @@ mod imp {
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
     use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
     use windows::Win32::UI::Shell::{
-        IShellItemImageFactory, SHCreateItemFromParsingName, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW, SIIGBF_BIGGERSIZEOK,
+        ExtractIconExW, IShellItemImageFactory, SHCreateItemFromParsingName, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW, SIIGBF_BIGGERSIZEOK,
         SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO, PrivateExtractIconsW};
     use windows::core::PCWSTR;
 
     use super::bgra_to_png;
@@ -125,6 +153,41 @@ mod imp {
             return Ok(png);
         }
         result
+    }
+
+    /// The full path of a system file, as the fixed-size wide string the icon functions take.
+    fn system_file(dll: &str) -> [u16; 260] {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        let path = std::path::PathBuf::from(root).join("System32").join(format!("{dll}.dll"));
+        let mut out = [0u16; 260];
+        for (slot, unit) in out.iter_mut().zip(path.as_os_str().encode_wide().take(259)) {
+            *slot = unit;
+        }
+        out
+    }
+
+    pub fn resource_icon_count(dll: &str) -> u32 {
+        let file = system_file(dll);
+        // SAFETY: `file` is NUL-terminated; an index of -1 only asks how many icons there are.
+        let n = unsafe { ExtractIconExW(PCWSTR(file.as_ptr()), -1, None, None, 0) };
+        if n == u32::MAX { 0 } else { n }
+    }
+
+    /// Icon number `index` of a system file, drawn at `size` pixels.
+    pub fn resource_icon_png(dll: &str, index: u32, size: u32) -> Result<Vec<u8>> {
+        let file = system_file(dll);
+        let side = size.clamp(16, 256) as i32;
+        let mut icons = [HICON::default()];
+        let name = std::path::PathBuf::from(format!("{dll}.dll"));
+        // SAFETY: `file` is NUL-terminated and `icons` holds the one icon asked for.
+        let got = unsafe { PrivateExtractIconsW(&file, index as i32, side, side, Some(&mut icons), None, 0) };
+        if got == 0 || got == u32::MAX || icons[0].is_invalid() {
+            return Err(Error::io(&name, std::io::Error::other("that icon does not exist")));
+        }
+        let png = hicon_to_png(icons[0]);
+        // SAFETY: the icon was created for us by PrivateExtractIconsW.
+        let _ = unsafe { DestroyIcon(icons[0]) };
+        png.ok_or_else(|| Error::io(&name, std::io::Error::other("could not read the icon")))
     }
 
     /// The icon `SHGetFileInfo` reports for a path, as PNG. `None` when it cannot be read.
@@ -269,6 +332,12 @@ mod imp {
     pub fn thumbnail_png(path: &Path, _: u32, _: bool) -> Result<Vec<u8>> {
         Err(Error::NotFound(path.into()))
     }
+    pub fn resource_icon_png(dll: &str, _: u32, _: u32) -> Result<Vec<u8>> {
+        Err(Error::NotFound(dll.into()))
+    }
+    pub fn resource_icon_count(_: &str) -> u32 {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -276,6 +345,35 @@ mod tests {
     use super::*;
 
     const PNG_MAGIC: &[u8] = &[0x89, b'P', b'N', b'G'];
+
+    #[test]
+    fn parses_resource_references() {
+        assert_eq!(parse_resource_ref("res:imageres,123"), Some(("imageres", 123)));
+        assert_eq!(parse_resource_ref("res:SHELL32,0"), Some(("shell32", 0)));
+        for bad in ["res:evil,1", "res:imageres,-1", "res:imageres,x", "res:imageres,20000", "res:..\\imageres,1", "C:\\a.png", "res:imageres", "res:C:\\x.dll,1"] {
+            assert_eq!(parse_resource_ref(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn checks_app_ids() {
+        for ok in ["Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\notepad.exe", "Microsoft.Windows.Explorer", "C:\\Program Files\\App\\a.lnk"] {
+            assert!(is_app_id(ok), "{ok}");
+        }
+        for bad in ["", "..\\x", "a/b", "a|b", "a<b", "a\"b"] {
+            assert!(!is_app_id(bad), "{bad}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn draws_icons_from_the_system_files() {
+        assert!(resource_icon_count("imageres") > 100);
+        assert_eq!(resource_icon_count("not-allowed"), 0);
+        let png = thumbnail_png(std::path::Path::new("res:imageres,3"), 64, true).unwrap();
+        assert!(png.starts_with(PNG_MAGIC));
+        assert!(thumbnail_png(std::path::Path::new("res:imageres,19999"), 64, true).is_err());
+    }
 
     #[test]
     fn encodes_bgra_as_png() {

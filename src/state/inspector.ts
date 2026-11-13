@@ -15,6 +15,8 @@ export const inspector = createRoot(() => {
   const saved = loadJson<Partial<InspectorState>>(KEY, {});
   /** Full-window preview (Shift+Space). */
   const [quickLook, setQuickLook] = createSignal(false);
+  /** Keep the inspector locked onto the current file while browsing other folders. */
+  const [pinned, setPinned] = createSignal(false);
   const [width, setWidthSignal] = createSignal(clampInspectorWidth(saved.width ?? DEFAULTS.width));
 
   const setWidth = (next: number, maxAvailable?: number) => {
@@ -29,5 +31,8 @@ export const inspector = createRoot(() => {
     quickLook,
     setQuickLook,
     toggleQuickLook: () => setQuickLook((v) => !v),
+    pinned,
+    setPinned,
+    togglePinned: () => setPinned((v) => !v),
   };
 });

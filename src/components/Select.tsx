@@ -7,6 +7,10 @@ import { Glyph, IconDown } from "./Icons";
 export interface Option<T extends string | number> {
   readonly value: T;
   readonly label: string;
+  /** A CSS background for a small round preview shown before the label (a color or gradient). */
+  readonly swatch?: string;
+  /** A heading shown above this option when it differs from the previous option's. */
+  readonly group?: string;
 }
 
 let nextListId = 1;
@@ -28,6 +32,7 @@ export function Select<T extends string | number>(props: {
 
   const selectedIndex = () => Math.max(0, props.options.findIndex((o) => o.value === props.value));
   const selectedLabel = () => props.options.find((o) => o.value === props.value)?.label ?? "";
+  const selectedSwatch = () => props.options.find((o) => o.value === props.value)?.swatch;
 
   const measure = () => {
     const r = triggerEl.getBoundingClientRect();
@@ -163,6 +168,7 @@ export function Select<T extends string | number>(props: {
           }
         }}
       >
+        <Show when={selectedSwatch()}>{(c) => <span class="select-dot" style={{ background: c() }} />}</Show>
         <span class="select-value">{selectedLabel()}</span>
         <IconDown size={11} class="select-caret" />
       </button>
@@ -186,7 +192,10 @@ export function Select<T extends string | number>(props: {
             <For each={props.options}>
               {(o, i) => {
                 const selected = () => o.value === props.value;
+                const heading = () => (o.group && o.group !== props.options[i() - 1]?.group ? o.group : null);
                 return (
+                  <>
+                  <Show when={heading()}>{(h) => <div class="select-group" role="presentation">{h()}</div>}</Show>
                   <button
                     type="button"
                     data-idx={i()}
@@ -197,11 +206,13 @@ export function Select<T extends string | number>(props: {
                     onMouseEnter={() => setHot(i())}
                     onClick={() => pick(o)}
                   >
+                    <Show when={o.swatch}>{(c) => <span class="select-dot" style={{ background: c() }} />}</Show>
                     <span class="select-opt-label">{o.label}</span>
                     <Show when={selected()}>
                       <Glyph code="E73E" size={11} class="select-check" />
                     </Show>
                   </button>
+                  </>
                 );
               }}
             </For>

@@ -1,10 +1,10 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
 import type { ArchiveFormat, GitChange, LinkKind } from "./lib/ipc";
 import { GROUP_KEYS, GROUP_TITLES } from "./lib/group";
-import { openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, openInEditor, runCustomAction, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, templatesFolder } from "./lib/ipc";
+import { openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, openInEditor, openInEditorMany, openPaths, runCustomAction, writeTempList, saveDroppedFile, downloadDroppedUrl, startNativeDrag, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, templatesFolder } from "./lib/ipc";
 import { baseOf, isDir } from "./lib/listing";
 import { baseName, joinPath, parentPath, samePath, sameVolume } from "./lib/paths";
-import { extensionOf, invertSelection, namePattern, selectWhere } from "./lib/selection";
+import { entryPattern, extensionOf, invertSelection, selectEntriesWhere } from "./lib/selection";
 import { formatPaths, PATH_FORMATS, type PathFormat } from "./lib/pathFormats";
 import { parsePreset } from "./lib/session";
 import { countStatuses, isDifference } from "./lib/compare";
@@ -12,8 +12,11 @@ import { leaves } from "./lib/layout";
 import { compare } from "./state/compare";
 import { savedSearches } from "./state/savedSearches";
 import { customActions } from "./state/customActions";
-import { actionApplies, expandCommand, type CustomAction } from "./lib/customActions";
+import { stepView } from "./lib/viewZoom";
+import { MAX_DROP_FILE_BYTES, mediaCandidates, nameForDropped, type DropSnapshot } from "./lib/webdrop";
+import { actionApplies, expandCommand, placeholderNeeds, type CustomAction, type Item } from "./lib/customActions";
 import { ops } from "./state/ops";
+import { dragState, endNativeDrag } from "./state/drag";
 import { loadJson, saveJson, settings } from "./state/settings";
 import { shelf } from "./state/shelf";
 import type { TabModel } from "./state/tab";
@@ -32,13 +35,12 @@ function blockedInArchive(tab: TabModel): boolean {
 /** The focused entry when nothing is selected, otherwise the selection. */
 /** Opens files in the editor from Settings, or each file type's editor. */
 export async function editFiles(paths: readonly string[]) {
-  for (const path of paths.slice(0, 20)) {
-    try {
-      await openInEditor(path, settings.editorPath() || null);
-    } catch (e) {
-      ui.toast(`Couldn't open an editor: ${errorText(e)}`);
-      return;
-    }
+  const shown = paths.slice(0, MAX_OPEN_AT_ONCE);
+  if (paths.length > shown.length) ui.toast(`Opening the first ${shown.length} of ${paths.length} files`);
+  try {
+    await openInEditorMany(shown, settings.editorPath() || null);
+  } catch (e) {
+    ui.toast(`Couldn't open an editor: ${errorText(e)}`);
   }
 }
 
@@ -96,6 +98,42 @@ export function openFromPath(tab: TabModel, path: string) {
   opener(tab, path)(path).catch((e) => ui.toast(errorText(e)));
 }
 
+/** Moves the view along the zoom slider by `steps` notches (positive: larger icons). */
+export function zoomView(tab: TabModel, steps: number) {
+  for (let i = 0; i < Math.abs(steps); i++) {
+    const next = stepView(tab.viewMode(), tab.iconSize(), steps > 0 ? 1 : -1);
+    if (!next) return;
+    tab.setView(next.mode, next.mode === "grid" || next.mode === "bento" ? next.size : undefined);
+  }
+}
+
+/** Most files opened by one command, so a stray Enter on a big selection can't start hundreds of programs. */
+const MAX_OPEN_AT_ONCE = 50;
+const CONFIRM_OPEN_OVER = 10;
+
+/** Opens several files together: text files in the chosen editor in one launch, the rest with their own apps in one call. */
+async function openFiles(tab: TabModel, entries: readonly number[]) {
+  const l = tab.listing();
+  const items = entries.filter((e) => e < l.count).map((e) => ({ path: tab.pathOf(e), name: l.names[e] }));
+  if (tab.archive()) {
+    // Archive items are extracted one at a time.
+    for (const it of items) await extractAndOpen(it.path).catch((e) => ui.toast(`Couldn't open ${it.name}: ${errorText(e)}`));
+    return;
+  }
+  const editor = settings.editorPath();
+  const inEditor = editor && settings.editorOpensText() ? items.filter((i) => TEXT_FILE.test(i.name)) : [];
+  const rest = items.filter((i) => !inEditor.includes(i));
+  try {
+    if (inEditor.length) await openInEditorMany(inEditor.map((i) => i.path), editor);
+    if (rest.length) {
+      const failed = await openPaths(rest.map((i) => i.path));
+      if (failed.length) ui.toast(`Couldn't open ${failed.length === 1 ? failed[0] : `${failed.length} files (${failed[0]})`}`);
+    }
+  } catch (e) {
+    ui.toast(`Couldn't open these: ${errorText(e)}`);
+  }
+}
+
 export function openSelection(tab: TabModel) {
   const sel = [...tab.selection()];
   const entries = sel.length ? sel : [tab.view()[tab.focus()]].filter((e) => e !== undefined);
@@ -103,7 +141,16 @@ export function openSelection(tab: TabModel) {
   const dir = entries.find((e) => isDir(l, e));
   // Several folders can't all be shown in one tab: open the first one.
   if (dir !== undefined) return openEntry(tab, dir);
-  entries.forEach((e) => openEntry(tab, e));
+  if (entries.length <= 1) return entries.forEach((e) => openEntry(tab, e));
+  const picked = entries.slice(0, MAX_OPEN_AT_ONCE);
+  const run = () => void openFiles(tab, picked);
+  if (picked.length <= CONFIRM_OPEN_OVER) return run();
+  ui.ask({
+    title: `Open ${picked.length} files?`,
+    body: entries.length > picked.length ? `Only the first ${picked.length} of the ${entries.length} selected files will open.` : "Each one opens in its own app.",
+    confirmLabel: "Open",
+    onConfirm: run,
+  });
 }
 
 export function copySelection(tab: TabModel, mode: "copy" | "cut") {
@@ -351,11 +398,13 @@ export function selectSameType(tab: TabModel) {
 
 export function selectByPattern(tab: TabModel) {
   ui.askText({
-    title: "Select by pattern",
-    label: "Pattern, e.g. *.jpg; IMG_* or re:^\\d+",
+    title: "Select matching",
+    label: "Pattern, e.g. *.png; IMG_*, type:dir, type:file, or re:^\\d+",
     onSubmit: (text) => {
       try {
-        const picked = selectWhere(tab.view(), tab.listing().names, namePattern(text));
+        const l = tab.listing();
+        const match = entryPattern(text);
+        const picked = selectEntriesWhere(tab.view(), (e) => match(l.names[e], isDir(l, e)));
         tab.setSelection(picked);
         ui.toast(picked.size ? `Selected ${picked.size} item${picked.size === 1 ? "" : "s"}` : "Nothing matches");
       } catch (e) {
@@ -386,18 +435,179 @@ export async function setCloudKeep(tab: TabModel, keep: boolean) {
   }
 }
 
+/**
+ * Drags real files out of the app with Windows' own drag and drop, so they can be dropped in Explorer, a browser,
+ * a chat or mail app. Dropping back on the app still works: the same paths are used.
+ */
+export async function dragOut(paths: readonly string[]) {
+  dragState.native = true;
+  try {
+    const dropped = await startNativeDrag([...paths]);
+    // A drop in Explorer may have moved the items away.
+    if (dropped) for (const t of workspace.allTabs()) void t.refresh();
+  } catch (e) {
+    ui.toast(`Couldn't drag these out: ${errorText(e)}`);
+  } finally {
+    endNativeDrag();
+    // The drag's own loop swallowed the button release; tell the page it happened so nothing stays pressed.
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  }
+}
+
+/** A browser's shortcut stub for a dragged link (a tiny .download or .url file). */
+const isLinkStub = (f: File) => f.size < 8192 && /\.(download|url|webloc)$/i.test(f.name);
+
+/** The http(s) links written inside shortcut stubs. */
+async function linksInStubs(stubs: readonly File[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const f of stubs) {
+    const m = (await f.text()).match(/https?:\/\/[^\s"<>]+/i);
+    if (m) out.push(m[0]);
+  }
+  return [...new Set(out)];
+}
+
+/** A link cut down to its host and file name for a message. */
+function shortLink(u: string): string {
+  try {
+    const x = new URL(u);
+    const last = decodeURIComponent(x.pathname.split("/").filter(Boolean).pop() ?? "");
+    return last ? `${last} (${x.host})` : x.host;
+  } catch {
+    return u;
+  }
+}
+
+/**
+ * Saves what was dropped from outside the app into `dest`: dropped files are copied in, and a file (picture, video, PDF...)
+ * dragged from a web page is downloaded (or decoded, for inline data). Nothing is ever overwritten.
+ */
+export async function dropExternal(tab: TabModel, dest: string, snap: DropSnapshot) {
+  const jobs: { label: string; run: () => Promise<string> }[] = [];
+  // Dragging a link makes the browser hand over a tiny shortcut "file"; the link inside is what should be saved.
+  const stubs = snap.files.filter(isLinkStub);
+  const realFiles = snap.files.filter((f) => !isLinkStub(f));
+  let links = mediaCandidates(snap);
+  if (!realFiles.length && !links.length && stubs.length) links = await linksInStubs(stubs);
+  if (realFiles.length) {
+    for (const f of realFiles) {
+      jobs.push({
+        label: f.name || "file",
+        run: async () => {
+          if (f.size > MAX_DROP_FILE_BYTES) throw new Error("too big to copy by dropping (over 512 MB)");
+          return saveDroppedFile(dest, nameForDropped(f.name, f.type), new Uint8Array(await f.arrayBuffer()));
+        },
+      });
+    }
+  } else {
+    for (const url of links) {
+      jobs.push({
+        label: url.startsWith("data:") ? "picture" : url,
+        run: async () => {
+          if (!url.startsWith("data:")) return downloadDroppedUrl(url, dest);
+          const blob = await (await fetch(url)).blob();
+          return saveDroppedFile(dest, nameForDropped("image", blob.type), new Uint8Array(await blob.arrayBuffer()));
+        },
+      });
+    }
+  }
+  if (jobs.length === 0) return ui.toast("There is nothing in that drop that can be saved");
+  if (!realFiles.length) ui.toast(jobs.length === 1 ? "Downloading…" : `Downloading ${jobs.length} files…`);
+  const saved: string[] = [];
+  const errors: string[] = [];
+  for (const job of jobs) {
+    try {
+      saved.push(await job.run());
+    } catch (e) {
+      const what = job.label.startsWith("http") ? shortLink(job.label) : job.label;
+      errors.push(`${what}: ${errorText(e)}`);
+    }
+  }
+  const where = baseName(dest) || dest;
+  if (saved.length) {
+    for (const t of workspace.allTabs()) {
+      if (!samePath(t.path(), dest)) continue;
+      if (t === tab) void t.navigate(dest, saved.map(baseName));
+      else void t.refresh();
+    }
+  }
+  const failed = errors.length ? ` ${errors.length} rejected - ${errors[0]}` : "";
+  if (saved.length === 0) return ui.toast(errors.length === 1 ? `Rejected ${errors[0]}` : errors.length ? `Rejected ${errors.length} files - ${errors[0]}` : "Nothing was saved");
+  ui.toast(`${saved.length === 1 ? `Saved ${baseName(saved[0])}` : `Saved ${saved.length} files`}${samePath(tab.path(), dest) ? "" : ` in ${where}`}.${failed}`);
+}
+
+/** The selected items (or the focused one), as entry numbers of the listing. */
+function targetEntries(tab: TabModel): number[] {
+  const picked = [...tab.selection()];
+  if (picked.length) return picked;
+  const entry = tab.view()[tab.focus()];
+  return entry === undefined ? [] : [entry];
+}
+
+/** The selected items with whether each is a folder, for matching custom actions. */
+export function targetItems(tab: TabModel): Item[] {
+  const l = tab.listing();
+  return targetEntries(tab).map((e) => ({ name: baseName(tab.pathOf(e)), isDir: isDir(l, e) }));
+}
+
+const askValue = (title: string, label: string) => new Promise<string>((resolve) => ui.askText({ title, label, submitLabel: "Run", onSubmit: resolve }));
+
+const confirmRun = (action: CustomAction, commands: readonly string[]) =>
+  new Promise<boolean>((resolve) => {
+    const shown = commands.slice(0, 3).join("\n");
+    ui.ask({
+      title: `Run "${action.name}"?`,
+      body: `${action.elevate ? "This asks for administrator rights.\n\n" : ""}${shown}${commands.length > 3 ? `\n…and ${commands.length - 3} more` : ""}`,
+      confirmLabel: "Run",
+      danger: action.elevate,
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+
 /** Runs one of the user's custom actions on the selection. */
-export function runAction(tab: TabModel, action: CustomAction) {
+export async function runAction(tab: TabModel, action: CustomAction) {
   if (tab.archive()) return ui.toast("Copy the items out of the archive first");
-  const paths = targets(tab);
-  const command = expandCommand(action.command, paths, tab.path());
-  runCustomAction(command, tab.path(), action.mode === "console").catch((e) => ui.toast(`Couldn't run "${action.name}": ${errorText(e)}`));
+  const paths = targetEntries(tab).map((e) => tab.pathOf(e));
+  const dir = tab.path();
+  try {
+    const needs = placeholderNeeds(action.command);
+    const prompts: Record<string, string> = {};
+    for (const label of needs.prompts) prompts[label] = await askValue(action.name, label);
+    let folder: string | undefined;
+    if (needs.pickFolder) {
+      const picked = await pickFolderDialog(dir);
+      if (!picked) return;
+      folder = picked;
+    }
+    const list = needs.list ? await writeTempList(paths) : undefined;
+    const groups = action.each && paths.length > 1 ? paths.map((p) => [p]) : [paths];
+    const commands = groups.map((g) => expandCommand(action.command, g, dir, { shell: action.shell, prompts, folder, list }));
+    if (action.confirm && !(await confirmRun(action, commands))) return;
+    const console = action.mode === "console";
+    const cwd = action.workDir.trim() || dir;
+    let code: number | null = null;
+    for (const command of commands) code = (await runCustomAction(command, cwd, console, action.shell, action.elevate, !console)) ?? code;
+    if (!console) ui.toast(code ? `"${action.name}" finished with code ${code}` : `"${action.name}" finished`);
+    if (action.refresh) for (const t of workspace.allTabs()) if (samePath(t.path(), dir) || samePath(t.path(), cwd)) void t.refresh();
+  } catch (e) {
+    ui.toast(`Couldn't run "${action.name}": ${errorText(e)}`);
+  }
+}
+
+/** Runs an action by id (from the palette or a shortcut), if it fits what is selected. */
+export function runActionById(tab: TabModel, id: string) {
+  const action = customActions.list().find((a) => a.id === id);
+  if (!action) return;
+  if (!actionApplies(action, targetItems(tab))) return void ui.toast(`"${action.name}" doesn't apply to this selection`);
+  void runAction(tab, action);
 }
 
 /** Custom actions that fit the selection, for menus. */
 export function actionsFor(tab: TabModel): readonly CustomAction[] {
-  const names = targets(tab).map(baseName);
-  return customActions.list().filter((a) => actionApplies(a, names));
+  const items = targetItems(tab);
+  return customActions.list().filter((a) => actionApplies(a, items));
 }
 
 /** The Actions… menu: actions that fit the selection, then a way to edit them. */
@@ -596,7 +806,7 @@ export function openCopyAsMenu(tab: TabModel, x = window.innerWidth / 2 - 110, y
   ui.openMenu(x, y, PATH_FORMATS.map((f) => ({ label: f.label, shortcut: f.example, run: () => void copyPathsAs(tab, f.id) })));
 }
 
-async function writeClipboardText(text: string) {
+export async function writeClipboardText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -650,6 +860,9 @@ export function reveal(tab: TabModel, explicit?: string) {
 }
 
 /** Drag-and-drop transfer: move within a drive, copy across drives, Ctrl forces copy. */
+/** Whether every item already sits directly in `dest`. */
+export const alreadyIn = (sources: readonly string[], dest: string) => sources.length > 0 && sources.every((s) => samePath(parentPath(s) ?? "", dest));
+
 export function dropPaths(sources: readonly string[], dest: string, forceCopy: boolean, archive?: string | null, destReadOnly?: boolean) {
   if (sources.length === 0) return;
   if (destReadOnly) return ui.toast("Archives are read-only here.");
@@ -657,6 +870,8 @@ export function dropPaths(sources: readonly string[], dest: string, forceCopy: b
     const items = sources.map((s) => s.slice(archive.length + 1));
     return void ops.run({ kind: "extract", archive, items, dest }, `Extracting ${sources.length} item${sources.length === 1 ? "" : "s"}`);
   }
+  // Dropping items back into the folder they already are in would only move them onto themselves: do nothing.
+  if (!forceCopy && alreadyIn(sources, dest)) return;
   const move = !forceCopy && sources.every((s) => sameVolume(s, dest));
   void ops.transfer(move ? "move" : "copy", sources, dest);
 }

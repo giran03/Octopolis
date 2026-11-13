@@ -7,7 +7,7 @@ import { formatAspectRatio } from "../lib/imageView";
 import { contentTerm } from "../lib/launch";
 import { summarize } from "../lib/summary";
 import type { TabModel } from "../state/tab";
-import { contentMatches, errorText, gitDiff, previewFile, readBytes, thumbnail, type Preview } from "../lib/ipc";
+import { contentMatches, errorText, fileChecksum, gitDiff, previewFile, readBytes, thumbnail, type Preview } from "../lib/ipc";
 import { baseOf, cloudState, isDir } from "../lib/listing";
 import { boundsOf, parseObj, parseStl, type Mesh } from "../lib/model3d";
 import { DEFAULT_INSPECTOR_WIDTH } from "../lib/inspector";
@@ -15,8 +15,9 @@ import { extensionOf } from "../lib/paths";
 import { inspector } from "../state/inspector";
 import { settings } from "../state/settings";
 import { loadCachedThumb, peekThumb, thumbCacheKey, VIDEO_THUMB_PX } from "../state/thumbs";
+import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
-import { IconClose, IconInfo } from "./Icons";
+import { IconClose, IconCopy, IconInfo, MaterialIcon } from "./Icons";
 import { FontView, TableView, TextDetails } from "./Previews";
 import { ImageViewer } from "./ImageViewer";
 import { Segmented, type Option } from "./settings/controls";
@@ -76,6 +77,7 @@ export function Inspector() {
   const [videoLoading, setVideoLoading] = createSignal(false);
   const [videoMeta, setVideoMeta] = createSignal<{ w: number; h: number; duration: number }>({ w: 0, h: 0, duration: 0 });
   const [showMediaInfo, setShowMediaInfo] = createSignal(false);
+  const [hashing, setHashing] = createSignal(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let token = 0;
 
@@ -138,15 +140,53 @@ export function Inspector() {
 
   // Follow the list focus, debounced so holding an arrow key stays smooth.
   createEffect(() => {
+    const pinned = inspector.pinned();
     const t = currentTarget();
+    if (pinned && target()) return;
     clearTimeout(timer);
     timer = setTimeout(() => {
+      if (inspector.pinned() && target()) return;
       if (t?.path !== target()?.path) {
         setTarget(t);
         if (t) void load(t);
       } else setTarget(t);
     }, DEBOUNCE_MS);
   });
+
+  const copyPath = async () => {
+    const t = target();
+    if (!t) return;
+    await A.writeClipboardText(t.path);
+    ui.toast("Copied path");
+  };
+
+  const copyContent = async () => {
+    const text = preview()?.text;
+    if (text == null) return;
+    await A.writeClipboardText(text);
+    ui.toast(preview()?.truncated ? "Copied previewed content" : "Copied content");
+  };
+
+  const copyHash = async () => {
+    const t = target();
+    if (!t || t.dir || t.online || hashing()) return;
+    setHashing(true);
+    try {
+      const digest = await fileChecksum(t.path, "sha256");
+      await A.writeClipboardText(digest);
+      ui.toast("Copied SHA-256");
+    } catch (e) {
+      ui.toast(`Couldn't hash file: ${errorText(e)}`);
+    } finally {
+      setHashing(false);
+    }
+  };
+
+  const openDefaultEditor = () => {
+    const t = target();
+    if (!t || t.dir) return;
+    void A.editFiles([t.path]);
+  };
 
   // Quick look: the preview fills the window; arrows step through files, Delete recycles.
   const quick = inspector.quickLook;
@@ -231,12 +271,57 @@ export function Inspector() {
       <Show when={!quick()}>
         <InspectorResizer />
       </Show>
-      <Show when={quick() || !multiTab()} fallback={<MultiInspector tab={multiTab()!} />}>
-      <aside class="inspector" aria-label={quick() ? "Quick look" : "Inspector"} aria-modal={quick() || undefined} role={quick() ? "dialog" : undefined}>
+      <Show when={quick() || (inspector.pinned() && target()) || !multiTab()} fallback={<MultiInspector tab={multiTab()!} />}>
+      <aside class="inspector" classList={{ pinned: inspector.pinned() && !!target() }} aria-label={quick() ? "Quick look" : "Inspector"} aria-modal={quick() || undefined} role={quick() ? "dialog" : undefined}>
       <header class="inspector-head">
         <span class="inspector-title" title={target()?.path}>{target()?.name ?? "Nothing selected"}</span>
         <Show when={quick()}>
           <span class="muted small quicklook-hint">← → next file · Delete recycles · Esc closes</span>
+        </Show>
+        <Show when={target()}>
+          {(t) => (
+            <div class="inspector-actions">
+              <button
+                class="icon-btn inspector-pin"
+                classList={{ on: inspector.pinned() }}
+                aria-pressed={inspector.pinned()}
+                aria-label={inspector.pinned() ? "Unpin inspector" : "Pin inspector"}
+                data-tooltip={inspector.pinned() ? "Unpin inspector (follow selection)" : "Pin inspector to current file"}
+                onClick={() => inspector.togglePinned()}
+              >
+                <MaterialIcon name="push_pin" fill={inspector.pinned()} size={13} />
+              </button>
+              <button class="icon-btn" aria-label="Copy path" data-tooltip="Copy file path" onClick={() => void copyPath()}>
+                <IconCopy size={13} />
+              </button>
+              <Show when={!t().dir && preview()?.text != null}>
+                <button
+                  class="icon-btn"
+                  aria-label="Copy content"
+                  data-tooltip={preview()?.truncated ? "Copy previewed content" : "Copy file content"}
+                  onClick={() => void copyContent()}
+                >
+                  <MaterialIcon name="draft" size={13} />
+                </button>
+              </Show>
+              <Show when={!t().dir && preview()?.text == null && !t().online}>
+                <button
+                  class="icon-btn"
+                  disabled={hashing()}
+                  aria-label="Copy SHA-256 hash"
+                  data-tooltip={hashing() ? "Computing SHA-256…" : "Copy SHA-256 hash"}
+                  onClick={() => void copyHash()}
+                >
+                  <MaterialIcon name="bolt" size={13} />
+                </button>
+              </Show>
+              <Show when={!t().dir}>
+                <button class="icon-btn" aria-label="Open in default editor" data-tooltip="Open in default editor" onClick={openDefaultEditor}>
+                  <MaterialIcon name="edit" size={13} />
+                </button>
+              </Show>
+            </div>
+          )}
         </Show>
         <button class="icon-btn" aria-label={quick() ? "Close quick look" : "Close inspector"} title={quick() ? "Close (Esc)" : "Close (Ctrl+I)"} onClick={close}>
           <IconClose size={13} />

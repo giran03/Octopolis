@@ -32,6 +32,7 @@ vi.mock("../lib/ipc", () => ({
   folderSizes: async () => undefined,
   gitStatus: async (path: string) => gitRepos.get(path) ?? null,
   gitLastCommits: async (path: string) => repoCommits.get(path) ?? {},
+  insideRepository: async () => false,
   unwatchDir: async () => undefined,
   watchDir: async () => undefined,
   listDir: async (path: string, onBatch: (b: ArrayBuffer) => boolean) => {

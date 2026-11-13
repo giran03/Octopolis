@@ -1,0 +1,35 @@
+<section id="drag-drop" class="sec" data-title="Drag and drop" data-group="Manage">
+  <span class="kicker">Manage</span>
+  <h2>Drag and drop</h2>
+  <p class="lead">Move files by dragging them, into Octopolis, out of it, or in from a web page.</p>
+
+  <div class="demo" data-reveal>
+    <div class="dnd" aria-hidden="true">
+      <div class="src"><b>Downloads</b><div class="muted small">report.pdf</div></div>
+      <div class="dest"><b>Projects</b><div class="muted small">Move here</div></div>
+      <div class="file">report.pdf</div>
+      <div class="toast">Moved 1 item</div>
+    </div>
+    <p class="demo-cap">Drop on a folder row, a breadcrumb or a tab.</p>
+  </div>
+
+  <h3 id="dnd-inside">Inside Octopolis</h3>
+  <ul>
+    <li>Dragging within a drive <b>moves</b>; across drives it <b>copies</b>. Hold <kbd>Ctrl</kbd> to force a copy.</li>
+    <li><b>Dropping items back into the folder they already live in does nothing</b>, instead of moving them onto themselves.</li>
+    <li><b>Hold a dragged item over a folder, a breadcrumb or a tab</b> and it opens, so you can drag into a folder several levels down in one go.</li>
+    <li>Drag to the <b>edge of a pane</b> to open a new pane there (see <a href="#panes">Split panes</a>), or onto the <b>Shelf</b>, which opens by itself while you drag.</li>
+    <li>If an item with the same name already exists, a prompt asks: <i>Replace</i>, <i>Replace if newer</i>, <i>Skip</i> or <i>Keep both</i>, for all items or one by one.</li>
+  </ul>
+
+  <h3 id="dnd-out">Dragging out of Octopolis</h3>
+  <p>Dragging selected files out works like Explorer: drop them in a File Explorer folder, a browser upload box, or a chat or mail app and they arrive as real files (moved or copied as the target decides). Drag as many as you like at once; anything Windows can't reference is skipped instead of failing the whole drag.</p>
+
+  <h3 id="dnd-web">Dragging in from the web</h3>
+  <p>Drag a <b>picture, video or audio file from a web page</b> onto a folder (or a folder row) to save it there. Files dragged in from other programs are copied in too.</p>
+  <div class="callout"><div><b class="t">Safe by design</b>
+    <p>Names are made safe, nothing is ever overwritten, links to your PC or a private network are refused, and a drop nobody handles no longer makes the window open the dropped item.</p></div></div>
+
+  <h3 id="clipboard">Clipboard</h3>
+  <p>Files you copy or cut in Octopolis paste in File Explorer and other apps, and files copied there paste in Octopolis. You can also paste a screenshot or copied text as a new file, and <b>Paste as link</b> makes symbolic links, junctions or hard links.</p>
+</section>

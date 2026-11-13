@@ -1,27 +1,30 @@
 // One pane: tab strip, navigation toolbar with path bar and filter, file list.
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import type { Edge } from "../lib/layout";
 import * as A from "../actions";
 import { errorText, listDir, resolvePath } from "../lib/ipc";
 import { fuzzyRank } from "../lib/fuzzy";
 import { createBuilder, decodeBatch, isDir, snapshot } from "../lib/listing";
-import { baseName, breadcrumbs, joinPath, samePath, sameVolume } from "../lib/paths";
-import { cancelSpring, DRAG_MIME, dragState, springLoad } from "../state/drag";
+import { baseName, breadcrumbs, joinPath, parentPath, samePath, sameVolume } from "../lib/paths";
+import { cancelSpring, carriesPaths, dragState, isDragging, onDragReset, springLoad, springTarget, tabDrag } from "../state/drag";
 import { history } from "../state/history";
 import type { TabModel } from "../state/tab";
 import { TAB_COLORS } from "../lib/session";
 import { ui } from "../state/ui";
 import { workspace, type PaneModel } from "../state/workspace";
 import { contextMenu, FileList, type ListHandle } from "./FileList";
-import { GridView, MillerView } from "./Extras";
+import { MillerView } from "./Extras";
+import { BentoView, CellGrid, ContentView, ListView } from "./Views";
+import { ViewMenu } from "./ViewMenu";
 import { Treemap } from "./Treemap";
-import { IconBack, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
+import { IconBack, MaterialIcon, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
 
 const TAB_MIME = "application/x-octopolis-tab";
 const SUGGEST_DEBOUNCE_MS = 90;
 const MAX_SUGGESTIONS = 12;
 
 /** Lists the subfolders of `dir`, for path bar suggestions and crumb menus. */
-async function subfolders(dir: string): Promise<string[]> {
+export async function subfolders(dir: string): Promise<string[]> {
   const b = createBuilder(dir);
   await listDir(dir, (buf) => decodeBatch(buf, b));
   const l = snapshot(b);
@@ -34,9 +37,11 @@ export const listHandles = new WeakMap<TabModel, ListHandle>();
 export function Pane(props: { pane: PaneModel }) {
   const active = () => workspace.activePaneId() === props.pane.id;
   const tab = () => props.pane.activeTab();
+  let host!: HTMLElement;
   return (
-    <section class="pane" classList={{ active: active() }} onMouseDown={() => workspace.focusPane(props.pane.id)}>
+    <section ref={host} class="pane" classList={{ active: active() }} onMouseDown={() => workspace.focusPane(props.pane.id)}>
       <TabStrip pane={props.pane} />
+      <EdgeZones paneId={props.pane.id} host={() => host} />
       <Show when={tab()} keyed>
         {(t) => (
           <>
@@ -45,8 +50,33 @@ export function Pane(props: { pane: PaneModel }) {
               <Show when={t.viewMode() === "details"}>
                 <FileList tab={t} active={active()} onReady={(h) => listHandles.set(t, h)} />
               </Show>
-              <Show when={t.viewMode() === "grid"}>
-                <GridView
+              <Show when={t.viewMode() === "grid" || t.viewMode() === "tiles"}>
+                <CellGrid
+                  tab={t}
+                  active={active()}
+                  variant={t.viewMode() === "tiles" ? "tiles" : "icons"}
+                  onReady={(columns, ensureVisible, pageRows) => listHandles.set(t, { columns, ensureVisible, pageRows })}
+                  onMenu={(e, pos) => contextMenu(t, e, pos)}
+                />
+              </Show>
+              <Show when={t.viewMode() === "list"}>
+                <ListView
+                  tab={t}
+                  active={active()}
+                  onReady={(columns, ensureVisible, pageRows) => listHandles.set(t, { columns, ensureVisible, pageRows })}
+                  onMenu={(e, pos) => contextMenu(t, e, pos)}
+                />
+              </Show>
+              <Show when={t.viewMode() === "bento"}>
+                <BentoView
+                  tab={t}
+                  active={active()}
+                  onReady={(columns, ensureVisible, pageRows, vertical) => listHandles.set(t, { columns, ensureVisible, pageRows, vertical })}
+                  onMenu={(e, pos) => contextMenu(t, e, pos)}
+                />
+              </Show>
+              <Show when={t.viewMode() === "content"}>
+                <ContentView
                   tab={t}
                   active={active()}
                   onReady={(columns, ensureVisible, pageRows) => listHandles.set(t, { columns, ensureVisible, pageRows })}
@@ -69,23 +99,130 @@ export function Pane(props: { pane: PaneModel }) {
   );
 }
 
+type SplitContent = Parameters<typeof workspace.splitAt>[2];
+const EDGES: readonly Edge[] = ["left", "right", "top", "bottom"];
+
+/** What the current drag would put in a new pane, with a label for the preview; null when it can't open one. */
+function splitPayload(paneId: string, e: DragEvent): { content: SplitContent; label: string } | null {
+  const types = e.dataTransfer?.types ?? [];
+  if (types.includes(TAB_MIME) && tabDrag.current) {
+    const t = tabDrag.current;
+    // A pane's only tab can't leave to split its own pane.
+    if (t.pane === paneId && workspace.paneModel(t.pane).tabs().length < 2) return null;
+    return { content: { kind: "tab", fromPane: t.pane, tabId: t.tab }, label: t.title };
+  }
+  if (carriesPaths(e.dataTransfer) && dragState.paths.length > 0 && !dragState.archive) {
+    if (dragState.allDirs && dragState.dirs.length > 0) {
+      const n = dragState.dirs.length;
+      return { content: { kind: "folders", paths: dragState.dirs }, label: n > 1 ? `${n} folders` : baseName(dragState.dirs[0]) || dragState.dirs[0] };
+    }
+    const folder = parentPath(dragState.paths[0]);
+    if (!folder) return null;
+    const n = dragState.paths.length;
+    return { content: { kind: "files", folder, names: dragState.paths.map((p) => baseName(p)) }, label: `${baseName(folder) || folder} · ${n} item${n === 1 ? "" : "s"} selected` };
+  }
+  return null;
+}
+
+/**
+ * While something is being dragged, a thin zone along each edge of the pane. Hovering one shows a skeleton of the
+ * pane it would create (half of this one, on that side); dropping splits the pane. Repeating it makes a grid.
+ */
+function EdgeZones(props: { paneId: string; host: () => HTMLElement | undefined }) {
+  const [over, setOver] = createSignal<{ edge: Edge; label: string } | null>(null);
+  const [top, setTop] = createSignal(0);
+  createEffect(() => {
+    if (isDragging()) {
+      // The top zone starts below the tab strip and toolbar, so tab and breadcrumb drops keep working.
+      const host = props.host();
+      const bar = host?.querySelector(".toolbar");
+      if (host && bar) setTop(bar.getBoundingClientRect().bottom - host.getBoundingClientRect().top);
+    } else setOver(null);
+  });
+  const enter = (e: DragEvent, edge: Edge) => {
+    const p = splitPayload(props.paneId, e);
+    if (!p) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer!.dropEffect = p.content.kind === "tab" ? "move" : "copy";
+    if (over()?.edge !== edge || over()?.label !== p.label) setOver({ edge, label: p.label });
+  };
+  return (
+    <Show when={isDragging() && workspace.canSplit()}>
+      <div class="edge-zones" style={{ "--edge-top": `${top()}px` }} aria-hidden="true">
+        <For each={EDGES}>
+          {(edge) => (
+            <div
+              class={`edge-zone edge-${edge}`}
+              classList={{ hot: over()?.edge === edge }}
+              onDragEnter={(e) => enter(e, edge)}
+              onDragOver={(e) => enter(e, edge)}
+              onDragLeave={(e) => {
+                if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) setOver(null);
+              }}
+              onDrop={(e) => {
+                const p = splitPayload(props.paneId, e);
+                if (!p) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setOver(null);
+                workspace.splitAt(props.paneId, edge, p.content);
+              }}
+            />
+          )}
+        </For>
+        <Show when={over()}>{(o) => <EdgeSkeleton edge={o().edge} label={o().label} />}</Show>
+      </div>
+    </Show>
+  );
+}
+
+/** A faint outline of the new pane: its tab, toolbar and rows as placeholders, on the side it would open. */
+function EdgeSkeleton(props: { edge: Edge; label: string }) {
+  const vertical = () => props.edge === "left" || props.edge === "right";
+  return (
+    <div class={`edge-skeleton edge-skeleton-${props.edge}`}>
+      <div class="es-tabs"><span class="es-tab" /></div>
+      <div class="es-bar"><span /><span /><span /></div>
+      <div class="es-rows">
+        <For each={[72, 48, 64, 38, 58, 44, 52]}>{(w) => <span class="es-row" style={{ "--w": `${w}%` }} />}</For>
+      </div>
+      <div class="es-label">
+        <MaterialIcon name={vertical() ? "vertical_split" : "horizontal_split"} size={30} />
+        <span>Open in a new pane</span>
+        <strong>{props.label}</strong>
+      </div>
+    </div>
+  );
+}
+
 /** A ghost tab showing where a dropped folder will open. */
 const COLOR_LABELS: Record<(typeof TAB_COLORS)[number], string> = { red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", blue: "Blue", purple: "Purple" };
 
-/** Right-click a tab: pin, color, duplicate, close others. */
+/** Right-click a tab: pin, color, duplicate, close others, close to right. */
 function tabMenu(e: MouseEvent, paneId: string, tabId: string) {
   e.preventDefault();
   e.stopPropagation();
   const meta = workspace.tabMeta(tabId);
-  const tab = workspace.paneModel(paneId).tabs().find((t) => t.id === tabId);
+  const tabs = workspace.paneModel(paneId).tabs();
+  const at = tabs.findIndex((t) => t.id === tabId);
+  const tab = at >= 0 ? tabs[at] : undefined;
+  const hasToRight = at >= 0 && tabs.slice(at + 1).some((t) => !workspace.tabMeta(t.id).pinned);
   ui.openMenu(e.clientX, e.clientY, [
     { label: meta.pinned ? "Unpin tab" : "Pin tab", run: () => workspace.togglePin(paneId, tabId) },
     { label: "Duplicate tab", run: () => tab && workspace.newTab(paneId, tab.path()) },
+    ...(workspace.canSplit() && tabs.length > 1
+      ? [
+          { label: "Move to a new pane on the right", run: () => void workspace.splitAt(paneId, "right", { kind: "tab", fromPane: paneId, tabId }) },
+          { label: "Move to a new pane below", run: () => void workspace.splitAt(paneId, "bottom", { kind: "tab", fromPane: paneId, tabId }) },
+        ]
+      : []),
     "separator",
     ...TAB_COLORS.map((c) => ({ label: `${meta.color === c ? "✓ " : "    "}${COLOR_LABELS[c]}`, run: () => workspace.setTabColor(tabId, meta.color === c ? null : c) })),
     ...(meta.color ? [{ label: "    No color", run: () => workspace.setTabColor(tabId, null) }] : []),
     "separator",
     { label: "Close other tabs", run: () => workspace.closeOthers(paneId, tabId) },
+    { label: "Close tabs to the right", disabled: !hasToRight, run: () => workspace.closeToRight(paneId, tabId) },
     { label: "Close tab", shortcut: "Ctrl+W", run: () => workspace.closeTab(paneId, tabId) },
   ]);
 }
@@ -162,10 +299,12 @@ function TabStrip(props: { pane: PaneModel }) {
             onDragStart={(e) => {
               e.dataTransfer!.setData(TAB_MIME, JSON.stringify({ pane: props.pane.id, tab: t.id }));
               e.dataTransfer!.effectAllowed = "move";
+              tabDrag.current = { pane: props.pane.id, tab: t.id, title: t.title() };
             }}
+            onDragEnd={() => (tabDrag.current = null)}
             onDragOver={(e) => {
               // Resting a file drag on a tab switches to it, so the drop can land in that folder.
-              if (e.dataTransfer?.types.includes(DRAG_MIME) && props.pane.activeTabId() !== t.id) springLoad(`tab:${t.id}`, () => workspace.selectTab(props.pane.id, t.id));
+              if (carriesPaths(e.dataTransfer) && props.pane.activeTabId() !== t.id) springLoad(`tab:${t.id}`, () => workspace.selectTab(props.pane.id, t.id));
               if (overTab(e, props.pane.tabs().indexOf(t))) return;
               if (e.dataTransfer?.types.includes(TAB_MIME)) e.preventDefault();
             }}
@@ -180,9 +319,9 @@ function TabStrip(props: { pane: PaneModel }) {
               workspace.moveTab(pane, tab, props.pane.id, props.pane.tabs().indexOf(t));
             }}
             aria-selected={props.pane.activeTabId() === t.id}
-            classList={{ current: props.pane.activeTabId() === t.id, pinned: workspace.tabMeta(t.id).pinned, colored: !!workspace.tabMeta(t.id).color }}
+            classList={{ spring: springTarget() === `tab:${t.id}`, current: props.pane.activeTabId() === t.id, pinned: workspace.tabMeta(t.id).pinned, colored: !!workspace.tabMeta(t.id).color }}
             style={workspace.tabMeta(t.id).color ? { "--tab-color": `var(--tab-${workspace.tabMeta(t.id).color})` } : undefined}
-            title={workspace.tabMeta(t.id).pinned ? `${t.title()} — ${t.path()}` : t.path()}
+            data-tooltip={workspace.tabMeta(t.id).pinned ? `${t.title()} — ${t.path()}` : t.path()}
             onContextMenu={(e) => tabMenu(e, props.pane.id, t.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();
@@ -240,6 +379,7 @@ function Toolbar(props: { paneId: string; tab: TabModel }) {
         <IconRefresh />
       </button>
       <PathBar tab={props.tab} editing={editing()} setEditing={setEditing} />
+      <ViewMenu tab={props.tab} />
       <SearchBox tab={props.tab} ref={(el) => (filterInput = el)} />
     </div>
   );
@@ -310,7 +450,9 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
   let timer: ReturnType<typeof setTimeout> | undefined;
   const [suggestions, setSuggestions] = createSignal<readonly string[]>([]);
   const [hot, setHot] = createSignal(-1);
+  const [dropCrumb, setDropCrumb] = createSignal<string | null>(null);
   let suggestToken = 0;
+  onCleanup(onDragReset(() => setDropCrumb(null)));
 
   const endSuggestions = () => {
     suggestToken++;
@@ -374,6 +516,7 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
                   </Show>
                   <button
                     class="crumb"
+                    classList={{ spring: springTarget() === `crumb:${c.path}`, "drop-over": dropCrumb() === c.path }}
                     onClick={(e) => (e.ctrlKey ? A.openInNewTab(c.path, !e.shiftKey) : void props.tab.navigate(c.path))}
                     onMouseDown={(e) => {
                       if (e.button !== 1) return;
@@ -381,14 +524,19 @@ function PathBar(props: { tab: TabModel; editing: boolean; setEditing: (v: boole
                       A.openInNewTab(c.path, !e.shiftKey);
                     }}
                     onDragOver={(e) => {
-                      if (!e.dataTransfer?.types.includes(DRAG_MIME) || dragState.paths.some((p) => samePath(p, c.path))) return;
+                      if (!carriesPaths(e.dataTransfer) || dragState.paths.some((p) => samePath(p, c.path))) return;
                       e.preventDefault();
                       e.dataTransfer.dropEffect = e.ctrlKey || dragState.paths.some((p) => !sameVolume(p, c.path)) ? "copy" : "move";
+                      setDropCrumb(c.path);
                       if (!samePath(c.path, props.tab.path())) springLoad(`crumb:${c.path}`, () => void props.tab.navigate(c.path));
                     }}
-                    onDragLeave={() => cancelSpring()}
+                    onDragLeave={(e) => {
+                      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) setDropCrumb((cur) => (cur === c.path ? null : cur));
+                      cancelSpring();
+                    }}
                     onDrop={(e) => {
-                      if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
+                      setDropCrumb(null);
+                      if (!carriesPaths(e.dataTransfer)) return;
                       e.preventDefault();
                       e.stopPropagation();
                       cancelSpring();

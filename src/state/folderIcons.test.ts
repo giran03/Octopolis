@@ -48,3 +48,37 @@ describe("folder icons", () => {
     expect(folderIcons.recent()[0]).toBe("🎵");
   });
 });
+
+describe("Windows folder icons", () => {
+  it("tells them from emoji, and stores them without touching the recent emoji", async () => {
+    const { isSystemValue, systemValue } = await import("./folderIcons");
+    expect(isSystemValue(systemValue("3dobjects"))).toBe(true);
+    for (const bad of ["sys:", "sys:Documents", "sys:a b", "documents", "sys:../x", "sys:" + "a".repeat(25), "📁"]) expect(isSystemValue(bad)).toBe(false);
+    expect(isEmoji("sys:documents")).toBe(false);
+    const recentBefore = [...folderIcons.recent()];
+    folderIcons.set("C:\Sys", systemValue("documents"));
+    expect(folderIcons.has("C:\Sys")).toBe(true);
+    expect(folderIcons.get("C:\Sys")).toBeUndefined();
+    expect(folderIcons.systemId("C:\Sys")).toBe("documents");
+    expect(folderIcons.recent()).toEqual(recentBefore);
+    folderIcons.set("C:\Sys", null);
+    expect(folderIcons.has("C:\Sys")).toBe(false);
+  });
+});
+
+describe("menu hints", () => {
+  it("describes a custom icon for the context menu", async () => {
+    const { systemValue, appValue, resourceValue } = await import("./folderIcons");
+    expect(folderIcons.describe("C:\Plain")).toBeUndefined();
+    folderIcons.set("C:\H", "🎵");
+    expect(folderIcons.describe("C:\H")).toBe("🎵");
+    folderIcons.set("C:\H", systemValue("documents"));
+    expect(folderIcons.describe("C:\H")).toBe("Folder icon");
+    folderIcons.set("C:\H", appValue("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"));
+    expect(folderIcons.describe("C:\H")).toBe("App icon");
+    folderIcons.set("C:\H", resourceValue("imageres", 3));
+    expect(folderIcons.describe("C:\H")).toBe("Windows icon");
+    folderIcons.set("C:\H", null);
+    expect(folderIcons.describe("C:\H")).toBeUndefined();
+  });
+});

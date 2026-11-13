@@ -1,0 +1,37 @@
+<section id="search" class="sec" data-title="Search and filters" data-group="Browse">
+  <span class="kicker">Browse</span>
+  <h2>Search and filters</h2>
+  <p class="lead">Narrow a folder in a keystroke, or search every folder beneath it.</p>
+
+  <h3 id="filter">Quick filter</h3>
+  <p><span class="keys" data-keys="ctrl+f"></span> filters the current folder by name as you type, and you can also just start typing to jump to a matching item (type-to-find). Press <kbd>Esc</kbd> to clear it.</p>
+
+  <h3 id="subfolder-search">Search in subfolders</h3>
+  <p><span class="keys" data-keys="ctrl+shift+f"></span> searches all subfolders with fuzzy matching as you type. Results are ranked by relevance and shown with their folder. <span class="keys" data-keys="ctrl+shift+e"></span> is the <b>flat view</b>: every file in all subfolders in one sortable list. In the palette, the <code>/</code> prefix starts the same search.</p>
+
+  <h3 id="search-filters">Search filters</h3>
+  <p>Add filters to any search. They combine freely.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Filter</th><th>Example</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><code>ext:</code></td><td><code data-copy="ext:pdf,docx">ext:pdf,docx</code></td><td>Only these file types</td></tr>
+      <tr><td class="k"><code>size:</code></td><td><code data-copy="size:>100mb">size:&gt;100mb</code></td><td>Bigger or smaller than a size</td></tr>
+      <tr><td class="k"><code>dm:</code></td><td><code data-copy="dm:week">dm:week</code> · <code>dm:today</code> · <code>dm:2026-01-01..2026-03-31</code></td><td>Date modified: today, this week, a day or a range</td></tr>
+      <tr><td class="k"><code>re:</code></td><td><code data-copy="re:^IMG_\d+">re:^IMG_\d+</code></td><td>A regular expression</td></tr>
+      <tr><td class="k"><code>type:</code></td><td><code>type:file</code> · <code>type:dir</code></td><td>Files or folders only</td></tr>
+      <tr><td class="k"><code>content:</code></td><td><code data-copy="content:TODO ext:rs">content:TODO ext:rs</code></td><td>Search inside files; the inspector shows the matching lines</td></tr>
+      <tr><td class="k"><code>tag:</code></td><td><code>tag:work</code></td><td>Items with a <a href="#tags">tag</a></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="saved-searches">Saved searches</h3>
+  <p>Save a search to the sidebar (<i>Save this search to the sidebar…</i> in the palette) and run it again with one click.</p>
+
+  <h3 id="select-tools">Selecting by rule</h3>
+  <ul>
+    <li><span class="keys" data-keys="ctrl+a"></span> selects all and <span class="keys" data-keys="ctrl+shift+i"></span> inverts the selection.</li>
+    <li><span class="keys" data-keys="ctrl+shift+a"></span> selects by pattern: <code>*.jpg; IMG_*</code>, or <code>re:</code> for a regular expression.</li>
+    <li><b>Select items of the same type</b> is in the palette and the right-click menu.</li>
+    <li>Drag a box to select items in the list (start from any column but Name) and in the grid views. Selecting several items shows their total size, a breakdown by kind and their date range in the inspector.</li>
+  </ul>
+</section>

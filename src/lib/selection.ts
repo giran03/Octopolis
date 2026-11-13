@@ -48,6 +48,13 @@ export function selectWhere(view: Uint32Array, names: readonly string[], test: (
   return out;
 }
 
+/** Visible entries passing `test(entry)`. */
+export function selectEntriesWhere(view: Uint32Array, test: (entry: number) => boolean): ReadonlySet<number> {
+  const out = new Set<number>();
+  for (const e of view) if (test(e)) out.add(e);
+  return out;
+}
+
 const baseOfName = (name: string) => name.slice(Math.max(name.lastIndexOf("\\"), name.lastIndexOf("/")) + 1);
 
 /** Lower-case extension of the last path segment, or "" for none (".gitignore" has none). */
@@ -76,6 +83,31 @@ export function namePattern(text: string): (name: string) => boolean {
     .map((p) => globToRegExp(/[*?]/.test(p) ? p : `*${p}*`));
   if (parts.length === 0) return () => false;
   return (name) => parts.some((re) => re.test(baseOfName(name)));
+}
+
+/**
+ * Builds an entry matcher supporting `re:<regex>`, `type:dir` / `type:folder`,
+ * `type:file`, and `;`-separated wildcard/substring patterns (`*.png; type:dir`).
+ */
+export function entryPattern(text: string): (name: string, dir: boolean) => boolean {
+  const trimmed = text.trim();
+  if (trimmed.toLowerCase().startsWith("re:")) {
+    const re = new RegExp(trimmed.slice(3), "i");
+    return (name) => re.test(baseOfName(name));
+  }
+  const tests = trimmed
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p): ((name: string, dir: boolean) => boolean) => {
+      const low = p.toLowerCase();
+      if (low === "type:dir" || low === "type:folder") return (_name, dir) => dir;
+      if (low === "type:file") return (_name, dir) => !dir;
+      const re = globToRegExp(/[*?]/.test(p) ? p : `*${p}*`);
+      return (name) => re.test(baseOfName(name));
+    });
+  if (tests.length === 0) return () => false;
+  return (name, dir) => tests.some((fn) => fn(name, dir));
 }
 
 export type NavKey = "ArrowUp" | "ArrowDown" | "Home" | "End" | "PageUp" | "PageDown";

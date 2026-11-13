@@ -27,6 +27,7 @@ const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disa
 export function SettingsModal() {
   let dialog!: HTMLDivElement;
   let panel!: HTMLDivElement;
+  let searchInput!: HTMLInputElement;
   const tab = () => ui.settingsTab() ?? "general";
   const index = () => Math.max(0, TABS.findIndex((t) => t.id === tab()));
 
@@ -44,16 +45,23 @@ export function SettingsModal() {
   const [query, setQuery] = createSignal("");
   const [noResults, setNoResults] = createSignal(false);
   const searching = () => query().trim().length > 0;
+  const ROW_SEL = ".srow, .shortcut-row";
   const applyFilter = () => {
     const q = query().trim().toLowerCase();
-    const rows = [...panel.querySelectorAll<HTMLElement>(".srow")];
+    const rows = [...panel.querySelectorAll<HTMLElement>(ROW_SEL)];
     for (const row of rows) row.hidden = !!q && !(row.textContent ?? "").toLowerCase().includes(q);
     for (const section of panel.querySelectorAll<HTMLElement>(".sset")) {
       const title = (section.querySelector(".sset-title")?.textContent ?? "").toLowerCase();
-      const hasRow = [...section.querySelectorAll<HTMLElement>(".srow")].some((r) => !r.hidden);
-      section.hidden = !!q && !hasRow && !title.includes(q);
-      // A section whose title matches, but none of its rows do, shows all its rows.
-      if (q && !hasRow && title.includes(q)) for (const r of section.querySelectorAll<HTMLElement>(".srow")) r.hidden = false;
+      const sectionRows = [...section.querySelectorAll<HTMLElement>(ROW_SEL)];
+      if (sectionRows.length > 0) {
+        const hasRow = sectionRows.some((r) => !r.hidden);
+        section.hidden = !!q && !hasRow && !title.includes(q);
+        // A section whose title matches, but none of its rows do, shows all its rows.
+        if (q && !hasRow && title.includes(q)) for (const r of sectionRows) r.hidden = false;
+      } else {
+        const cardText = (section.querySelector(".update-card")?.textContent ?? "").toLowerCase();
+        section.hidden = !!q && !title.includes(q) && !cardText.includes(q);
+      }
     }
     for (const group of panel.querySelectorAll<HTMLElement>(".sres-tab")) group.hidden = !!q && ![...group.querySelectorAll<HTMLElement>(".sset")].some((s) => !s.hidden);
     setNoResults(!!q && ![...panel.querySelectorAll<HTMLElement>(".sset")].some((s) => !s.hidden));
@@ -86,6 +94,51 @@ export function SettingsModal() {
     const section = el.closest<HTMLElement>(".sset") ?? el;
     section.scrollIntoView({ block: "start", behavior: "smooth" });
   };
+  const jumpToTab = (id: SettingsTab, target?: { sectionTitle?: string; rowLabel?: string }) => {
+    setQuery("");
+    ui.setSettingsTab(id);
+    if (!target) return;
+    queueMicrotask(() => {
+      if (!panel) return;
+      let match: HTMLElement | undefined;
+      if (target.rowLabel) {
+        const label = target.rowLabel;
+        match =
+          [...panel.querySelectorAll<HTMLElement>(".srow")].find((r) => r.querySelector(".srow-label")?.textContent?.trim() === label) ??
+          [...panel.querySelectorAll<HTMLElement>(".shortcut-row")].find((r) => r.querySelector(".shortcut-title")?.textContent?.trim() === label);
+      } else if (target.sectionTitle) {
+        const title = target.sectionTitle;
+        match = [...panel.querySelectorAll<HTMLElement>(".sset")].find((s) => s.querySelector(".sset-title")?.textContent?.trim() === title);
+      }
+      if (!match) return;
+      match.scrollIntoView({ block: "center", behavior: "smooth" });
+      match.classList.add("srow-flash");
+      setTimeout(() => match.classList.remove("srow-flash"), 1400);
+    });
+  };
+  const onPanelClick = (e: MouseEvent) => {
+    if (!searching()) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, a, .srow-control, .shortcut-actions")) return;
+    const group = target.closest<HTMLElement>(".sres-tab");
+    const tabId = group?.dataset.tab as SettingsTab | undefined;
+    if (!tabId) return;
+    const srowText = target.closest<HTMLElement>(".srow-text");
+    if (srowText) {
+      const label = srowText.querySelector(".srow-label")?.textContent?.trim();
+      if (label) return jumpToTab(tabId, { rowLabel: label });
+    }
+    const shortcutTitle = target.closest<HTMLElement>(".shortcut-title");
+    if (shortcutTitle) {
+      const label = shortcutTitle.textContent?.trim();
+      if (label) return jumpToTab(tabId, { rowLabel: label });
+    }
+    const ssetTitle = target.closest<HTMLElement>(".sset-title");
+    if (ssetTitle) {
+      const title = ssetTitle.textContent?.trim();
+      if (title) return jumpToTab(tabId, { sectionTitle: title });
+    }
+  };
   onMount(() => {
     const mo = new MutationObserver(scan);
     mo.observe(panel, { childList: true, subtree: true });
@@ -100,6 +153,12 @@ export function SettingsModal() {
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();
     if (e.key === "Escape") return ui.closeSettings();
+    if (e.ctrlKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      searchInput?.focus();
+      searchInput?.select();
+      return;
+    }
     if (e.key === "Tab") {
       // Keep focus inside the dialog.
       const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null);
@@ -126,6 +185,7 @@ export function SettingsModal() {
         <nav class="srail" aria-label="Settings sections">
           <div class="srail-title">Settings</div>
           <input
+            ref={searchInput}
             class="text-input ssearch"
             type="search"
             placeholder="Search settings"
@@ -143,7 +203,7 @@ export function SettingsModal() {
           <div class="srail-tabs" role="tablist" aria-orientation="vertical" style={{ "--i": index() }} onKeyDown={onRailKey}>
             <For each={TABS}>
               {(t) => (
-                <button class="stab" role="tab" id={`stab-${t.id}`} aria-selected={tab() === t.id} aria-controls="spanel" tabIndex={tab() === t.id ? 0 : -1} onClick={() => ui.setSettingsTab(t.id)}>
+                <button class="stab" role="tab" id={`stab-${t.id}`} aria-selected={tab() === t.id} aria-controls="spanel" tabIndex={tab() === t.id ? 0 : -1} onClick={() => jumpToTab(t.id)}>
                   <Glyph code={t.code} size={16} />
                   <span class="stab-label">{t.label}</span>
                   {t.id === "updates" && updater.status().kind === "available" ? <span class="stab-dot" aria-label="Update available" /> : null}
@@ -168,17 +228,20 @@ export function SettingsModal() {
         </nav>
         <div class="spane">
           <header class="spane-head">
-            <h2>{TABS[index()].label}</h2>
+            <h2>{searching() ? "Search results" : TABS[index()].label}</h2>
             <button class="icon-btn" aria-label="Close settings" data-tooltip="Close · Esc" onClick={ui.closeSettings}>
               <IconClose size={14} />
             </button>
           </header>
-          <div ref={panel} class="spanel" id="spanel" role="tabpanel" aria-labelledby={`stab-${tab()}`}>
+          <div ref={panel} class="spanel" id="spanel" role="tabpanel" aria-labelledby={`stab-${tab()}`} onClick={onPanelClick}>
             <Show when={searching()}>
-              <For each={TABS.filter((t) => t.id !== "about" && t.id !== "updates")}>
+              <For each={TABS}>
                 {(t) => (
                   <section class="sres-tab" data-tab={t.id}>
-                    <h2 class="sres-head">{t.label}</h2>
+                    <button type="button" class="sres-head" onClick={() => jumpToTab(t.id)}>
+                      <span>{t.label}</span>
+                      <span class="sres-jump">Open {t.label} →</span>
+                    </button>
                     <Dynamic component={PANELS[t.id]} />
                   </section>
                 )}

@@ -21,6 +21,7 @@ const SystemCleanup = lazy(() => import("./SystemCleanup").then((m) => ({ defaul
 const OpsHistory = lazy(() => import("./OpsHistory").then((m) => ({ default: m.OpsHistory })));
 const Welcome = lazy(() => import("./Welcome").then((m) => ({ default: m.Welcome })));
 const Rules = lazy(() => import("./Rules").then((m) => ({ default: m.Rules })));
+const ThemeEditor = lazy(() => import("./ThemeEditor").then((m) => ({ default: m.ThemeEditor })));
 const ImageTools = lazy(() => import("./ImageTools").then((m) => ({ default: m.ImageTools })));
 const Duplicates = lazy(() => import("./Duplicates").then((m) => ({ default: m.Duplicates })));
 const ActionsEditor = lazy(() => import("./ActionsEditor").then((m) => ({ default: m.ActionsEditor })));
@@ -98,6 +99,9 @@ export function Overlays() {
       </Show>
       <Show when={ui.lockPaths()} keyed>
         {(paths) => <LockHunter paths={paths} />}
+      </Show>
+      <Show when={ui.themeEditor() !== null}>
+        <ThemeEditor />
       </Show>
       <div class="toasts" role="status" aria-live="polite">
         <For each={ui.toasts()}>
@@ -317,8 +321,12 @@ function ConfirmDialog() {
           ui.closeConfirm();
           c.onConfirm();
         };
+        const cancel = () => {
+          ui.closeConfirm();
+          c.onCancel?.();
+        };
         return (
-          <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && ui.closeConfirm()}>
+          <div class="scrim scrim-top" onMouseDown={(e) => e.target === e.currentTarget && cancel()}>
             <div
               class="dialog"
               role="alertdialog"
@@ -326,13 +334,13 @@ function ConfirmDialog() {
               aria-labelledby="dlg-title"
               onKeyDown={(e) => {
                 e.stopPropagation();
-                if (e.key === "Escape") ui.closeConfirm();
+                if (e.key === "Escape") cancel();
               }}
             >
               <h2 id="dlg-title">{c.title}</h2>
               <p>{c.body}</p>
               <div class="dialog-actions">
-                <button class="btn" ref={(b) => queueMicrotask(() => b.focus())} onClick={() => ui.closeConfirm()}>
+                <button class="btn" ref={(b) => queueMicrotask(() => b.focus())} onClick={cancel}>
                   Cancel
                 </button>
                 <button class="btn" classList={{ danger: c.danger, primary: !c.danger }} onClick={confirm}>

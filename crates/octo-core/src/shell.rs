@@ -39,6 +39,16 @@ pub fn edit_path(path: &Path, editor: Option<&Path>) -> Result<()> {
     imp::open_verb(path, "edit").or_else(|_| std::process::Command::new("notepad.exe").arg(path).spawn().map(|_| ()).map_err(|e| Error::io(path, e)))
 }
 
+/// Opens several files in an editor. A chosen `editor` is started once with every file (so editors that group
+/// files into one window do), else each file goes to its type's editor. Stops at the first failure.
+pub fn edit_paths(paths: &[PathBuf], editor: Option<&Path>) -> Result<()> {
+    match (editor, paths) {
+        (_, []) => Ok(()),
+        (Some(editor), _) => std::process::Command::new(editor).args(paths).spawn().map(|_| ()).map_err(|e| Error::io(editor, e)),
+        (None, _) => paths.iter().try_for_each(|p| edit_path(p, None)),
+    }
+}
+
 /// Opens a terminal in `dir`: Windows Terminal when it is installed, else PowerShell in its own window.
 pub fn open_terminal_at(dir: &Path) -> Result<()> {
     #[cfg(windows)]

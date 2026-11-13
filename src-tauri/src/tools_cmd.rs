@@ -284,10 +284,9 @@ pub struct PropertiesDto {
     link_target: Option<String>,
 }
 
-#[tauri::command]
-pub async fn file_properties(path: PathBuf) -> Result<PropertiesDto, String> {
-    crate::off_main(move || {
-        let p = octo_core::props::read(&path).map_err(|e| e.to_string())?;
+fn properties_of(path: &std::path::Path) -> Result<PropertiesDto, String> {
+    {
+        let p = octo_core::props::read(path).map_err(|e| e.to_string())?;
         let a = p.attributes;
         Ok(PropertiesDto {
             is_dir: p.is_dir,
@@ -301,8 +300,18 @@ pub async fn file_properties(path: PathBuf) -> Result<PropertiesDto, String> {
             streams: p.streams.into_iter().map(|s| (s.name, s.size)).collect(),
             link_target: p.link_target,
         })
-    })
-    .await
+    }
+}
+
+#[tauri::command]
+pub async fn file_properties(path: PathBuf) -> Result<PropertiesDto, String> {
+    crate::off_main(move || properties_of(&path)).await
+}
+
+/// Properties of many paths in one call; `None` for one that can't be read.
+#[tauri::command]
+pub async fn file_properties_many(paths: Vec<PathBuf>) -> Result<Vec<Option<PropertiesDto>>, String> {
+    crate::off_main(move || Ok(paths.iter().map(|p| properties_of(p).ok()).collect())).await
 }
 
 /// Sets read-only / hidden / system / archive on every path at once.

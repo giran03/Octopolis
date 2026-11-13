@@ -27,6 +27,7 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 tauri-plugin-single-instance = "2"
 jiff = "0.2"
 tauri-plugin-notification = "2"
+drag = { path = "../vendor/drag" }
 
 [target.'cfg(windows)'.dependencies]
 # Same versions Tauri uses; reaches the WebView2 memory target while the window is hidden.

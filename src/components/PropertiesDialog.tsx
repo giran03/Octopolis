@@ -1,7 +1,7 @@
 // Properties (Alt+Enter): details, editable dates and attributes, and checksums.
 import { createResource, createSignal, For, Show } from "solid-js";
 import { formatDate, formatSize, typeLabel } from "../lib/format";
-import { errorText, fileChecksum, fileProperties, setFileAttributes, setFileTimes, type ChecksumKind, type FileAttributes, type FileProperties } from "../lib/ipc";
+import { errorText, fileChecksum, filePropertiesMany, setFileAttributes, setFileTimes, type ChecksumKind, type FileAttributes, type FileProperties } from "../lib/ipc";
 import { baseName, parentPath, samePath } from "../lib/paths";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
@@ -46,7 +46,7 @@ export function PropertiesDialog(props: { paths: readonly string[] }) {
   const single = () => props.paths.length === 1;
   const [info, { refetch }] = createResource(
     () => [...props.paths],
-    (paths) => Promise.all(paths.map((p) => fileProperties(p).catch(() => null))),
+    (paths) => filePropertiesMany(paths).catch(() => paths.map(() => null)),
   );
   const first = (): FileProperties | null => info()?.[0] ?? null;
   const known = () => (info() ?? []).filter((p): p is FileProperties => p !== null);

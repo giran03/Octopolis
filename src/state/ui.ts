@@ -25,6 +25,8 @@ export interface ConfirmState {
   readonly confirmLabel: string;
   readonly danger?: boolean;
   readonly onConfirm: () => void;
+  /** Runs when the dialog is dismissed instead (Cancel, Esc or a click outside). */
+  readonly onCancel?: () => void;
 }
 
 export interface PromptState {
@@ -65,6 +67,13 @@ export interface FocusRequest {
   readonly nonce: number;
 }
 
+/** Asks Settings > Shortcuts to pre-fill its filter and focus a specific command. */
+export interface ShortcutFilterRequest {
+  readonly filter: string;
+  readonly commandId?: string;
+  readonly nonce: number;
+}
+
 const TOAST_MS = 4000;
 let focusNonce = 1;
 let toastKey = 1;
@@ -79,6 +88,7 @@ export const ui = createRoot(() => {
   const [lockPaths, setLockPaths] = createSignal<readonly string[] | null>(null);
   const [batchRenameOpen, setBatchRenameOpen] = createSignal(false);
   const [settingsTab, setSettingsTab] = createSignal<SettingsTab | null>(null);
+  const [shortcutFilter, setShortcutFilter] = createSignal<ShortcutFilterRequest | null>(null);
   const [prompt, setPrompt] = createSignal<PromptState | null>(null);
   const [conflictPrompt, setConflictPrompt] = createSignal<ConflictPrompt | null>(null);
   const [propertiesPaths, setPropertiesPaths] = createSignal<readonly string[] | null>(null);
@@ -87,6 +97,8 @@ export const ui = createRoot(() => {
   const [opsHistoryOpen, setOpsHistoryOpen] = createSignal(false);
   const [welcomeOpen, setWelcomeOpen] = createSignal(false);
   const [rulesOpen, setRulesOpen] = createSignal(false);
+  /** The custom theme being made or edited: its name, "" for a new one; null when the editor is closed. */
+  const [themeEditor, setThemeEditor] = createSignal<string | null>(null);
   const [imageToolsPaths, setImageToolsPaths] = createSignal<readonly string[] | null>(null);
   /** The folder the duplicate finder is looking in, while it is open. */
   const [duplicatesRoot, setDuplicatesRoot] = createSignal<string | null>(null);
@@ -133,11 +145,21 @@ export const ui = createRoot(() => {
     settingsOpen: () => settingsTab() !== null,
     /** Opens settings on `tab`, or on the tab that was open last. */
     openSettings: (tab?: SettingsTab) => setSettingsTab(tab ?? lastSettingsTab),
-    closeSettings: () => setSettingsTab(null),
+    closeSettings: () => {
+      setShortcutFilter(null);
+      setSettingsTab(null);
+    },
     setSettingsTab: (tab: SettingsTab) => {
       lastSettingsTab = tab;
       setSettingsTab(tab);
     },
+    shortcutFilter,
+    openShortcutsFor: (commandId: string, filter: string) => {
+      setShortcutFilter({ filter, commandId, nonce: focusNonce++ });
+      lastSettingsTab = "shortcuts";
+      setSettingsTab("shortcuts");
+    },
+    clearShortcutFilter: () => setShortcutFilter(null),
     prompt,
     conflictPrompt,
     propertiesPaths,
@@ -147,6 +169,8 @@ export const ui = createRoot(() => {
     opsHistoryOpen,
     welcomeOpen,
     rulesOpen,
+    themeEditor,
+    setThemeEditor,
     imageToolsPaths,
     setImageToolsPaths,
     setRulesOpen,
@@ -176,7 +200,7 @@ export const ui = createRoot(() => {
     visual,
     setVisual,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || rulesOpen() || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot() || emojiTarget()),
+    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || rulesOpen() || themeEditor() !== null || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot() || emojiTarget()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

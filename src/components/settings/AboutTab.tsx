@@ -1,6 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import { APP_NAME, COFFEE_URL, COPYRIGHT, DEVELOPER, LICENSE, REPO, SUPPORT_EMAIL, TAGLINE, VERSION } from "../../lib/app";
 import { debugInfo, openDataFolder, openExternal } from "../../lib/ipc";
+import { guide } from "../../state/guide";
 import { ui } from "../../state/ui";
 import { AppMark, Glyph } from "../Icons";
 import { Section, SettingRow } from "./controls";
@@ -70,7 +71,7 @@ export function AboutTab() {
       </Section>
 
       <Section title="Privacy" note="Octopolis has no accounts, no analytics and no telemetry. Your settings, pins, recent folders and shelf stay on this PC.">
-        <SettingRow label="What leaves your PC" hint="Only the update check, which asks GitHub for the latest release. No information about you or your files is sent." />
+        <SettingRow label="What leaves your PC" hint="Only what you ask for: the update check (asks GitHub for the latest release), Google Fonts if you switch them on, and a picture, video or audio file you drop from a web page. No information about you or your files is sent." />
         <SettingRow label="Your data folder" hint="Uninstalling and deleting this folder removes everything Octopolis kept">
           <button class="btn small" onClick={() => void openDataFolder().catch(failed("open the folder"))}>
             Open folder
@@ -95,6 +96,11 @@ export function AboutTab() {
       </Section>
 
       <Section title="Help">
+        <SettingRow label="User guide" hint="Everything Octopolis can do, with a changelog. Opens in your browser and works offline">
+          <button class="btn small" onClick={() => void guide.open(null)}>
+            Open guide
+          </button>
+        </SettingRow>
         <SettingRow label="Debug info" hint="App and Windows details, ready to paste into a bug report. No file names or settings are included">
           <button class="btn small" onClick={() => void copyDebug()}>
             Copy

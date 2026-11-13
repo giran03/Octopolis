@@ -1,4 +1,4 @@
-import { createEffect, lazy, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, lazy, onCleanup, onMount, Show } from "solid-js";
 import { Shelf } from "./components/Shelf";
 import { inspector } from "./state/inspector";
 import { Overlays } from "./components/Overlays";
@@ -7,6 +7,8 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TooltipLayer } from "./components/Tooltip";
+import { trackDrags } from "./state/drag";
+import { isGoogleFont, loadGoogleFont } from "./lib/fonts";
 import { detectEditors, errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, startupPaths, type KnownFolder } from "./lib/ipc";
 import { classifyTarget } from "./lib/launch";
 import { samePath } from "./lib/paths";
@@ -27,11 +29,17 @@ import { workspace } from "./state/workspace";
 const Inspector = lazy(() => import("./components/Inspector").then((m) => ({ default: m.Inspector })));
 const TerminalPanel = lazy(() => import("./components/Terminal").then((m) => ({ default: m.TerminalPanel })));
 
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const [systemIsDark, setSystemIsDark] = createSignal(darkQuery.matches);
+darkQuery.addEventListener("change", () => setSystemIsDark(darkQuery.matches));
+
 /** Applies the chosen theme, accent, text size and density to the page. */
 function applyTheme() {
   const root = document.documentElement;
-  const all = [...BUILT_IN_THEMES, ...(settings.customTheme() ? [settings.customTheme()!] : [])];
-  const theme = all.find((t) => t.name === settings.theme());
+  const all = [...BUILT_IN_THEMES, ...settings.customThemes()];
+  // "Follow Windows" uses the theme picked for Windows' current light or dark mode, or the built-in look when none is.
+  const chosen = settings.theme() === "System" ? (systemIsDark() ? settings.systemDark() : settings.systemLight()) : settings.theme();
+  const theme = all.find((t) => t.name === chosen);
   for (const token of THEME_TOKENS) root.style.removeProperty(`--${token}`);
   if (theme) {
     root.dataset.theme = theme.scheme;
@@ -43,10 +51,10 @@ function applyTheme() {
   }
   if (settings.accent()) root.style.setProperty("--accent", settings.accent()!);
   root.dataset.density = settings.density();
-  root.classList.toggle("sidebar-names-only", settings.density() === "compact" || settings.sidebarNamesOnly());
-  root.style.setProperty("--row", `${DENSITIES[settings.density()]}px`);
+  root.classList.toggle("sidebar-names-only", settings.rowPx() <= DENSITIES.compact || settings.sidebarNamesOnly());
+  root.style.setProperty("--row", `${settings.rowPx()}px`);
   // The whole chrome (sidebar, tabs, toolbar, menus, status bar) follows the density, relative to "normal".
-  const scale = DENSITIES[settings.density()] / DENSITIES.normal;
+  const scale = settings.rowPx() / DENSITIES.normal;
   root.style.setProperty("--d", String(scale));
   root.style.setProperty("--ds", String(1 + (scale - 1) * 0.5));
   document.body.style.zoom = String(settings.uiScale() / 100);
@@ -56,8 +64,11 @@ function applyTheme() {
   root.dataset.iconStyle = settings.iconStyle();
   root.style.setProperty("--icon-scale", String(settings.iconScale() / 100));
   // Interface font: the chosen one first, then the usual stack.
-  if (settings.uiFont()) root.style.setProperty("--font", `"${settings.uiFont().replace(/"/g, "")}", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`);
+  // A Google font only applies while Google Fonts is switched on.
+  const font = settings.uiFont();
+  if (font && (!isGoogleFont(font) || settings.googleFonts())) root.style.setProperty("--font", `"${font.replace(/"/g, "")}", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`);
   else root.style.removeProperty("--font");
+  if (settings.googleFonts() && isGoogleFont(font)) void loadGoogleFont(font, true);
 }
 
 const LAST_PATH_KEY = "octopolis.lastpath.v1";
@@ -120,7 +131,10 @@ function syncAppIcon() {
   // Runs after applyTheme (created before it), so the page already carries the new colors.
   createEffect(() => {
     void settings.theme();
-    void settings.customTheme();
+    void settings.systemLight();
+    void settings.systemDark();
+    void systemIsDark();
+    void settings.customThemes();
     void settings.accent();
     schedule();
   });
@@ -161,6 +175,7 @@ export function App() {
   });
 
   onMount(async () => {
+    trackDrags();
     // First run: a short welcome once the window has settled.
     if (!settings.welcomeSeen()) setTimeout(() => ui.setWelcomeOpen(true), 1500);
     window.addEventListener("keydown", onKeyDown);

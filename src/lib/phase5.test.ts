@@ -3,7 +3,6 @@ import { cellsInRect, extensionOf, invertSelection, marqueeSelection, namePatter
 import { attributeLetters, gridTemplate, toggleColumn, visibleColumns } from "./columns";
 import { compareListings, countStatuses, isDifference } from "./compare";
 import { planTransfer } from "./conflicts";
-import { actionApplies, expandCommand, parseActions, parseExtensions } from "./customActions";
 import { cloudState } from "./listing";
 import { formatPath, formatPaths, toFileUrl, toRelative, toWslPath } from "./pathFormats";
 import { parseFolderViews, rememberView, viewFor } from "./folderViews";
@@ -125,23 +124,6 @@ describe("extrasToRemove", () => {
   it("keeps exactly one copy per group", () => {
     expect([...extrasToRemove(groups, "newest")]).toEqual(["mid", "old", "b"]);
     expect([...extrasToRemove(groups, "oldest")]).toEqual(["new", "mid", "a"]);
-  });
-});
-
-describe("custom actions", () => {
-  const a = { name: "Convert", command: 'ffmpeg -i {path} "{stem}.mp4"', extensions: ["mov", "mkv"], mode: "hidden" as const };
-  it("fills placeholders with quoted paths", () => {
-    expect(expandCommand(a.command, ["C:\\v\\My clip.mov"], "C:\\v")).toBe('ffmpeg -i "C:\\v\\My clip.mov" "My clip.mp4"');
-    expect(expandCommand("code {paths}", ["C:\\a", "C:\\b"], "C:\\")).toBe('code "C:\\a" "C:\\b"');
-    expect(expandCommand("wt -d {dir}", [], "D:\\x")).toBe('wt -d "D:\\x"');
-  });
-
-  it("applies by extension and parses saved actions", () => {
-    expect(actionApplies(a, ["x.MOV", "y.mkv"])).toBe(true);
-    expect(actionApplies(a, ["x.mov", "y.txt"])).toBe(false);
-    expect(actionApplies({ ...a, extensions: [] }, [])).toBe(true);
-    expect(parseExtensions(" mp4, .MOV;mkv mp4")).toEqual(["mp4", "mov", "mkv"]);
-    expect(parseActions([a, { name: "", command: "x" }, { name: "n", command: "c", mode: "weird" }])).toEqual([a, { name: "n", command: "c", extensions: [], mode: "hidden" }]);
   });
 });
 

@@ -111,6 +111,15 @@ export const ops = createRoot(() => {
         // The internal clipboard still works inside Octopolis.
       });
   }
+
+  /** Clears any pending cut/copy clipboard state and empties the OS clipboard if we owned it. */
+  function clearClip() {
+    const had = clip() !== null;
+    setClipRaw(null);
+    setExternalFiles(false);
+    ownSequence = null;
+    if (had) void ipc.clipboardClear().catch(() => undefined);
+  }
   const [stacks, setStacks] = createSignal(EMPTY_STACKS);
   let lastUndoToast: number | null = null;
 
@@ -212,7 +221,28 @@ export const ops = createRoot(() => {
    * asks the user what to do first. Resolves true once the work is queued,
    * false if the user cancelled.
    */
+  /** Asks before folders are moved into another folder, when that's turned on in Settings. Resolves true to go ahead. */
+  async function confirmFolderMove(sources: readonly string[], dest: string): Promise<boolean> {
+    if (!settings.confirmMoveFolders()) return true;
+    const flags = await ipc.pathsAreDirs([...sources]).catch(() => [] as boolean[]);
+    const folders = sources.filter((_, i) => flags[i]);
+    if (folders.length === 0) return true;
+    const where = baseName(dest) || dest;
+    const what = folders.length === 1 ? `the folder "${baseName(folders[0])}"` : `${folders.length} folders`;
+    const rest = sources.length > folders.length ? ` (and ${sources.length - folders.length} other item${sources.length - folders.length === 1 ? "" : "s"})` : "";
+    return new Promise((resolve) => {
+      ui.ask({
+        title: folders.length === 1 ? "Move folder?" : "Move folders?",
+        body: `Move ${what}${rest} into "${where}"?`,
+        confirmLabel: "Move",
+        onConfirm: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
   async function transfer(kind: "copy" | "move", sources: readonly string[], dest: string): Promise<boolean> {
+    if (kind === "move" && !(await confirmFolderMove(sources, dest))) return false;
     const verb = kind === "move" ? "Moving" : "Copying";
     let conflicts: NameConflict[] = [];
     try {
@@ -388,6 +418,7 @@ export const ops = createRoot(() => {
     clearActivity: () => setActivity([]),
     clip,
     setClip,
+    clearClip,
     /** True when Paste has something to paste, from Octopolis or another app. */
     canPaste: () => (clip()?.paths.length ?? 0) > 0 || externalFiles(),
     checkExternalClipboard,

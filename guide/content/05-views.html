@@ -1,0 +1,47 @@
+<section id="views" class="sec" data-title="Views and Auto view" data-group="Browse">
+  <span class="kicker">Browse</span>
+  <h2>Views and Auto view</h2>
+  <p class="lead">Show a folder the way that suits what is in it. The <b>View</b> button in the toolbar has them all, and one slider moves smoothly between them.</p>
+
+  <div class="demo" id="demo-views" data-reveal></div>
+  <p class="demo-cap" style="margin-top:-12px">The same twelve files in five of the views. Pick one: the items glide to their new places.</p>
+
+  <h3 id="view-styles">The view styles</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>View</th><th>Best for</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><b>Details</b></td><td>Everything, and repositories</td><td>Name, Date modified, Type and Size columns; click a header to sort. Folders always come first, with natural number order (file2 before file10). Resize columns by their edge; right-click the header to add Extension and Attributes or hide others.</td></tr>
+      <tr><td><b>List</b></td><td>Short names, lots of items</td><td>Flows in columns that share the full width.</td></tr>
+      <tr><td><b>Tiles</b></td><td>Folders of folders</td><td>Icon with name and type beside it; cards stretch to fill the row.</td></tr>
+      <tr><td><b>Content</b></td><td>Music and documents</td><td>Roomy rows with more detail.</td></tr>
+      <tr><td><b>Icons</b> (Extra large to Small)</td><td>Pictures and videos</td><td>Thumbnails from 40 to 256 px. Thumbnails sit above their names and never run over them.</td></tr>
+      <tr><td><b>Bento</b></td><td>Large sets of pictures and videos</td><td>Pictures keep their shape and fill every row. The one you hover or select grows while its neighbours give way. <span class="keys" data-keys="ctrl+wheel"></span> changes the row height.</td></tr>
+      <tr><td><b>Columns</b></td><td>Deep trees</td><td>macOS-style: one column per folder. Left and Right move between folders, it follows the list's sort and filter, and it stays smooth in any size of folder.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="zoom">Zoom and shortcuts</h3>
+  <ul>
+    <li>The <b>zoom slider</b> in the View menu moves through List, Details, Content and Tiles as steps, then through icon sizes (40 to 256 px) smoothly.</li>
+    <li><span class="keys" data-keys="ctrl+wheel"></span> zooms in any view. <span class="keys" data-keys="ctrl+shift+1"></span> to <span class="keys" data-keys="ctrl+shift+8"></span> switch views like Explorer does; <span class="keys" data-keys="ctrl+shift+9"></span> is Bento and <span class="keys" data-keys="ctrl+shift+0"></span> is Auto.</li>
+    <li>Icons, tiles and the list <b>stretch their cells to share the whole width</b>, so resizing the window never leaves an empty strip at the side.</li>
+    <li>Every view supports selecting by dragging a box, drag and drop (including dragging files out), drops on folders, grouping and the right-click menu.</li>
+  </ul>
+
+  <h3 id="auto-view">Auto view</h3>
+  <p>Auto is <b>on by default</b>. When you open a folder for the first time, Octopolis looks at what is in it and picks a view, once. It never changes the view under you afterwards.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>If the folder…</th><th>Auto shows</th></tr></thead>
+    <tbody>
+      <tr><td>is a <b>repository</b> (has a <code>.git</code>, <code>.hg</code> or <code>.svn</code>) <b>or is anywhere inside one</b></td><td>Details, always</td></tr>
+      <tr><td>has {{huge_folder}} items or more</td><td>Details</td></tr>
+      <tr><td>has 12+ files and at least 60% are pictures or videos</td><td>Bento (up to {{bento_limit}} items; beyond that, medium icons)</td></tr>
+      <tr><td>has 4+ files and at least 75% are pictures or videos</td><td>Large icons</td></tr>
+      <tr><td>has 6+ files and at least 60% are music</td><td>Content</td></tr>
+      <tr><td>has 4+ items and at least 70% are folders</td><td>Tiles</td></tr>
+      <tr><td>is anything else</td><td>Details</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout ok"><div><b class="t">A view you pick sticks.</b>
+    <p>Choose a view by hand and that folder keeps it. The Auto row in the View menu (or <span class="keys" data-keys="ctrl+shift+0"></span>) hands the folder back, and the menu says why Auto chose what it did. You can switch Auto off entirely in <b>Settings › General</b>.</p></div></div>
+</section>

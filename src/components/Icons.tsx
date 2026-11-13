@@ -86,6 +86,7 @@ export const IconForward = make("E72A");
 export const IconUp = make("E74A");
 export const IconDown = make("E70D");
 export const IconRefresh = make("E72C");
+export const IconReset = sym("restart_alt");
 export const IconPlus = make("E710");
 export const IconClose = make("E711");
 export const IconChevron = make("E76C");
@@ -110,6 +111,7 @@ export const IconTrash = make("E74D");
 export const IconDiskSpace = sym("hard_disk");
 /** A mop, for the Free up space button. */
 export const IconMop = sym("mop");
+export const IconBolt = sym("bolt");
 export const IconZoomIn = sym("zoom_in");
 export const IconZoomOut = sym("zoom_out");
 export const IconFit = sym("fit_screen");
@@ -202,7 +204,9 @@ export const FolderEmoji = (p: { emoji: string; size?: number; class?: string })
  */
 export function PathIcon(p: { path: string; name: string; isDir: boolean; exact?: boolean; size?: number; fallback: JSX.Element }) {
   const emoji = () => (p.isDir ? folderIcons.get(p.path) : undefined);
-  const url = () => (emoji() ? null : iconFor(p.path, p.name, p.isDir, p.exact)());
+  // A folder can wear the Windows icon of a special folder (Documents, 3D Objects...).
+  const borrowed = () => (p.isDir && !emoji() ? folderIcons.source(p.path) : undefined);
+  const url = () => (emoji() ? null : borrowed() ? iconFor(borrowed()!, p.name, true, true)() : iconFor(p.path, p.name, p.isDir, p.exact)());
   return (
     <Show when={!emoji()} fallback={<FolderEmoji emoji={emoji()!} size={p.size} />}>
       <Show when={url()} fallback={p.fallback}>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Octopolis guide</title>
+<meta name="description" content="The complete guide to Octopolis, the fast, keyboard-first file manager for Windows.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101216'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%236d8cff'/%3E%3Cg fill='%238b93a5'%3E%3Crect x='5' y='5' width='6' height='6' rx='2'/%3E%3Crect x='21' y='5' width='6' height='6' rx='2'/%3E%3Crect x='5' y='21' width='6' height='6' rx='2'/%3E%3Crect x='21' y='21' width='6' height='6' rx='2'/%3E%3C/g%3E%3C/svg%3E">
+<!-- The app writes its current theme here (guide-theme.js, next to this file); without it the guide uses its own colors. -->
+<script src="guide-theme.js"></script>
+<script>document.documentElement.classList.add("pending");setTimeout(function(){document.documentElement.classList.remove("pending")},1500)</script>
+<style>
+/*@STYLE*/
+</style>
+</head>
+<body>
+<!--@ICONS-->
+<a class="skip" href="#main">Skip to the guide</a>
+<div class="progress" aria-hidden="true"></div>
+
+<header class="top">
+  <button class="btn menu-btn" id="menu" type="button" aria-label="Show the sections"><svg><use href="#i-menu"/></svg></button>
+  <a class="brand" href="#overview" aria-label="Octopolis guide, start">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--surface-2)" stroke="var(--border-strong)"/><circle cx="16" cy="16" r="5" fill="var(--accent)"/><g fill="var(--text-muted)"><rect x="5" y="5" width="6" height="6" rx="2"/><rect x="21" y="5" width="6" height="6" rx="2"/><rect x="5" y="21" width="6" height="6" rx="2"/><rect x="21" y="21" width="6" height="6" rx="2"/></g></svg>
+    <span>Octopolis <small>guide</small></span>
+  </a>
+  <span class="spacer"></span>
+  <span class="sync off" id="sync" title="The guide wears the theme you use in Octopolis and follows it when you come back to this tab"><i></i><span>Not connected to the app</span></span>
+  <label class="sr" for="theme-pick">Guide theme</label>
+  <select class="btn" id="theme-pick" title="Theme of this guide"></select>
+  <button class="btn" id="open-search" type="button"><svg><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
+</header>
+
+<div class="shell">
+  <nav class="nav" id="nav" aria-label="Sections">
+    <div class="nav-list"><span class="nav-pill" aria-hidden="true"></span><!--@NAV--></div>
+  </nav>
+  <main id="main">
+<!--@CONTENT-->
+    <footer>
+      <p>Octopolis {{version}} · This guide is part of the app and works offline; it describes the version it shipped with. Press <kbd>F1</kbd> in Octopolis to open it at the right place.</p>
+      <p class="small">The motion in this page is original code written for the Octopolis and CafeTako projects; it ships no third-party animation library.</p>
+    </footer>
+  </main>
+</div>
+
+<button class="btn totop" id="totop" type="button" aria-label="Back to top"><svg><use href="#i-up"/></svg></button>
+
+<div class="search" id="search-dialog" role="dialog" aria-modal="true" aria-label="Search the guide">
+  <div class="search-box">
+    <input type="search" placeholder="Search the guide, shortcuts and changelog…" aria-label="Search" autocomplete="off" spellcheck="false">
+    <div class="results" role="listbox"></div>
+  </div>
+</div>
+
+<script type="application/json" id="guide-data">/*@DATA*/</script>
+<script>
+/*@SCRIPT*/
+</script>
+</body>
+</html>

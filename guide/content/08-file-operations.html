@@ -1,0 +1,41 @@
+<section id="file-operations" class="sec" data-title="File operations" data-group="Manage">
+  <span class="kicker">Manage</span>
+  <h2>File operations</h2>
+  <p class="lead">Copy, move, rename, delete and undo, with a queue you can see and control.</p>
+
+  <h3 id="basics">The everyday ones</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>To…</th><th>Do this</th></tr></thead>
+    <tbody>
+      <tr><td>Copy, cut, paste</td><td><span class="keys" data-keys="ctrl+c"></span> <span class="keys" data-keys="ctrl+x"></span> <span class="keys" data-keys="ctrl+v"></span>, or <b>Copy to…</b> / <b>Move to…</b> from the menu, with the folder picker</td></tr>
+      <tr><td>Rename</td><td><kbd>F2</kbd> (several items open the <a href="#batch-rename">batch renamer</a>)</td></tr>
+      <tr><td>New folder, new file</td><td><span class="keys" data-keys="ctrl+shift+n"></span> and <span class="keys" data-keys="ctrl+alt+n"></span>; the menu also has Markdown, empty files and your own templates (from a templates folder)</td></tr>
+      <tr><td>Delete</td><td><kbd>Del</kbd> sends to the Recycle Bin; <span class="keys" data-keys="shift+delete"></span> deletes for good after a confirmation</td></tr>
+      <tr><td>Undo, redo</td><td><span class="keys" data-keys="ctrl+z"></span> and <span class="keys" data-keys="ctrl+y"></span> for moves, renames, copies, new folders and Recycle Bin deletes</td></tr>
+      <tr><td>Copy a path</td><td><span class="keys" data-keys="ctrl+shift+c"></span>, or <span class="keys" data-keys="ctrl+alt+c"></span> for <b>Copy as</b>: in quotes, with forward slashes, relative to the folder, name only, file URL or WSL path</td></tr>
+      <tr><td>Properties</td><td><span class="keys" data-keys="alt+enter"></span>: size on disk, editable dates and attributes (for many items at once), hard links, extra streams, and SHA-256, MD5 and BLAKE3 checksums with a compare box</td></tr>
+      <tr><td>Open with…</td><td>Right-click › <b>Open with…</b>; <span class="keys" data-keys="ctrl+shift+enter"></span> runs a program or script as administrator</td></tr>
+    </tbody>
+  </table></div>
+  <p>Opening several files at once is a single batch: text files go to your editor in one launch, the rest open together, more than 10 asks first, and at most 50 open.</p>
+
+  <h3 id="transfers">The transfer queue</h3>
+  <ul>
+    <li>Copies, moves, compression and deletes wait in a <b>queue</b> with a progress tray and a <b>Cancel</b> button. They can be <b>paused and resumed</b>, <b>verified with checksums</b> (BLAKE3) and <b>limited to a chosen speed</b>.</li>
+    <li>Taskbar progress follows the queue, the PC stays awake while files move, and a Windows notification tells you when an operation that took over 10 seconds finishes while Octopolis is in the background. Both options are in Settings › General.</li>
+    <li>A list of <b>recent file operations</b> is one command away, and friendly messages explain access-denied and missing-folder situations.</li>
+    <li>Symbolic links and junctions are copied as links instead of failing, and very long paths (over 260 characters) copy, move and delete normally.</li>
+  </ul>
+
+  <h3 id="recycle-bin">Recycle Bin</h3>
+  <p>The Recycle Bin window searches deleted items, restores them, deletes them for good, or empties the bin.</p>
+
+  <h3 id="batch-rename">Batch rename</h3>
+  <p>Select several items and press <kbd>F2</kbd>. Build names from patterns with numbering, dates and photo or music tags; use find and replace with regular expressions; or edit the list of names directly. A live preview flags conflicts before anything is renamed, and undo puts the names back.</p>
+
+  <h3 id="compress">Compress and extract</h3>
+  <p>Compress to <b>.zip</b>, <b>.7z</b> or <b>.tar.gz</b> with progress and cancel. You can also <b>browse inside zip, 7z and tar archives</b> like folders, preview files in them, and copy items out.</p>
+
+  <h3 id="onedrive">OneDrive and the cloud</h3>
+  <p>OneDrive files show whether they are online only or kept on this device. Use <b>Always keep on this device</b> and <b>Free up space</b>. Thumbnails and previews never download online-only files.</p>
+</section>

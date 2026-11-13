@@ -13,6 +13,7 @@ pub mod rules;
 pub mod syscleanup;
 pub mod entry;
 pub mod enumerate;
+pub mod fonts;
 pub mod error;
 pub mod explorer_mode;
 pub mod git;
@@ -30,6 +31,7 @@ pub mod size_index;
 pub mod sizes;
 pub mod tags;
 pub mod thumbs;
+pub mod webdrop;
 
 pub use entry::{Entry, EntryKind, RawEntry};
 pub use enumerate::{enumerate_dir, list_dir};

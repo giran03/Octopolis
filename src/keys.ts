@@ -1,7 +1,8 @@
 // The window-level keyboard handler. Shortcuts come from the command
 // registry (with user overrides and the optional Vim layer); arrow keys and
 // type-to-find are handled here directly.
-import { commandById, COMMANDS, moveTo } from "./commands";
+import { createEffect, createRoot } from "solid-js";
+import { allCommands, commandById, moveTo } from "./commands";
 import { listHandles } from "./components/Pane";
 import { eventToKey } from "./lib/keymap";
 import { isDir } from "./lib/listing";
@@ -17,7 +18,8 @@ let typed = "";
 let typedAt = 0;
 let chordTimer: ReturnType<typeof setTimeout> | undefined;
 
-keybindings.register(COMMANDS);
+// Custom actions come and go, so the list is rebuilt whenever they change.
+createRoot(() => createEffect(() => keybindings.register(allCommands())));
 
 function isEditable(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
@@ -34,7 +36,23 @@ function listKeys(e: KeyboardEvent): boolean {
   const tab = workspace.activeTab();
   if (!tab || tab.renaming() !== null) return false;
   const ctrl = e.ctrlKey || e.metaKey;
-  if (tab.viewMode() === "grid" && !e.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+  const mode = tab.viewMode();
+  // The list view fills a column top to bottom: Up and Down step by one, Left and Right by a whole column.
+  if (mode === "list" && !e.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+    const per = listHandles.get(tab)?.columns?.() ?? 1;
+    const step = { ArrowLeft: -per, ArrowRight: per, ArrowUp: -1, ArrowDown: 1 }[e.key as "ArrowLeft"];
+    moveTo(tab, Math.min(Math.max(tab.focus() + step, 0), tab.view().length - 1), e.shiftKey, ctrl);
+    return true;
+  }
+  // The bento view's rows hold different numbers of pictures: Up and Down find the nearest one in the next row.
+  if (mode === "bento" && !e.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+    const vertical = listHandles.get(tab)?.vertical;
+    const side = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+    const next = side !== 0 ? tab.focus() + side : vertical ? vertical(tab.focus(), e.key === "ArrowUp" ? -1 : 1) : tab.focus();
+    moveTo(tab, Math.min(Math.max(next, 0), tab.view().length - 1), e.shiftKey, ctrl);
+    return true;
+  }
+  if ((mode === "grid" || mode === "tiles") && !e.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
     const cols = listHandles.get(tab)?.columns?.() ?? 1;
     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key as "ArrowLeft"];
     moveTo(tab, Math.min(Math.max(tab.focus() + step, 0), tab.view().length - 1), e.shiftKey, ctrl);

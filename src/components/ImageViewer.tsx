@@ -16,6 +16,7 @@ import {
   type Pan,
   type Size2D,
 } from "../lib/imageView";
+import { thumbnail } from "../lib/ipc";
 import { extensionOf } from "../lib/paths";
 import { IconFit, IconInfo, IconZoomIn, IconZoomOut } from "./Icons";
 
@@ -44,6 +45,30 @@ export function ImageViewer(props: {
   const [pan, setPan] = createSignal<Pan>({ x: 0, y: 0 });
   const [dragging, setDragging] = createSignal(false);
   const [localInfo, setLocalInfo] = createSignal(false);
+  // If the page can't decode the bytes (an odd PNG, a mislabelled file), Windows' own decoder gets one try.
+  const [src, setSrc] = createSignal(props.url);
+  const [failed, setFailed] = createSignal(false);
+  let triedFallback = false;
+  let ownUrl: string | null = null;
+  const dropOwnUrl = () => {
+    if (ownUrl) URL.revokeObjectURL(ownUrl);
+    ownUrl = null;
+  };
+  onCleanup(dropOwnUrl);
+  const onImageError = () => {
+    if (triedFallback || props.isSvg) return setFailed(true);
+    triedFallback = true;
+    const forPath = props.target.path;
+    thumbnail(forPath, 2048, false).then(
+      (b) => {
+        if (forPath !== props.target.path) return;
+        dropOwnUrl();
+        ownUrl = URL.createObjectURL(new Blob([b], { type: "image/png" }));
+        setSrc(ownUrl);
+      },
+      () => forPath === props.target.path && setFailed(true),
+    );
+  };
   const showInfo = () => props.showInfo ?? localInfo();
   const toggleInfo = () => (props.onToggleInfo ? props.onToggleInfo() : setLocalInfo((v) => !v));
 
@@ -60,6 +85,10 @@ export function ImageViewer(props: {
     on(
       () => props.url,
       () => {
+        dropOwnUrl();
+        triedFallback = false;
+        setFailed(false);
+        setSrc(props.url);
         setImgSize({ w: 0, h: 0 });
         setMode("fit");
         setCustomScale(1);
@@ -292,14 +321,19 @@ export function ImageViewer(props: {
         onDblClick={onStageDblClick}
         onKeyDown={onKeyDown}
       >
+        <Show when={failed()}>
+          <p class="muted small preview-img-failed">This image can't be shown here. Double-click the file to open it in your image viewer.</p>
+        </Show>
         <img
           ref={imgRef}
           class="preview-img-zoom"
           classList={{ pixelated: effectiveScale() >= 4 && !props.isSvg, settled: imgSize().w > 0 }}
-          src={props.url}
+          hidden={failed()}
+          src={src()}
           alt={props.target.name}
           draggable={false}
           onLoad={onImageLoad}
+          onError={onImageError}
           style={
             imgSize().w > 0
               ? {
@@ -318,7 +352,7 @@ export function ImageViewer(props: {
             style={{ width: `${minimap().box.w}px`, height: `${minimap().box.h}px` }}
             onPointerDown={onMinimapPointerDown}
           >
-            <img class="img-nav-thumb" src={props.url} alt="" draggable={false} />
+            <img class="img-nav-thumb" src={src()} alt="" draggable={false} />
             <div
               class="img-nav-rect"
               style={{
