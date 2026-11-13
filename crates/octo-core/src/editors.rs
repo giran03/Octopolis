@@ -40,17 +40,17 @@ pub fn detect() -> Vec<Editor> {
     let mut found: Vec<Editor> = Vec::new();
     let mut seen_paths: HashSet<String> = HashSet::new();
     for dir in candidate_dirs() {
-        if let Some(editor) = classify(&dir) {
-            if seen_paths.insert(editor.path.to_string_lossy().to_lowercase()) {
-                found.push(editor);
-            }
+        if let Some(editor) = classify(&dir)
+            && seen_paths.insert(editor.path.to_string_lossy().to_lowercase())
+        {
+            found.push(editor);
         }
     }
     // Windows' own Notepad is always there and needs no search.
-    if let Some(notepad) = std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("notepad.exe")).filter(|p| p.is_file()) {
-        if seen_paths.insert(notepad.to_string_lossy().to_lowercase()) {
-            found.push(Editor { name: "Notepad".into(), path: notepad });
-        }
+    if let Some(notepad) = std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("notepad.exe")).filter(|p| p.is_file())
+        && seen_paths.insert(notepad.to_string_lossy().to_lowercase())
+    {
+        found.push(Editor { name: "Notepad".into(), path: notepad });
     }
     found.sort_by_key(|e| e.name.to_lowercase());
     found

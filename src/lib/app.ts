@@ -8,7 +8,7 @@ export const DEVELOPER = "CafeTako";
 export const SUPPORT_EMAIL = "support@cafetako.com";
 export const COFFEE_URL = "https://buymeacoffee.com/cafetako";
 /** GitHub "owner/name" that releases are published to. Empty until the repository exists: updates stay disabled. */
-export const REPO = "";
+export const REPO = "giran03/Octopolis";
 export const LICENSE = "MIT";
 export const COPYRIGHT = "Copyright (c) 2026 giran03";
 

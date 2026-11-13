@@ -400,7 +400,7 @@ impl TrieNode {
             })
             .filter(|c| c.bytes > 0)
             .collect();
-        kids.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+        kids.sort_by_key(|b| std::cmp::Reverse(b.bytes));
 
         let child_bytes: u64 = kids.iter().map(|c| c.bytes).sum();
         let child_files: u64 = kids.iter().map(|c| c.files).sum();

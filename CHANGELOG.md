@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-13
 
 ### Added
 
@@ -19,7 +19,7 @@
 - 12 new built-in themes in six families (light, dark, high contrast, minimal, vibrant, pastel), including OLED Black and a light high-contrast theme, shown in a gallery under Settings > Appearance. Each card can be customized as a copy. Theme dropdowns show a round color preview, grouped by family, and Follow Windows can use a different theme for light and dark mode.
 - Theme creator: make as many custom themes as you like (Settings > Appearance > New theme). Pick every color with a live mock-up, start from any theme, auto-shade the surfaces from three colors, or try a random palette. It warns about hard-to-read colors, has a per-color undo, and themes can be edited, duplicated, deleted, copied as JSON, saved as a file and imported from a file or text (single themes or lists).
 - Settings window (Ctrl+,) with General, Appearance, Shortcuts, Advanced, Updates and About tabs: start folder, folder sizes, file icons and thumbnails, delete confirmation, terminal shell, themes, accent, text size, density, animation level, tooltips, sidebar and shelf options, shortcut editing, settings backup and restore, and a reset.
-- Updates tab and About page. Updates stay off until a release feed is set up.
+- Updates tab and About page with automatic background updates, SHA-256 verification, and silent install from GitHub Releases.
 - Collapsible sidebar sections, pinned folders, recent folders and a resizable sidebar.
 - Shelf that opens by itself while you drag files.
 - Custom title bar with window controls, a go-to pill, and icon-font icons throughout.

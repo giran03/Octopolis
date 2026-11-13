@@ -250,7 +250,9 @@ fn parse_moov(moov: &[u8], out: &mut Vec<(String, String)>) {
     }
 }
 
-fn parse_trak(trak: &[u8]) -> (Option<(u32, u32)>, Option<[u8; 4]>, Option<&'static str>) {
+type TrakInfo = (Option<(u32, u32)>, Option<[u8; 4]>, Option<&'static str>);
+
+fn parse_trak(trak: &[u8]) -> TrakInfo {
     let mut dims = None;
     let mut handler = None;
     let mut codec = None;
@@ -399,7 +401,7 @@ mod tests {
         let gif_path = tmp.path().join("anim.gif");
         // GIF89a header with global color table bit (0x80) + 3-bit depth index (= 2^(3+1) = 16 colors).
         let hdr = [b'G', b'I', b'F', b'8', b'9', b'a', 1, 0, 1, 0, 0x83, 0, 0];
-        std::fs::write(&gif_path, &hdr).unwrap();
+        std::fs::write(&gif_path, hdr).unwrap();
 
         let gif_info = image_details(&gif_path);
         assert!(gif_info.iter().any(|(k, v)| k == "Format spec" && v == "GIF89a"));
@@ -444,7 +446,7 @@ mod tests {
 
         let moov = atom(b"moov", &[mvhd, v_trak, a_trak].concat());
         let ftyp = atom(b"ftyp", b"isom");
-        std::fs::write(&mp4_path, &[ftyp, moov].concat()).unwrap();
+        std::fs::write(&mp4_path, [ftyp, moov].concat()).unwrap();
 
         let details = media_details(&mp4_path);
         assert!(details.iter().any(|(k, v)| k == "Resolution" && v == "1920 × 1080 px"));

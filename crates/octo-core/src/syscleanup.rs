@@ -323,10 +323,10 @@ fn walk(dir: &Path, pass: &Pass<'_>, top: bool) -> Tally {
             }
             continue;
         }
-        if let Some(filter) = pass.filter {
-            if !top || !filter(&entry.file_name().to_string_lossy()) {
-                continue;
-            }
+        if let Some(filter) = pass.filter
+            && (!top || !filter(&entry.file_name().to_string_lossy()))
+        {
+            continue;
         }
         if !old_enough(&meta, pass) {
             tally.skipped += 1;
