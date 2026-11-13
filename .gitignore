@@ -10,6 +10,7 @@ dist/
 target/
 src-tauri/gen/
 release/
+videos/
 *.exe
 *.msi
 
