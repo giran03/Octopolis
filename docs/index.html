@@ -385,6 +385,8 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 15px 18px;
+      min-width: 0;
+      overflow-wrap: break-word;
       transition: border-color var(--t-fast);
     }
     .point-card:hover {
@@ -394,9 +396,10 @@
       margin: 0 0 4px;
       font-size: 15px;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 6px 8px;
     }
     .point-card p {
       margin: 0;
@@ -408,7 +411,7 @@
     /* Power Tools Grid */
     .tools-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
       gap: 16px;
     }
     .tool-card {
@@ -416,15 +419,18 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 18px 20px;
+      min-width: 0;
+      overflow-wrap: break-word;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
     .tool-card-head {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 6px 8px;
       font-weight: 700;
       font-size: 15.5px;
     }
@@ -449,24 +455,32 @@
     }
     .shortcut-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
       gap: 10px 20px;
     }
     .sc-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 8px 12px;
+      min-width: 0;
       padding: 10px 14px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
       font-size: 14px;
     }
+    .sc-row > span:first-child {
+      min-width: 0;
+      overflow-wrap: break-word;
+    }
     .sc-keys {
       display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 5px;
-      flex-shrink: 0;
+      max-width: 100%;
     }
 
     /* Footer */
@@ -499,6 +513,13 @@
       }
       .callout-dot { display: none; }
       .nav-links { display: none; }
+    }
+    @media (max-width: 600px) {
+      .top { gap: 8px; padding: 0 12px; }
+      .brand small { display: none; }
+      .top .btn { padding: 6px 10px; font-size: 12.5px; }
+      .wrap { padding: 0 16px; }
+      .pill-badge { white-space: normal; }
     }
   </style>
 </head>
