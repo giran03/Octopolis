@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <title>Octopolis — A blazing-fast file explorer for Windows</title>
+  <meta name="description" content="A keyboard-first Windows file explorer built with Rust, Tauri, and SolidJS. Open 100,000+ item folders instantaneously, search 1.6M+ files with filters, preview code/3D/archives, and work in split panes." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='56' fill='%2311131A'/%3E%3Cg transform='translate(128 128) scale(0.78) translate(-128 -128)'%3E%3Cpath fill='%23FFFFFF' d='M32 20H66A12 12 0 0 1 78 32V54A24 24 0 0 1 54 78H32A12 12 0 0 1 20 66V32A12 12 0 0 1 32 20ZM111 20H145A12 12 0 0 1 157 32V64A14 14 0 0 1 143 78H113A14 14 0 0 1 99 64V32A12 12 0 0 1 111 20ZM190 20H224A12 12 0 0 1 236 32V66A12 12 0 0 1 224 78H202A24 24 0 0 1 178 54V32A12 12 0 0 1 190 20ZM32 99H64A14 14 0 0 1 78 113V143A14 14 0 0 1 64 157H32A12 12 0 0 1 20 145V111A12 12 0 0 1 32 99ZM192 99H224A12 12 0 0 1 236 111V145A12 12 0 0 1 224 157H192A14 14 0 0 1 178 143V113A14 14 0 0 1 192 99ZM32 178H54A24 24 0 0 1 78 202V224A12 12 0 0 1 66 236H32A12 12 0 0 1 20 224V190A12 12 0 0 1 32 178ZM113 178H143A14 14 0 0 1 157 192V224A12 12 0 0 1 145 236H111A12 12 0 0 1 99 224V192A14 14 0 0 1 113 178ZM202 178H224A12 12 0 0 1 236 190V224A12 12 0 0 1 224 236H190A12 12 0 0 1 178 224V202A24 24 0 0 1 202 178Z'/%3E%3Ccircle cx='128' cy='128' r='29' fill='%236D8CFF'/%3E%3C/g%3E%3C/svg%3E" />
+  <style>
+    /* Styled identically to Octopolis's built-in local web guide */
+    :root {
+      --bg: #101216;
+      --surface: #161920;
+      --surface-2: #1c2029;
+      --surface-3: #242935;
+      --border: #262b36;
+      --border-strong: #343a48;
+      --text: #e3e6ed;
+      --text-muted: #8b93a5;
+      --text-faint: #5d6576;
+      --accent: #6d8cff;
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --accent-strong: color-mix(in srgb, var(--accent) 28%, transparent);
+      --danger: #f06b6b;
+      --ok: #5ec98a;
+      --g-folder: #e7b955;
+      --g-code: #7fb4ff;
+      --g-image: #c58cff;
+      --g-doc: #8fd1c4;
+      --shadow: 0 14px 34px rgb(0 0 0 / 0.42);
+      --shadow-lg: 0 26px 64px rgb(0 0 0 / 0.55);
+      --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+      --mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+      --radius: 10px;
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --t-fast: 150ms;
+      --t-med: 240ms;
+      --top-h: 58px;
+      color-scheme: dark;
+    }
+
+    :root[data-theme="light"] {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-2: #f1f3f6;
+      --surface-3: #e7eaf0;
+      --border: #e2e5eb;
+      --border-strong: #cfd4dd;
+      --text: #1b1f27;
+      --text-muted: #5f6878;
+      --text-faint: #98a0ae;
+      --accent: #3d63f0;
+      --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+      --accent-strong: color-mix(in srgb, var(--accent) 20%, transparent);
+      --danger: #d64545;
+      --ok: #2f9e5f;
+      --g-folder: #d9a128;
+      --g-code: #3d7be0;
+      --g-image: #9a5ce0;
+      --g-doc: #2f9c88;
+      --shadow: 0 14px 34px rgb(20 30 50 / 0.12);
+      --shadow-lg: 0 26px 64px rgb(20 30 50 / 0.16);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: calc(var(--top-h) + 20px);
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.65 var(--font);
+      transition: background-color var(--t-med) var(--ease-out), color var(--t-med) var(--ease-out);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+    kbd {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      font: 600 12px/1.3 var(--mono);
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+
+    /* Sticky Top Bar matching guide.css */
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      height: var(--top-h);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 24px;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+    .brand:hover { text-decoration: none; }
+    .brand svg { width: 26px; height: 26px; flex-shrink: 0; }
+    .brand small {
+      font-weight: 500;
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-left: 2px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 16px;
+      overflow-x: auto;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 6px 10px;
+      border-radius: 7px;
+      white-space: nowrap;
+      transition: background var(--t-fast), color var(--t-fast);
+    }
+    .nav-links a:hover {
+      background: var(--surface-2);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .spacer { flex: 1; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 13px;
+      border-radius: 8px;
+      font: 600 13.5px/1.2 var(--font);
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      cursor: pointer;
+      transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: var(--surface-3);
+      text-decoration: none;
+    }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .btn.primary:hover {
+      filter: brightness(1.08);
+    }
+
+    /* Container */
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 64px 0 48px;
+    }
+    .hero-head {
+      max-width: 780px;
+    }
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      color: var(--accent);
+      font: 600 12.5px/1.3 var(--mono);
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      margin: 0 0 14px;
+      font-size: clamp(34px, 5vw, 54px);
+      line-height: 1.1;
+      letter-spacing: -0.035em;
+      font-weight: 750;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p.lead {
+      margin: 0 0 26px;
+      font-size: 18px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      max-width: 680px;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 26px;
+    }
+    .btn.lg {
+      padding: 11px 20px;
+      font-size: 15px;
+      border-radius: 10px;
+    }
+    .stats-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .stat-pill {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+    .stat-pill strong {
+      font: 700 15px/1 var(--mono);
+      color: var(--ok);
+    }
+
+    /* Annotated Shot Container + Callout Bubbles */
+    .stage-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 34px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .shot-frame {
+      position: relative;
+      border-radius: 14px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+      overflow: visible;
+    }
+    .shot-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 13px;
+    }
+
+    /* Callout Text Bubbles */
+    .callout {
+      position: absolute;
+      z-index: 10;
+      max-width: 260px;
+      background: color-mix(in srgb, var(--surface-2) 95%, transparent);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-strong);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 13px;
+      box-shadow: var(--shadow);
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--text);
+      transition: transform var(--t-fast) var(--ease-out), border-color var(--t-fast), opacity var(--t-fast);
+    }
+    .callout:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+      z-index: 15;
+    }
+    .callout-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 12.5px;
+      margin-bottom: 3px;
+      color: var(--text);
+    }
+    .callout-body {
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .callout-dot {
+      position: absolute;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .callout-dot.tl { top: -6px; left: -6px; }
+    .callout-dot.tr { top: -6px; right: -6px; }
+    .callout-dot.bl { bottom: -6px; left: -6px; }
+    .callout-dot.br { bottom: -6px; right: -6px; }
+
+    .callouts-hidden .callout {
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.96);
+    }
+
+    /* Feature Showcase Sections */
+    .section {
+      padding: 56px 0;
+      border-top: 1px solid var(--border);
+    }
+    .section-head {
+      max-width: 720px;
+      margin-bottom: 28px;
+    }
+    .section-kicker {
+      font: 700 12px/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .section h2 {
+      margin: 0 0 10px;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.2;
+      letter-spacing: -0.025em;
+    }
+    .section p.sub {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 16px;
+    }
+
+    .feature-split {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 32px;
+      align-items: center;
+    }
+    .feature-split.flip {
+      grid-template-columns: 1fr 1.35fr;
+    }
+    .feature-split.flip .feature-visual {
+      order: 2;
+    }
+    .feature-points {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .point-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 15px 18px;
+      transition: border-color var(--t-fast);
+    }
+    .point-card:hover {
+      border-color: var(--border-strong);
+    }
+    .point-card h3 {
+      margin: 0 0 4px;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .point-card p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Power Tools Grid */
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .tool-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .tool-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 15.5px;
+    }
+    .tool-card p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Interactive Shortcuts Table */
+    .shortcut-filter {
+      width: 100%;
+      max-width: 420px;
+      padding: 9px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+      font: 14px/1.4 var(--font);
+      margin-bottom: 18px;
+    }
+    .shortcut-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 10px 20px;
+    }
+    .sc-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .sc-keys {
+      display: inline-flex;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0 56px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    /* Mobile: stack callout bubbles cleanly below screenshots */
+    @media (max-width: 960px) {
+      .feature-split, .feature-split.flip {
+        grid-template-columns: 1fr;
+      }
+      .feature-split.flip .feature-visual {
+        order: 0;
+      }
+      .callout {
+        position: static;
+        max-width: none;
+        margin-top: 10px;
+      }
+      .callout-dot { display: none; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#top" aria-label="Octopolis home">
+      <svg viewBox="0 0 256 256" aria-hidden="true">
+        <path fill="currentColor" d="M28 20H76A8 8 0 0 1 84 28V54A30 30 0 0 1 54 84H28A8 8 0 0 1 20 76V28A8 8 0 0 1 28 20ZM104 20H152A8 8 0 0 1 160 28V66A18 18 0 0 1 142 84H114A18 18 0 0 1 96 66V28A8 8 0 0 1 104 20ZM180 20H228A8 8 0 0 1 236 28V76A8 8 0 0 1 228 84H202A30 30 0 0 1 172 54V28A8 8 0 0 1 180 20ZM28 96H66A18 18 0 0 1 84 114V142A18 18 0 0 1 66 160H28A8 8 0 0 1 20 152V104A8 8 0 0 1 28 96ZM190 96H228A8 8 0 0 1 236 104V152A8 8 0 0 1 228 160H190A18 18 0 0 1 172 142V114A18 18 0 0 1 190 96ZM28 172H54A30 30 0 0 1 84 202V228A8 8 0 0 1 76 236H28A8 8 0 0 1 20 228V180A8 8 0 0 1 28 172ZM114 172H142A18 18 0 0 1 160 190V228A8 8 0 0 1 152 236H104A8 8 0 0 1 96 228V190A18 18 0 0 1 114 172ZM202 172H228A8 8 0 0 1 236 180V228A8 8 0 0 1 228 236H180A8 8 0 0 1 172 228V202A30 30 0 0 1 202 172Z"/>
+        <circle cx="128" cy="128" r="30" fill="var(--accent)"/>
+      </svg>
+      <span>octopolis <small>showcase</small></span>
+    </a>
+
+    <nav class="nav-links" aria-label="Page sections">
+      <a href="#speed">Speed</a>
+      <a href="#workspace">Split Panes</a>
+      <a href="#search">Search</a>
+      <a href="#inspector">Inspector</a>
+      <a href="#terminal">Terminal &amp; Palette</a>
+      <a href="#tools">Power Tools</a>
+      <a href="#shortcuts">Shortcuts</a>
+    </nav>
+
+    <span class="spacer"></span>
+
+    <button class="btn" id="theme-toggle" type="button" aria-label="Toggle light or dark theme">Light mode</button>
+    <a class="btn" href="https://github.com/giran03/Octopolis" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn primary" href="https://github.com/giran03/Octopolis/releases/latest" target="_blank" rel="noopener">Download v0.1.0</a>
+  </header>
+
+  <main id="top" class="wrap">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-head">
+        <div class="pill-badge">Windows 10 &amp; 11 · Rust + Tauri + SolidJS · MIT</div>
+        <h1>A blazing-fast file explorer built for people who <span>live in their files.</span></h1>
+        <p class="lead">
+          Open 100,000+ item folders without stalling, search entire folder trees with filters, preview code, media, 3D models, and archives inline, and drive everything from the keyboard.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary lg" href="https://github.com/giran03/Octopolis/releases/latest/download/Octopolis_0.1.0_x64-setup.exe">Download Installer (v0.1.0)</a>
+          <a class="btn lg" href="https://github.com/giran03/Octopolis/releases/latest" target="_blank" rel="noopener">Release Notes &amp; SHA-256</a>
+          <button class="btn lg" id="toggle-callouts" type="button">Hide callout bubbles</button>
+        </div>
+
+        <div class="stats-strip" aria-label="Measured benchmarks">
+          <div class="stat-pill"><strong>1.2 ms</strong> System32 (5,133 entries)</div>
+          <div class="stat-pill"><strong>44 ms</strong> WinSxS (31,592 entries)</div>
+          <div class="stat-pill"><strong>5.5 s</strong> 1.6M-item full index</div>
+          <div class="stat-pill"><strong>~170 ms</strong> Fuzzy search over 1.6M names</div>
+        </div>
+      </div>
+
+      <div class="stage-toolbar">
+        <span>Hover or read the callout bubbles to explore the workspace</span>
+        <span>Captured from Octopolis</span>
+      </div>
+
+      <div class="shot-frame" id="hero-stage">
+        <img src="media/workspace-hero.png" alt="Octopolis workspace showing sidebar, split panes, inspector, and status bar" />
+
+        <div class="callout" style="top: -22px; left: 26%;">
+          <span class="callout-dot bl"></span>
+          <div class="callout-title"><span>Path Bar &amp; Breadcrumbs</span><kbd>Ctrl+L</kbd></div>
+          <p class="callout-body">Click any segment to jump up, or press <kbd>Ctrl+L</kbd> to type paths with <code>~</code> and <code>%ENV%</code> variables.</p>
+        </div>
+
+        <div class="callout" style="top: 28%; left: -18px;">
+          <span class="callout-dot tr"></span>
+          <div class="callout-title"><span>Sidebar &amp; Drives</span><kbd>Ctrl+B</kbd></div>
+          <p class="callout-body">Pinned folders, recent history, and drives with live free-space bars. Collapsible at any time.</p>
+        </div>
+
+        <div class="callout" style="bottom: 18%; left: 32%;">
+          <span class="callout-dot tl"></span>
+          <div class="callout-title"><span>Split Panes &amp; Tabs</span><kbd>Ctrl+\</kbd></div>
+          <p class="callout-body">Work side by side or stacked with draggable dividers, Git status badges, and drag-and-drop.</p>
+        </div>
+
+        <div class="callout" style="top: 20%; right: -18px;">
+          <span class="callout-dot bl"></span>
+          <div class="callout-title"><span>Inline Inspector</span><kbd>Space</kbd></div>
+          <p class="callout-body">Preview syntax-highlighted code, Markdown, images, PDFs, audio, video, 3D models, and hex dumps.</p>
+        </div>
+
+        <div class="callout" style="bottom: -24px; right: 20%;">
+          <span class="callout-dot tl"></span>
+          <div class="callout-title"><span>Native Win32 Engine</span><span>44 ms</span></div>
+          <p class="callout-body">Streams entries directly via <code>FindFirstFileExW</code> so massive folders render at full refresh rate.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature 1: Speed -->
+    <section class="section" id="speed">
+      <div class="section-head">
+        <div class="section-kicker">01 · Native Win32 Engine</div>
+        <h2>Instant folders, even at 100,000+ items.</h2>
+        <p class="sub">Octopolis reads folders directly from Windows in Rust and streams batches to a virtualized list—no UI freeze, no waiting on thumbnails to finish before you can scroll.</p>
+      </div>
+
+      <div class="feature-split">
+        <div class="feature-visual">
+          <div class="shot-frame">
+            <img src="media/instant-folders.gif" alt="Octopolis opening a large folder instantaneously and scrolling smoothly" />
+            <div class="callout" style="bottom: -18px; left: 24px;">
+              <span class="callout-dot tl"></span>
+              <div class="callout-title"><span>Live File Watcher</span><span>Auto-refresh</span></div>
+              <p class="callout-body">Folders update by themselves the moment files are added, renamed, or deleted outside the app.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-points">
+          <div class="point-card">
+            <h3><span>Direct Win32 Enumeration</span><kbd>F5</kbd></h3>
+            <p>Uses <code>FindFirstFileExW</code> with large-fetch buffering and <code>\\?\</code> long-path support so deep paths never fail.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Type-to-Find &amp; Quick Filter</span><kbd>Ctrl+F</kbd></h3>
+            <p>Start typing in any folder to jump straight to a file, or press <kbd>Ctrl+F</kbd> to narrow the visible list live.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Auto View &amp; Bento Gallery</span><kbd>Ctrl+Shift+9</kbd></h3>
+            <p>Folders of photos open in a dense Bento gallery; code repositories stay in Details. Override per folder anytime.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature 2: Split Panes & Drag-and-Drop -->
+    <section class="section" id="workspace">
+      <div class="section-head">
+        <div class="section-kicker">02 · Multi-Pane Workspace</div>
+        <h2>Tabs, split panes, and real Windows drag-and-drop.</h2>
+        <p class="sub">Organize across as many panes and tabs as you need—and drag files seamlessly between Octopolis, Windows Explorer, browser upload boxes, and chat apps.</p>
+      </div>
+
+      <div class="feature-split flip">
+        <div class="feature-visual">
+          <div class="shot-frame">
+            <img src="media/split-panes.gif" alt="Splitting panes and dragging files between folders in Octopolis" />
+            <div class="callout" style="top: -18px; right: 24px;">
+              <span class="callout-dot bl"></span>
+              <div class="callout-title"><span>Shelf Collector</span><kbd>Ctrl+Shift+D</kbd></div>
+              <p class="callout-body">Collect files from many folders onto the Shelf, then copy or move them all in one shot.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-points">
+          <div class="point-card">
+            <h3><span>Split Right or Split Down</span><kbd>Ctrl+\</kbd></h3>
+            <p>Jump between panes with <kbd>Tab</kbd> or <kbd>F6</kbd>, drag dividers to resize, and save layouts as workspace presets.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Drag Out &amp; Web Drop</span></h3>
+            <p>Drag files out to any Windows target, or drag images, PDFs, and links from a web browser straight into a folder.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Safe Background Transfers</span><kbd>Ctrl+Z</kbd></h3>
+            <p>Queued copies and moves support pause/resume, speed limits, BLAKE3 checksum verification, and undo/redo.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature 3: Search & Filters -->
+    <section class="section" id="search">
+      <div class="section-head">
+        <div class="section-kicker">03 · Index &amp; Query</div>
+        <h2>Find anything across whole folder trees.</h2>
+        <p class="sub">Fuzzy matching ranked by relevance, combined with structured filters and a Flat View that flattens every subfolder into one sortable table.</p>
+      </div>
+
+      <div class="feature-split">
+        <div class="feature-visual">
+          <div class="shot-frame">
+            <img src="media/search-filters.gif" alt="Fuzzy search with extension and size filters in Octopolis" />
+            <div class="callout" style="bottom: -18px; right: 24px;">
+              <span class="callout-dot tr"></span>
+              <div class="callout-title"><span>Query Syntax</span><span>Instant</span></div>
+              <p class="callout-body">Combine <code>ext:pdf,docx</code>, <code>size:&gt;100mb</code>, <code>dm:week</code>, <code>type:dir</code>, and <code>re:</code> regex.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-points">
+          <div class="point-card">
+            <h3><span>Subfolder Search</span><kbd>Ctrl+Shift+F</kbd></h3>
+            <p>Searches indexed drives (parallel walk + NTFS USN journal when elevated) with nucleo fuzzy ranking.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Flat View</span><kbd>Ctrl+Shift+E</kbd></h3>
+            <p>Lists every file across all nested subfolders in one sortable view—ideal for finding the largest or newest file fast.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Content Search</span></h3>
+            <p>Filter inside files with <code>content:"..."</code> alongside path, extension, date, and size constraints.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature 4: Inspector & Archives -->
+    <section class="section" id="inspector">
+      <div class="section-head">
+        <div class="section-kicker">04 · See Inside</div>
+        <h2>Inline Inspector and virtual archive folders.</h2>
+        <p class="sub">Press <kbd>Space</kbd> or <kbd>Ctrl+I</kbd> to inspect files without launching external apps—or double-click <code>.zip</code>, <code>.7z</code>, and <code>.tar</code> archives to browse them like normal folders.</p>
+      </div>
+
+      <div class="feature-split flip">
+        <div class="feature-visual">
+          <div class="shot-frame">
+            <img src="media/inspector-preview.gif" alt="Octopolis inline inspector previewing code, images, and metadata" />
+            <div class="callout" style="top: -18px; left: 24px;">
+              <span class="callout-dot br"></span>
+              <div class="callout-title"><span>Code, Media &amp; 3D</span><kbd>Space</kbd></div>
+              <p class="callout-body">Supports tree-sitter code highlighting, Markdown, SVG, PDF, audio waveforms, video, OBJ/STL 3D, and hex dumps.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-points">
+          <div class="point-card">
+            <h3><span>Virtual Archive Browsing</span></h3>
+            <p>Open <code>zip</code>, <code>7z</code>, and <code>tar</code> files inline, preview files inside them, and copy items straight out.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Real Windows Shell Icons</span></h3>
+            <p>Renders crisp native Windows file icons and thumbnails, plus custom emoji or Windows system folder icons.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Git Badges &amp; Last Commit</span></h3>
+            <p>Shows branch name, modified/added badges on files and folders, and an optional last-commit column inside repos.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature 5: Command Palette & Synced Terminal -->
+    <section class="section" id="terminal">
+      <div class="section-head">
+        <div class="section-kicker">05 · Built for Developers</div>
+        <h2>Command palette and a terminal that follows you.</h2>
+        <p class="sub">Jump to any folder, run any command, calculate expressions, or open a synced ConPTY terminal that tracks your active directory in both directions.</p>
+      </div>
+
+      <div class="feature-split">
+        <div class="feature-visual">
+          <div class="shot-frame">
+            <img src="media/terminal-palette.gif" alt="Octopolis command palette and synced built-in terminal" />
+            <div class="callout" style="bottom: -18px; left: 24px;">
+              <span class="callout-dot tl"></span>
+              <div class="callout-title"><span>Two-Way Sync</span><kbd>Ctrl+`</kbd></div>
+              <p class="callout-body">Navigating in Octopolis updates the terminal's working directory; typing <code>cd</code> in the terminal moves the file list.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-points">
+          <div class="point-card">
+            <h3><span>Multi-Mode Palette</span><kbd>Ctrl+P</kbd></h3>
+            <p><code>&gt;</code> commands · <code>/</code> subfolder search · <code>@</code> open tabs · <code>#</code> pinned folders · <code>!</code> shell command · <code>;</code> guide · math like <code>5 mb in kb</code>.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Optional Vim Keys</span></h3>
+            <p>Navigate with <code>h j k l</code>, <code>gg</code>, <code>G</code>, <code>yy</code>, <code>dd</code>, <code>p</code>, <code>v</code> visual selection, and <code>/</code> filter.</p>
+          </div>
+          <div class="point-card">
+            <h3><span>Rebindable Shortcuts &amp; Chords</span><kbd>Ctrl+K Ctrl+S</kbd></h3>
+            <p>Customize every shortcut—including two-step chords—right inside Settings.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Power Tools Grid -->
+    <section class="section" id="tools">
+      <div class="section-head">
+        <div class="section-kicker">06 · Power Tools &amp; Polish</div>
+        <h2>Everything else you reach for, built in.</h2>
+        <p class="sub">No third-party utilities needed for everyday disk management, renaming, or customization.</p>
+      </div>
+
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-card-head"><span>Batch Rename</span><kbd>F2</kbd></div>
+          <p>Numbering, dates, photo/music tags, regex find &amp; replace, editable name list, and live conflict detection.</p>
+        </div>
+        <div class="tool-card">
+          <div class="tool-card-head"><span>Disk Space Treemap</span><kbd>Ctrl+Shift+M</kbd></div>
+          <p>Compute folder sizes (<kbd>Ctrl+Shift+S</kbd>) with proportional bars and an interactive sunburst/treemap view.</p>
+        </div>
+        <div class="tool-card">
+          <div class="tool-card-head"><span>Lock Hunter</span></div>
+          <p>"What is locking this?" shows which Windows process holds an open handle on a file, with one-click termination.</p>
+        </div>
+        <div class="tool-card">
+          <div class="tool-card-head"><span>Custom Actions</span></div>
+          <p>20 ready-made cmd/PowerShell presets plus custom scripts with <code>{list}</code>, <code>{pslist}</code>, and prompt placeholders.</p>
+        </div>
+        <div class="tool-card">
+          <div class="tool-card-head"><span>Themes &amp; Theme Creator</span><kbd>Ctrl+,</kbd></div>
+          <p>12+ built-in themes (including Midnight and OLED Black), custom accents, adjustable density, and a live theme editor.</p>
+        </div>
+        <div class="tool-card">
+          <div class="tool-card-head"><span>Offline Guide &amp; Auto-Updates</span><kbd>F1</kbd></div>
+          <p>Context-aware offline documentation synced to your app theme, plus SHA-256-verified background updates.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Shortcuts Reference -->
+    <section class="section" id="shortcuts">
+      <div class="section-head">
+        <div class="section-kicker">07 · Keyboard Reference</div>
+        <h2>Built to keep your hands on the keyboard.</h2>
+        <p class="sub">Filter common shortcuts below, or press <kbd>Ctrl+K Ctrl+S</kbd> inside Octopolis to rebind any action.</p>
+      </div>
+
+      <input class="shortcut-filter" id="sc-filter" type="search" placeholder="Filter shortcuts (e.g. tab, split, search, terminal)…" aria-label="Filter keyboard shortcuts" />
+      <div class="shortcut-grid" id="sc-grid"></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div>
+        <strong>Octopolis v0.1.0</strong> · MIT License · Windows 10 &amp; 11
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        <a href="https://github.com/giran03/Octopolis" target="_blank" rel="noopener">GitHub Repository</a>
+        <a href="https://github.com/giran03/Octopolis/releases/latest" target="_blank" rel="noopener">Latest Release</a>
+        <a href="https://github.com/giran03/Octopolis/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var themeBtn = document.getElementById("theme-toggle");
+      var saved = localStorage.getItem("octopolis.showcase.theme");
+      if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+
+      function syncThemeLabel() {
+        var isDark = root.getAttribute("data-theme") !== "light";
+        themeBtn.textContent = isDark ? "Light mode" : "Dark mode";
+      }
+      syncThemeLabel();
+
+      themeBtn.addEventListener("click", function () {
+        var next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+        root.setAttribute("data-theme", next);
+        localStorage.setItem("octopolis.showcase.theme", next);
+        syncThemeLabel();
+      });
+
+      var calloutBtn = document.getElementById("toggle-callouts");
+      var heroStage = document.getElementById("hero-stage");
+      calloutBtn.addEventListener("click", function () {
+        var hidden = heroStage.classList.toggle("callouts-hidden");
+        calloutBtn.textContent = hidden ? "Show callout bubbles" : "Hide callout bubbles";
+      });
+
+      var SHORTCUTS = [
+        ["New tab / Close tab", ["Ctrl+T", "Ctrl+W"]],
+        ["Reopen closed tab", ["Ctrl+Shift+T"]],
+        ["Split right / Split down", ["Ctrl+\\", "Ctrl+Shift+\\"]],
+        ["Switch pane", ["Tab", "F6"]],
+        ["Edit path / Quick filter", ["Ctrl+L", "Ctrl+F"]],
+        ["Command palette (Go / All)", ["Ctrl+P", "Ctrl+Shift+P"]],
+        ["Search subfolders / Flat view", ["Ctrl+Shift+F", "Ctrl+Shift+E"]],
+        ["Inline Inspector", ["Ctrl+I", "Space"]],
+        ["Synced ConPTY terminal", ["Ctrl+`"]],
+        ["Disk treemap / Folder sizes", ["Ctrl+Shift+M", "Ctrl+Shift+S"]],
+        ["Shelf collector", ["Ctrl+Shift+D"]],
+        ["Details / Grid / Columns / Bento", ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+Shift+9"]],
+        ["Rename / Batch rename", ["F2"]],
+        ["Undo / Redo", ["Ctrl+Z", "Ctrl+Y"]],
+        ["Show hidden / Toggle sidebar", ["Ctrl+H", "Ctrl+B"]],
+        ["Keyboard shortcuts / Settings / Guide", ["Ctrl+K Ctrl+S", "Ctrl+,", "F1"]]
+      ];
+
+      var grid = document.getElementById("sc-grid");
+      var filter = document.getElementById("sc-filter");
+
+      function renderShortcuts(q) {
+        var term = (q || "").trim().toLowerCase();
+        grid.innerHTML = "";
+        SHORTCUTS.forEach(function (item) {
+          var label = item[0];
+          var keys = item[1];
+          if (term && label.toLowerCase().indexOf(term) === -1 && keys.join(" ").toLowerCase().indexOf(term) === -1) return;
+          var row = document.createElement("div");
+          row.className = "sc-row";
+          var span = document.createElement("span");
+          span.textContent = label;
+          var kwrap = document.createElement("span");
+          kwrap.className = "sc-keys";
+          keys.forEach(function (k) {
+            var kbd = document.createElement("kbd");
+            kbd.textContent = k;
+            kwrap.appendChild(kbd);
+          });
+          row.appendChild(span);
+          row.appendChild(kwrap);
+          grid.appendChild(row);
+        });
+      }
+
+      renderShortcuts("");
+      filter.addEventListener("input", function () { renderShortcuts(filter.value); });
+    })();
+  </script>
+</body>
+</html>
