@@ -15,6 +15,10 @@
 </p>
 
 <p align="center">
+  <a href="https://giran03.github.io/Octopolis/"><strong>Product Showcase &amp; Feature Tour</strong></a> · <a href="https://github.com/giran03/Octopolis/releases/latest"><strong>Download Latest Release</strong></a>
+</p>
+
+<p align="center">
   <img src="docs/media/workspace-hero.png" width="880" alt="Octopolis workspace with file list, disk treemap, and synced terminal" />
 </p>
 
