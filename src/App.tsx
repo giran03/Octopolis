@@ -13,6 +13,8 @@ import { sidebarWidthForRowPx } from "./lib/sidebar";
 import { detectEditors, errorText, explorerFailsafeTripped, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
 import { classifyTarget } from "./lib/launch";
 import { startShellWindows } from "./state/shellWindows";
+import { dialogAssist } from "./state/dialogAssist";
+import { DialogPickBar } from "./components/DialogPickBar";
 import { samePath } from "./lib/paths";
 import { parsePreset } from "./lib/session";
 import { currentIconColors, renderAppIcon } from "./lib/appIcon";
@@ -237,6 +239,7 @@ export function App() {
     } else startFolder = home || "C:\\";
     await openLaunchTargets(await startupPaths().catch(() => []));
     startShellWindows();
+    dialogAssist.start();
     if (await explorerFailsafeTripped().catch(() => false)) {
       ui.toast("Octopolis didn't start properly twice, so folders open in File Explorer again. Turn it back on in Settings > General", undefined, 15000);
     }
@@ -265,6 +268,7 @@ export function App() {
       <Sidebar />
       <main class="workspace">
         <div class="main-stack">
+          <DialogPickBar />
           <div class="panes">
             <Show when={workspace.paneCount() > 0 && workspace.activePaneId() !== "none"}>
               <PaneTree node={workspace.layout()} />

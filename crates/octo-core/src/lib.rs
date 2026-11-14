@@ -3,6 +3,7 @@
 
 pub mod archive;
 pub mod cleanup;
+pub mod dialog_assist;
 pub mod clipboard;
 pub mod codec;
 pub mod compress;

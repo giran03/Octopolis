@@ -498,6 +498,24 @@ export interface ShowItems {
 export const SHOW_ITEMS_EVENT = "octopolis://show-items";
 /** Tells Windows which folders the tabs are showing, so "Show in folder" in other apps can land here. */
 export const shellWindowsSync = (paths: readonly string[]) => invoke<void>("shell_windows_sync", { paths });
+/** Another app's Open or Save dialog waiting for a file picked here. */
+export interface DialogPick {
+  readonly title: string;
+  /** Program showing the dialog, e.g. "notepad.exe"; empty if unknown. */
+  readonly app: string;
+  /** A Save dialog: only a folder can be sent. */
+  readonly save: boolean;
+}
+/** Event sent when Ctrl+Shift+G is pressed in another app's Open or Save dialog. */
+export const DIALOG_PICK_EVENT = "octopolis://dialog-pick";
+/** Turns the Open/Save dialog shortcuts on or off; `exclude` lists programs to leave alone. */
+export const dialogAssistSet = (enabled: boolean, exclude: string) => invoke<void>("dialog_assist_set", { enabled, exclude });
+/** Reports the folder of the tab in front, which Ctrl+G sends a dialog to. */
+export const dialogAssistFolder = (path: string) => invoke<void>("dialog_assist_folder", { path });
+/** Finishes a pick: opens `files` in the waiting dialog, or sends it to `folder` when `files` is empty. */
+export const dialogAssistSend = (files: readonly string[], folder: string) => invoke<void>("dialog_assist_send", { files, folder });
+/** Abandons a pick and returns to the dialog. */
+export const dialogAssistCancel = () => invoke<void>("dialog_assist_cancel");
 /** Event sent when another launch asks this window to open paths. */
 export const OPEN_PATHS_EVENT = "octopolis://open-paths";
 

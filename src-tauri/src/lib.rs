@@ -1,6 +1,7 @@
 //! Tauri shell: exposes the octo-core engine to the UI as commands.
 
 mod diag;
+mod dialog_cmd;
 mod dormant;
 mod failsafe;
 mod icon_cmd;
@@ -51,6 +52,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(launch::LaunchState::default())
         .manage(shellwin_cmd::ShellWinState::default())
+        .manage(dialog_cmd::DialogState::default())
         .manage(tools_cmd::ScanState::default())
         .manage(tools_cmd::TagsState::default())
         .manage(ops_cmd::OpsState::default())
@@ -191,6 +193,10 @@ pub fn run() {
             system::explorer_menu_set,
             failsafe::explorer_failsafe_tripped,
             shellwin_cmd::shell_windows_sync,
+            dialog_cmd::dialog_assist_set,
+            dialog_cmd::dialog_assist_folder,
+            dialog_cmd::dialog_assist_send,
+            dialog_cmd::dialog_assist_cancel,
             system::clipboard_write_files,
             system::clipboard_read_files,
             system::clipboard_clear,

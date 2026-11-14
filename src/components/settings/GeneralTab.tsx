@@ -74,6 +74,24 @@ function ExplorerModeSection() {
           <Toggle label="Add Open in Octopolis to File Explorer" checked={!!status()?.menu} disabled={busy() || status.loading} onChange={(next) => void setMenu(next)} />
         </SettingRow>
       </Show>
+      <SettingRow
+        label="Help in Open and Save dialogs"
+        hint="While another app's Open or Save dialog is in front: Ctrl+G sends it to the folder Octopolis is showing, and Ctrl+Shift+G lets you pick the file here. The Windows dialog stays; Octopolis has to be running"
+      >
+        <Toggle label="Help in Open and Save dialogs" checked={settings.dialogAssist()} onChange={(dialogAssist) => settings.set({ dialogAssist })} />
+      </SettingRow>
+      <Show when={settings.dialogAssist()}>
+        <SettingRow label="Leave these apps alone" hint="Program names separated by commas, for example game.exe, launcher.exe. Their dialogs keep Ctrl+G for themselves. Apps running as administrator are always left alone">
+          <input
+            class="text-input wide"
+            spellcheck={false}
+            placeholder="game.exe, launcher.exe"
+            aria-label="Leave these apps alone"
+            value={settings.dialogAssistExclude()}
+            onChange={(e) => settings.set({ dialogAssistExclude: e.currentTarget.value.trim() })}
+          />
+        </SettingRow>
+      </Show>
       <SettingRow label="Shortcut to bring Octopolis forward" hint="Ctrl+E only works while the desktop or taskbar is in front, so other apps keep their own Ctrl+E. Ctrl+Alt+E works anywhere and hides Octopolis again">
         <Select label="Shortcut to bring Octopolis forward" value={settings.summonKey()} options={SUMMON} onChange={(summonKey) => settings.set({ summonKey })} />
       </SettingRow>
@@ -84,7 +102,7 @@ function ExplorerModeSection() {
             run <code>Octopolis.exe --restore-explorer</code>.
           </p>
           <p class="muted small">
-            Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer. Open and Save dialogs in other apps stay the Windows ones, and Control
+            Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer. Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control
             Panel, Network and similar places still open in File Explorer.
           </p>
           <div class="dialog-actions">
