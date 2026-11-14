@@ -1,6 +1,7 @@
 // Per-user preferences, remembered in local storage.
 import { createRoot, createSignal } from "solid-js";
 import type { SummonKey, WindowCorners } from "../lib/ipc";
+import { summonKeyOf } from "../lib/summon";
 import { DENSITIES, type Density, type Theme } from "../lib/themes";
 import { sanitizeThemes } from "../lib/themeTools";
 
@@ -203,7 +204,7 @@ export const settings = createRoot(() => {
     sidebarNamesOnly: () => value().sidebarNamesOnly,
     updateMode: () => value().updateMode,
     keepInTray: () => value().keepInTray,
-    summonKey: () => value().summonKey,
+    summonKey: () => summonKeyOf(value().summonKey),
     dialogAssist: () => value().dialogAssist,
     dialogAssistExclude: () => value().dialogAssistExclude,
     catchExplorer: () => value().catchExplorer,

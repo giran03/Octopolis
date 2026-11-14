@@ -1,7 +1,8 @@
 //! The summon shortcut: a system-wide key that brings Octopolis forward.
 //! It is a registered hotkey, not a keyboard hook: Octopolis never sees typing.
 //! Ctrl+E is only caught while the desktop or taskbar has focus, so other
-//! apps keep their own Ctrl+E; Ctrl+Alt+E works everywhere.
+//! apps keep their own Ctrl+E; Ctrl+Shift+Alt+E works everywhere. (Not Ctrl+Alt+E:
+//! AltGr sends Ctrl+Alt, so that would take AltGr+E, the euro sign, away from many layouts.)
 
 use std::sync::Mutex;
 
@@ -11,15 +12,16 @@ pub enum Summon {
     Off,
     /// Ctrl+E on the desktop or taskbar only.
     CtrlEDesktop,
-    /// Ctrl+Alt+E anywhere; pressing it in Octopolis hides it again.
-    CtrlAltE,
+    /// Ctrl+Shift+Alt+E anywhere; pressing it in Octopolis hides it again.
+    CtrlShiftAltE,
 }
 
 impl Summon {
     pub fn parse(s: &str) -> Summon {
         match s {
             "ctrlE" => Summon::CtrlEDesktop,
-            "ctrlAltE" => Summon::CtrlAltE,
+            // "ctrlAltE" is the earlier name, from when this shortcut was Ctrl+Alt+E.
+            "ctrlShiftAltE" | "ctrlAltE" => Summon::CtrlShiftAltE,
             _ => Summon::Off,
         }
     }
@@ -99,7 +101,7 @@ mod imp {
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey, VK_E};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, UnregisterHotKey, VK_E};
     use windows::Win32::UI::WindowsAndMessaging::{
         EVENT_SYSTEM_FOREGROUND, GetClassNameW, GetForegroundWindow, GetMessageW, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, WINEVENT_OUTOFCONTEXT,
         WM_HOTKEY, WM_QUIT,
@@ -159,8 +161,8 @@ mod imp {
             let _ = PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
             let _ = ready.send(GetCurrentThreadId());
             CTRL_E_HELD.store(false, Ordering::Relaxed);
-            let watcher = if mode == Summon::CtrlAltE {
-                let _ = RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, u32::from(VK_E.0));
+            let watcher = if mode == Summon::CtrlShiftAltE {
+                let _ = RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_SHIFT | MOD_ALT | MOD_NOREPEAT, u32::from(VK_E.0));
                 None
             } else {
                 // Out of context: the callback runs on this thread, and nothing is loaded into other apps.
@@ -208,7 +210,7 @@ mod tests {
     fn ctrl_e_is_only_claimed_on_the_desktop() {
         assert!(wants_ctrl_e(Summon::CtrlEDesktop, true));
         assert!(!wants_ctrl_e(Summon::CtrlEDesktop, false), "Ctrl+E in a browser stays the browser's");
-        assert!(!wants_ctrl_e(Summon::CtrlAltE, true));
+        assert!(!wants_ctrl_e(Summon::CtrlShiftAltE, true));
         assert!(!wants_ctrl_e(Summon::Off, true));
     }
 
@@ -218,5 +220,7 @@ mod tests {
         assert!(!is_desktop_class("Chrome_WidgetWin_1"));
         assert_eq!(Summon::parse("ctrlE"), Summon::CtrlEDesktop);
         assert_eq!(Summon::parse("nonsense"), Summon::Off);
+        assert_eq!(Summon::parse("ctrlShiftAltE"), Summon::CtrlShiftAltE);
+        assert_eq!(Summon::parse("ctrlAltE"), Summon::CtrlShiftAltE, "a saved Ctrl+Alt+E choice moves to the new shortcut");
     }
 }

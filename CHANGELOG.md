@@ -11,7 +11,8 @@
 
 ### Changed
 
-- **Summon shortcut without a keyboard hook**: `Ctrl+E` on the desktop and `Ctrl+Alt+E` are now registered Windows hotkeys, so Octopolis no longer watches the keyboard to catch them.
+- **Summon shortcut without a keyboard hook**: `Ctrl+E` on the desktop and the anywhere shortcut are now registered Windows hotkeys, so Octopolis no longer watches the keyboard to catch them.
+- **Summon anywhere is now `Ctrl+Shift+Alt+E`**: `Ctrl+Alt+E` also caught `AltGr+E`, which types € on many keyboard layouts. If you used it, your setting moves to the new shortcut.
 
 ## [0.1.1] - 2026-11-14
 

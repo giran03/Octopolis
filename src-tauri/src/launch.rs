@@ -73,7 +73,7 @@ pub fn set_keep_in_tray(app: AppHandle, state: State<'_, LaunchState>, on: bool)
 }
 
 /// Sets the summon shortcut: "off", "ctrlE" (desktop and taskbar only) or
-/// "ctrlAltE" (anywhere; pressed while Octopolis is in front, it hides it).
+/// "ctrlShiftAltE" (anywhere; pressed while Octopolis is in front, it hides it).
 ///
 /// Runs off the UI thread: changing the shortcut waits for the old shortcut
 /// thread, which may itself be waiting on the UI thread to answer a window call.
@@ -92,7 +92,7 @@ fn apply_summon(app: AppHandle, mode: &str) {
     octo_core::hotkey::set(summon, move || {
         let Some(w) = handle.get_webview_window("main") else { return };
         let in_front = w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) && !w.is_minimized().unwrap_or(false);
-        if in_front && summon == octo_core::hotkey::Summon::CtrlAltE {
+        if in_front && summon == octo_core::hotkey::Summon::CtrlShiftAltE {
             let keep = handle.state::<LaunchState>().keep_in_tray.load(Ordering::Relaxed);
             let _ = if keep { w.hide() } else { w.minimize() };
             crate::dormant::sync(&handle);

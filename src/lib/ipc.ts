@@ -451,7 +451,7 @@ export const startupPaths = () => invoke<string[]>("startup_paths");
 /** Closing the window hides it to the notification area while on. */
 export const setKeepInTray = (on: boolean) => invoke<void>("set_keep_in_tray", { on });
 export const quitApp = () => invoke<void>("quit_app");
-export type SummonKey = "off" | "ctrlE" | "ctrlAltE";
+export type SummonKey = "off" | "ctrlE" | "ctrlShiftAltE";
 /** Sets the system-wide shortcut that brings Octopolis forward. */
 export const setSummon = (mode: SummonKey) => invoke<void>("set_summon", { mode });
 export type WindowCorners = "system" | "square" | "small" | "rounded";

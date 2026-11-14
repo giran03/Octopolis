@@ -13,7 +13,7 @@ const START: readonly Option<StartFolder>[] = [
 const SUMMON: readonly Option<SummonKey>[] = [
   { value: "off", label: "Off" },
   { value: "ctrlE", label: "Ctrl+E on the desktop" },
-  { value: "ctrlAltE", label: "Ctrl+Alt+E anywhere" },
+  { value: "ctrlShiftAltE", label: "Ctrl+Shift+Alt+E anywhere" },
 ];
 
 const SHELLS: readonly Option<TerminalShell>[] = [
@@ -100,7 +100,7 @@ function ExplorerModeSection() {
           />
         </SettingRow>
       </Show>
-      <SettingRow label="Shortcut to bring Octopolis forward" hint="Ctrl+E only works while the desktop or taskbar is in front, so other apps keep their own Ctrl+E. Ctrl+Alt+E works anywhere and hides Octopolis again">
+      <SettingRow label="Shortcut to bring Octopolis forward" hint="Ctrl+E only works while the desktop or taskbar is in front, so other apps keep their own Ctrl+E. Ctrl+Shift+Alt+E works anywhere and hides Octopolis again">
         <Select label="Shortcut to bring Octopolis forward" value={settings.summonKey()} options={SUMMON} onChange={(summonKey) => settings.set({ summonKey })} />
       </SettingRow>
       <Show when={confirming()}>
