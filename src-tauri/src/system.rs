@@ -276,6 +276,7 @@ pub async fn explorer_mode_set(app: tauri::AppHandle, on: bool) -> Result<Explor
         }
         // "Show in folder" follows the same switch.
         crate::shellwin_cmd::apply(&app);
+        crate::catch_cmd::apply(&app);
         Ok(explorer_mode_dto())
     })
     .await
@@ -324,6 +325,8 @@ pub fn open_in_explorer(target: String) -> Result<(), String> {
     if !(lower.starts_with("shell:") || lower.starts_with("::{")) || t.contains(['"', '&', '|', '<', '>']) {
         return Err("only Windows shell locations are opened this way".into());
     }
+    // This File Explorer window is wanted: the optional catcher must not hand it back to Octopolis.
+    octo_core::explorer_catch::pause(std::time::Duration::from_secs(5));
     std::process::Command::new("explorer.exe").arg(t).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 

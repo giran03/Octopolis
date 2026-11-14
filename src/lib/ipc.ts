@@ -498,6 +498,8 @@ export interface ShowItems {
 export const SHOW_ITEMS_EVENT = "octopolis://show-items";
 /** Tells Windows which folders the tabs are showing, so "Show in folder" in other apps can land here. */
 export const shellWindowsSync = (paths: readonly string[]) => invoke<void>("shell_windows_sync", { paths });
+/** Turns handing new File Explorer folder windows to Octopolis on or off (only applies while Octopolis is the default). */
+export const explorerCatchSet = (enabled: boolean) => invoke<void>("explorer_catch_set", { enabled });
 /** Another app's Open or Save dialog waiting for a file picked here. */
 export interface DialogPick {
   readonly title: string;

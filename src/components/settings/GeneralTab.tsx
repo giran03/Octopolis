@@ -69,6 +69,14 @@ function ExplorerModeSection() {
       <SettingRow label="Use Octopolis instead of File Explorer" hint={hint()}>
         <Toggle label="Use Octopolis instead of File Explorer" checked={on()} disabled={busy() || status.loading} onChange={(next) => (next ? setConfirming(true) : void apply(false))} />
       </SettingRow>
+      <Show when={on()}>
+        <SettingRow
+          label="Also catch File Explorer windows other apps open"
+          hint="Show in folder for a folder that isn't open here, and apps that start File Explorer themselves, still open a File Explorer window. With this on, Octopolis closes that window and opens the folder here; the window may flash briefly. Control Panel, This PC and similar places stay in File Explorer"
+        >
+          <Toggle label="Also catch File Explorer windows other apps open" checked={settings.catchExplorer()} onChange={(catchExplorer) => settings.set({ catchExplorer })} />
+        </SettingRow>
+      </Show>
       <Show when={!on()}>
         <SettingRow label="Add Open in Octopolis to File Explorer" hint="Keeps File Explorer as the default and adds an entry to its folder right-click menu. You can also run octopolis with a folder path">
           <Toggle label="Add Open in Octopolis to File Explorer" checked={!!status()?.menu} disabled={busy() || status.loading} onChange={(next) => void setMenu(next)} />
@@ -102,7 +110,7 @@ function ExplorerModeSection() {
             run <code>Octopolis.exe --restore-explorer</code>.
           </p>
           <p class="muted small">
-            Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer. Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control
+            Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer (Also catch File Explorer windows covers that). Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control
             Panel, Network and similar places still open in File Explorer.
           </p>
           <div class="dialog-actions">

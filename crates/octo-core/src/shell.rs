@@ -139,6 +139,8 @@ pub fn eject_drive(root: &Path) -> Result<()> {
 pub fn reveal_in_explorer(path: &Path) -> Result<()> {
     let mut arg = std::ffi::OsString::from("/select,");
     arg.push(path.as_os_str());
+    // This File Explorer window is wanted: the optional catcher must not hand it back to Octopolis.
+    crate::explorer_catch::pause(std::time::Duration::from_secs(5));
     std::process::Command::new("explorer.exe")
         .arg(arg)
         .spawn()

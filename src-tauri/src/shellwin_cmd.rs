@@ -30,6 +30,12 @@ pub struct ShowItems {
     items: Vec<String>,
 }
 
+impl ShowItems {
+    pub(crate) fn new(folder: String, items: Vec<String>) -> ShowItems {
+        ShowItems { folder, items }
+    }
+}
+
 /// Groups the items of one burst by folder, keeping only what follows the last "replace" of each.
 pub fn batches(selected: Vec<Selected>) -> Vec<ShowItems> {
     let mut out: Vec<ShowItems> = Vec::new();

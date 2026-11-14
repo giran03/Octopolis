@@ -15,6 +15,7 @@ mod term_cmd;
 mod tools_cmd;
 mod size_cmd;
 mod cache_cmd;
+mod catch_cmd;
 mod dragout_cmd;
 mod fonts_cmd;
 mod guide_cmd;
@@ -193,6 +194,7 @@ pub fn run() {
             system::explorer_menu_set,
             failsafe::explorer_failsafe_tripped,
             shellwin_cmd::shell_windows_sync,
+            catch_cmd::explorer_catch_set,
             dialog_cmd::dialog_assist_set,
             dialog_cmd::dialog_assist_folder,
             dialog_cmd::dialog_assist_send,

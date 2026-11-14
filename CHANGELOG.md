@@ -5,6 +5,7 @@
 ### Added
 
 - **Show in folder lands in Octopolis**: With **Use Octopolis instead of File Explorer** on, **Show in folder** / **Reveal in Explorer** in browsers, editors and chat apps selects the file in Octopolis when a tab already has that folder open, instead of opening File Explorer.
+- **Catch File Explorer windows other apps open**: New opt-in setting, shown while **Use Octopolis instead of File Explorer** is on. New File Explorer folder windows opened by other apps (including **Show in folder** for a folder that isn't open in a tab) are closed and opened in Octopolis with the same file selected. Control Panel, This PC and windows you already had open are left alone.
 - **Help in Open and Save dialogs**: New opt-in setting under **Settings > General > File Explorer**. While another app's Open or Save dialog is in front, `Ctrl+G` sends it to the folder Octopolis is showing and `Ctrl+Shift+G` brings Octopolis forward to pick the file there (**Use selected file**, **Use this folder**). Save dialogs keep their file name, and an exclusion list leaves chosen programs alone.
 - **Start-up failsafe for the default file manager**: If **Use Octopolis instead of File Explorer** is on and Octopolis fails to start twice in a row, folders are handed back to File Explorer automatically and the folder you were opening opens there.
 

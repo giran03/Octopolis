@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/ipc", () => ({ SHOW_ITEMS_EVENT: "x", shellWindowsSync: () => Promise.resolve() }));
 vi.mock("./workspace", () => ({ workspace: {} }));
+vi.mock("./settings", () => ({ settings: {} }));
 
 import { listedFolders } from "./shellWindows";
 
