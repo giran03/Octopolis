@@ -36,7 +36,7 @@ pub fn wants_ctrl_e(mode: Summon, in_desktop: bool) -> bool {
     mode == Summon::CtrlEDesktop && in_desktop
 }
 
-type Callback = Box<dyn Fn() + Send + Sync>;
+type Callback = std::sync::Arc<dyn Fn() + Send + Sync>;
 
 struct Shared {
     mode: Summon,
@@ -46,17 +46,23 @@ struct Shared {
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared { mode: Summon::Off, on_press: None, worker: None });
 
+/// Held for the whole of [`set`], so two calls can never start two shortcut threads.
+static SETTING: Mutex<()> = Mutex::new(());
+
 fn shared() -> std::sync::MutexGuard<'static, Shared> {
     SHARED.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Sets the summon shortcut. `on_press` runs (on the shortcut thread) each
 /// time it is pressed; keep it quick. `Summon::Off` releases the shortcut.
+/// Changing it waits for the old shortcut thread to end, so never call this
+/// from a thread `on_press` waits on (such as the UI thread).
 pub fn set(mode: Summon, on_press: impl Fn() + Send + Sync + 'static) {
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
     let mut s = shared();
     let unchanged = s.mode == mode && s.worker.is_some();
     s.mode = mode;
-    s.on_press = Some(Box::new(on_press));
+    s.on_press = Some(std::sync::Arc::new(on_press));
     if unchanged {
         return;
     }
@@ -74,7 +80,9 @@ pub fn set(mode: Summon, on_press: impl Fn() + Send + Sync + 'static) {
 
 #[cfg_attr(not(windows), allow(dead_code))]
 fn pressed() {
-    if let Some(f) = &shared().on_press {
+    // Taken out of the lock first: the callback may wait on other threads.
+    let callback = shared().on_press.clone();
+    if let Some(f) = callback {
         f();
     }
 }

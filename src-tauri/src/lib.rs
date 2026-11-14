@@ -221,6 +221,13 @@ pub fn run() {
             watch::watch_dir,
             watch::unwatch_dir,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Octopolis");
+        .build(tauri::generate_context!())
+        .expect("error while running Octopolis")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Leave nothing behind in File Explorer's shell windows table.
+                shellwin_cmd::shutdown(app);
+                octo_core::explorer_catch::set(false, |_| {});
+            }
+        });
 }

@@ -29,14 +29,32 @@ pub fn check() {
     if !octo_core::failsafe::begin(&dir) {
         return;
     }
-    let _ = octo_core::explorer_mode::disable();
+    if octo_core::explorer_mode::disable().is_err() {
+        // Nothing was handed back, so say nothing; the next start tries again.
+        return;
+    }
     TRIPPED.store(true, Ordering::Relaxed);
     // Whatever was being opened still opens, in File Explorer.
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cwd = std::env::current_dir().unwrap_or_default();
     for target in crate::launch::launch_targets(&args, &cwd) {
-        let _ = std::process::Command::new("explorer.exe").arg(target).spawn();
+        if let Some(arg) = explorer_arg(&target, std::path::Path::new(&target).is_dir()) {
+            let _ = std::process::Command::new(octo_core::shell::explorer_exe()).arg(arg).spawn();
+        }
     }
+}
+
+/// What to pass File Explorer so it shows `target`. A file is shown selected in its
+/// folder, never opened: handing File Explorer a file path would run it.
+fn explorer_arg(target: &str, is_dir: bool) -> Option<String> {
+    let lower = target.to_ascii_lowercase();
+    if lower.starts_with("shell:") || target.starts_with("::{") {
+        return Some(target.to_string());
+    }
+    if target.is_empty() {
+        return None;
+    }
+    Some(if is_dir { target.to_string() } else { format!("/select,{target}") })
 }
 
 /// The window is running: this start counts as a good one.
@@ -52,4 +70,17 @@ pub fn started() {
 #[tauri::command]
 pub fn explorer_failsafe_tripped() -> bool {
     TRIPPED.swap(false, Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explorer_arg;
+
+    #[test]
+    fn files_are_shown_not_opened() {
+        assert_eq!(explorer_arg("C:\\x\\setup.exe", false).as_deref(), Some("/select,C:\\x\\setup.exe"));
+        assert_eq!(explorer_arg("C:\\x", true).as_deref(), Some("C:\\x"));
+        assert_eq!(explorer_arg("shell:Downloads", false).as_deref(), Some("shell:Downloads"));
+        assert_eq!(explorer_arg("", false), None);
+    }
 }

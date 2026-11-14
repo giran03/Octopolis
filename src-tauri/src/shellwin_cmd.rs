@@ -90,6 +90,13 @@ pub fn apply(app: &AppHandle) {
     registry.sync(if active { wanted } else { Vec::new() });
 }
 
+/// Removes Octopolis's entries from the shell windows table. Call when Octopolis quits.
+pub fn shutdown(app: &AppHandle) {
+    if let Some(registry) = app.state::<ShellWinState>().registry.get() {
+        registry.stop();
+    }
+}
+
 /// The UI reports the folders its tabs are showing.
 #[tauri::command]
 pub async fn shell_windows_sync(app: AppHandle, state: State<'_, ShellWinState>, paths: Vec<String>) -> Result<(), String> {

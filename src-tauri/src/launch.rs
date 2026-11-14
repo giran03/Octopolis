@@ -74,9 +74,20 @@ pub fn set_keep_in_tray(app: AppHandle, state: State<'_, LaunchState>, on: bool)
 
 /// Sets the summon shortcut: "off", "ctrlE" (desktop and taskbar only) or
 /// "ctrlAltE" (anywhere; pressed while Octopolis is in front, it hides it).
+///
+/// Runs off the UI thread: changing the shortcut waits for the old shortcut
+/// thread, which may itself be waiting on the UI thread to answer a window call.
 #[tauri::command]
-pub fn set_summon(app: AppHandle, mode: String) {
-    let summon = octo_core::hotkey::Summon::parse(&mode);
+pub async fn set_summon(app: AppHandle, mode: String) -> Result<(), String> {
+    crate::off_main(move || {
+        apply_summon(app, &mode);
+        Ok(())
+    })
+    .await
+}
+
+fn apply_summon(app: AppHandle, mode: &str) {
+    let summon = octo_core::hotkey::Summon::parse(mode);
     let handle = app.clone();
     octo_core::hotkey::set(summon, move || {
         let Some(w) = handle.get_webview_window("main") else { return };

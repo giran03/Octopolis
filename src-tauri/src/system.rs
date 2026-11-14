@@ -326,8 +326,8 @@ pub fn open_in_explorer(target: String) -> Result<(), String> {
         return Err("only Windows shell locations are opened this way".into());
     }
     // This File Explorer window is wanted: the optional catcher must not hand it back to Octopolis.
-    octo_core::explorer_catch::pause(std::time::Duration::from_secs(5));
-    std::process::Command::new("explorer.exe").arg(t).spawn().map(|_| ()).map_err(|e| e.to_string())
+    octo_core::explorer_catch::pause(std::time::Duration::from_secs(10));
+    std::process::Command::new(octo_core::shell::explorer_exe()).arg(t).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

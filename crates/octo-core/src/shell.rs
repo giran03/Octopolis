@@ -135,13 +135,20 @@ pub fn eject_drive(root: &Path) -> Result<()> {
     imp::eject_drive(root)
 }
 
+/// File Explorer by its full path in the Windows folder, so a program of the same
+/// name elsewhere (next to Octopolis, on PATH) is never started instead.
+pub fn explorer_exe() -> std::path::PathBuf {
+    let windows = std::env::var_os("SystemRoot").or_else(|| std::env::var_os("windir")).map_or_else(|| std::path::PathBuf::from("C:\\Windows"), std::path::PathBuf::from);
+    windows.join("explorer.exe")
+}
+
 /// Opens Windows Explorer with `path` selected.
 pub fn reveal_in_explorer(path: &Path) -> Result<()> {
     let mut arg = std::ffi::OsString::from("/select,");
     arg.push(path.as_os_str());
     // This File Explorer window is wanted: the optional catcher must not hand it back to Octopolis.
-    crate::explorer_catch::pause(std::time::Duration::from_secs(5));
-    std::process::Command::new("explorer.exe")
+    crate::explorer_catch::pause(std::time::Duration::from_secs(10));
+    std::process::Command::new(explorer_exe())
         .arg(arg)
         .spawn()
         .map(|_| ())

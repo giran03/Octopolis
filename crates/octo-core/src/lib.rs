@@ -27,6 +27,7 @@ pub mod names;
 pub mod network;
 pub mod ops;
 pub mod preview;
+pub mod process;
 pub mod props;
 pub mod search;
 pub mod shell;

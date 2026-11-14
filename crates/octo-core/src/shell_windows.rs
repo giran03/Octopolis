@@ -95,6 +95,11 @@ impl Registry {
     pub fn sync(&self, folders: Vec<String>) {
         self.inner.sync(folders);
     }
+
+    /// Removes every entry now and waits (briefly) until that is done. Call when Octopolis quits.
+    pub fn stop(&self) {
+        self.inner.stop();
+    }
 }
 
 #[cfg(windows)]
@@ -103,24 +108,25 @@ mod imp {
 
     use std::ffi::c_void;
     use std::sync::Arc;
-    use std::sync::mpsc::{Sender, channel};
+    use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+    use std::time::Duration;
 
     use windows::Win32::Foundation::{
-        DISP_E_UNKNOWNNAME, E_FAIL, E_NOTIMPL, HWND, LPARAM, LRESULT, RECT, SHANDLE_PTR, VARIANT_BOOL, VARIANT_FALSE, VARIANT_TRUE, WPARAM,
+        DISP_E_UNKNOWNNAME, E_FAIL, E_NOTIMPL, E_POINTER, HWND, LPARAM, LRESULT, RECT, SHANDLE_PTR, VARIANT_BOOL, VARIANT_FALSE, VARIANT_TRUE, WPARAM,
     };
     use windows::Win32::System::Com::{
         CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO, IDispatch, IDispatch_Impl,
         IServiceProvider, IServiceProvider_Impl, IStream, ITypeInfo,
     };
     use windows::Win32::System::Ole::{
-        IOleWindow_Impl, LoadRegTypeLib, OLEMENUGROUPWIDTHS, SafeArrayAccessData, SafeArrayCreateVector, SafeArrayUnaccessData,
+        DISPID_UNKNOWN, IOleWindow_Impl, LoadRegTypeLib, OLEMENUGROUPWIDTHS, SafeArrayAccessData, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayUnaccessData,
     };
     use windows::Win32::System::Variant::{VARENUM, VARIANT, VT_ARRAY, VT_UI1, VariantClear};
     use windows::Win32::UI::Controls::{LPFNSVADDPROPSHEETPAGE, TBBUTTON};
     use windows::Win32::UI::Shell::Common::ITEMIDLIST;
     use windows::Win32::UI::Shell::{
         _SVGIO, FOLDERSETTINGS, GPFIDL_DEFAULT, ILCombine, ILCreateFromPathW, ILFree, ILGetSize, IShellBrowser, IShellBrowser_Impl, IShellView, IShellView_Impl,
-        IShellWindows, IWebBrowser_Impl, IWebBrowserApp, IWebBrowserApp_Impl, SHGetPathFromIDListEx, SVSI_DESELECTOTHERS, SWC_BROWSER, ShellWindows,
+        IShellWindows, IWebBrowser_Impl, IWebBrowserApp, IWebBrowserApp_Impl, SHGetPathFromIDListEx, SVSI_DESELECTOTHERS, SVSI_SELECT, SWC_BROWSER, ShellWindows,
     };
     use windows::Win32::UI::WindowsAndMessaging::{HMENU, MSG};
     use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknownImpl, Interface, PCWSTR, Ref, Result, implement};
@@ -202,7 +208,8 @@ mod imp {
             not_impl()
         }
         fn SelectItem(&self, item: *const ITEMIDLIST, flags: u32) -> Result<()> {
-            if item.is_null() {
+            // Deselect and focus-only requests change nothing here.
+            if item.is_null() || flags & SVSI_SELECT.0 as u32 == 0 {
                 return Ok(());
             }
             let folder = Pidl::from_path(&self.folder).ok_or(E_FAIL)?;
@@ -311,7 +318,11 @@ mod imp {
         fn GetTypeInfo(&self, _: u32, _: u32) -> Result<ITypeInfo> {
             not_impl()
         }
-        fn GetIDsOfNames(&self, _: *const GUID, _: *const PCWSTR, _: u32, _: u32, _: *mut i32) -> Result<()> {
+        fn GetIDsOfNames(&self, _: *const GUID, _: *const PCWSTR, count: u32, _: u32, ids: *mut i32) -> Result<()> {
+            if !ids.is_null() {
+                // SAFETY: COM passes room for `count` ids.
+                unsafe { std::slice::from_raw_parts_mut(ids, count as usize).fill(DISPID_UNKNOWN) };
+            }
             Err(DISP_E_UNKNOWNNAME.into())
         }
         fn Invoke(&self, _: i32, _: *const GUID, _: u32, _: DISPATCH_FLAGS, _: *const DISPPARAMS, _: *mut VARIANT, _: *mut EXCEPINFO, _: *mut u32) -> Result<()> {
@@ -348,11 +359,18 @@ mod imp {
         }
         fn GetIDsOfNames(&self, _: *const GUID, names: *const PCWSTR, count: u32, _: u32, ids: *mut i32) -> Result<()> {
             let info = self.type_info.as_ref().ok_or(DISP_E_UNKNOWNNAME)?;
-            // SAFETY: COM passes `count` names and room for as many ids.
+            if names.is_null() || ids.is_null() {
+                return Err(E_POINTER.into());
+            }
+            // SAFETY: COM passes `count` names and room for as many ids; both were checked above.
             unsafe { info.GetIDsOfNames(names, count, ids) }
         }
         fn Invoke(&self, id: i32, _: *const GUID, _: u32, flags: DISPATCH_FLAGS, params: *const DISPPARAMS, result: *mut VARIANT, except: *mut EXCEPINFO, arg_err: *mut u32) -> Result<()> {
             let info = self.type_info.as_ref().ok_or(E_NOTIMPL)?;
+            // The result and error pointers may be null (the type info allows that); the arguments may not.
+            if params.is_null() {
+                return Err(E_POINTER.into());
+            }
             let this: IWebBrowserApp = self.to_interface();
             // SAFETY: the type description routes the call to this object's own methods; the pointers are COM's.
             unsafe { info.Invoke(this.as_raw(), id, flags, params.cast_mut(), result, except, arg_err) }
@@ -521,9 +539,15 @@ mod imp {
                 return None;
             }
             let mut data = std::ptr::null_mut();
-            SafeArrayAccessData(array, &mut data).ok()?;
+            if SafeArrayAccessData(array, &mut data).is_err() {
+                let _ = SafeArrayDestroy(array);
+                return None;
+            }
             std::ptr::copy_nonoverlapping(pidl.0.cast::<u8>(), data.cast::<u8>(), size as usize);
-            SafeArrayUnaccessData(array).ok()?;
+            if SafeArrayUnaccessData(array).is_err() {
+                let _ = SafeArrayDestroy(array);
+                return None;
+            }
             let mut v = VARIANT::default();
             (*v.Anonymous.Anonymous).vt = VARENUM(VT_ARRAY.0 | VT_UI1.0);
             (*v.Anonymous.Anonymous).Anonymous.parray = array;
@@ -531,17 +555,30 @@ mod imp {
         }
     }
 
+    /// How often to check that the shell windows table is still there. It lives in
+    /// File Explorer, so it is gone (and every entry with it) when File Explorer restarts.
+    const HEALTH_CHECK: Duration = Duration::from_secs(5);
+
+    fn connect() -> Option<IShellWindows> {
+        // SAFETY: plain COM object creation on a COM-initialised thread.
+        unsafe { CoCreateInstance::<_, IShellWindows>(&ShellWindows, None, CLSCTX_ALL).ok() }
+    }
+
     struct Table {
         hwnd: HWND,
         on_select: OnSelect,
-        shell: IShellWindows,
+        /// `None` while File Explorer isn't running.
+        shell: Option<IShellWindows>,
         type_info: Option<ITypeInfo>,
         /// Listed folders with their cookies. The table itself keeps the window objects alive.
         listed: Vec<(String, i32)>,
+        /// What the UI last asked for, to list again after a reconnect.
+        wanted: Vec<String>,
     }
 
     impl Table {
         fn add(&mut self, folder: &str) {
+            let Some(shell) = self.shell.clone() else { return };
             let Some(mut loc) = location(folder) else { return };
             let view: IShellView = View { hwnd: self.hwnd, folder: folder.to_string(), on_select: self.on_select.clone() }.into();
             let browser: IShellBrowser = Browser { hwnd: self.hwnd, view }.into();
@@ -549,11 +586,11 @@ mod imp {
             // SAFETY: plain calls on the shell windows table; `loc` is cleared afterwards.
             unsafe {
                 // Window handles fit in 32 bits, which is all this API takes.
-                if let Ok(cookie) = self.shell.Register(&window, self.hwnd.0 as i32, SWC_BROWSER) {
-                    if self.shell.OnNavigate(cookie, &loc).is_ok() {
+                if let Ok(cookie) = shell.Register(&window, self.hwnd.0 as i32, SWC_BROWSER) {
+                    if shell.OnNavigate(cookie, &loc).is_ok() {
                         self.listed.push((folder.to_string(), cookie));
                     } else {
-                        let _ = self.shell.Revoke(cookie);
+                        let _ = shell.Revoke(cookie);
                     }
                 }
                 let _ = VariantClear(&mut loc);
@@ -562,17 +599,21 @@ mod imp {
 
         fn remove(&mut self, folder: &str) {
             let key = folder_key(folder);
+            let shell = self.shell.clone();
             self.listed.retain(|(f, cookie)| {
                 if folder_key(f) != key {
                     return true;
                 }
-                // SAFETY: the cookie came from `Register`.
-                let _ = unsafe { self.shell.Revoke(*cookie) };
+                if let Some(shell) = &shell {
+                    // SAFETY: the cookie came from `Register` on this table.
+                    let _ = unsafe { shell.Revoke(*cookie) };
+                }
                 false
             });
         }
 
         fn sync(&mut self, wanted: &[String]) {
+            self.wanted = wanted.to_vec();
             let current: Vec<String> = self.listed.iter().map(|(f, _)| f.clone()).collect();
             let (add, remove) = diff(&current, wanted);
             for f in &remove {
@@ -582,30 +623,63 @@ mod imp {
                 self.add(f);
             }
         }
+
+        /// Reconnects and lists everything again if File Explorer restarted since the last look.
+        fn heal(&mut self) {
+            // SAFETY: a plain call; on a dead connection it fails instead of blocking.
+            let alive = self.shell.as_ref().is_some_and(|s| unsafe { s.Count() }.is_ok());
+            if alive {
+                return;
+            }
+            // The old cookies belonged to the table that went away.
+            self.listed.clear();
+            self.shell = connect();
+            if self.shell.is_some() {
+                let wanted = std::mem::take(&mut self.wanted);
+                self.sync(&wanted);
+            }
+        }
     }
 
-    fn run(hwnd: isize, on_select: OnSelect, commands: std::sync::mpsc::Receiver<Vec<String>>) {
+    enum Msg {
+        Sync(Vec<String>),
+        Stop(Sender<()>),
+    }
+
+    fn run(hwnd: isize, on_select: OnSelect, commands: Receiver<Msg>) {
         // SAFETY: COM is set up for this thread and torn down when it ends. In the multithreaded
         // apartment, calls from other apps arrive on COM's own threads; this one only waits.
         unsafe {
             if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
                 return;
             }
-            if let Ok(shell) = CoCreateInstance::<_, IShellWindows>(&ShellWindows, None, CLSCTX_ALL) {
-                let type_info = LoadRegTypeLib(&LIBID_SHDOCVW, 1, 1, 0).and_then(|lib| lib.GetTypeInfoOfGuid(&IWebBrowserApp::IID)).ok();
-                let mut table = Table { hwnd: HWND(hwnd as *mut c_void), on_select, shell, type_info, listed: Vec::new() };
-                // Ends when the `Registry` is dropped.
-                while let Ok(wanted) = commands.recv() {
-                    table.sync(&wanted);
+            let type_info = LoadRegTypeLib(&LIBID_SHDOCVW, 1, 1, 0).and_then(|lib| lib.GetTypeInfoOfGuid(&IWebBrowserApp::IID)).ok();
+            let mut table = Table { hwnd: HWND(hwnd as *mut c_void), on_select, shell: connect(), type_info, listed: Vec::new(), wanted: Vec::new() };
+            loop {
+                match commands.recv_timeout(HEALTH_CHECK) {
+                    Ok(Msg::Sync(wanted)) => {
+                        table.heal();
+                        table.sync(&wanted);
+                    }
+                    Ok(Msg::Stop(done)) => {
+                        table.sync(&[]);
+                        let _ = done.send(());
+                        break;
+                    }
+                    Err(RecvTimeoutError::Timeout) => table.heal(),
+                    Err(RecvTimeoutError::Disconnected) => {
+                        table.sync(&[]);
+                        break;
+                    }
                 }
-                table.sync(&[]);
             }
+            drop(table);
             CoUninitialize();
         }
     }
 
     pub struct Worker {
-        commands: Sender<Vec<String>>,
+        commands: Sender<Msg>,
     }
 
     impl Worker {
@@ -616,7 +690,14 @@ mod imp {
         }
 
         pub fn sync(&self, folders: Vec<String>) {
-            let _ = self.commands.send(folders);
+            let _ = self.commands.send(Msg::Sync(folders));
+        }
+
+        pub fn stop(&self) {
+            let (done, wait) = channel();
+            if self.commands.send(Msg::Stop(done)).is_ok() {
+                let _ = wait.recv_timeout(Duration::from_secs(1));
+            }
         }
     }
 }
@@ -634,6 +715,7 @@ mod imp {
             Worker
         }
         pub fn sync(&self, _: Vec<String>) {}
+        pub fn stop(&self) {}
     }
 }
 

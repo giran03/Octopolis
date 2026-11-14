@@ -505,8 +505,8 @@ export interface DialogPick {
   readonly title: string;
   /** Program showing the dialog, e.g. "notepad.exe"; empty if unknown. */
   readonly app: string;
-  /** A Save dialog: only a folder can be sent. */
-  readonly save: boolean;
+  /** Only a folder can be sent (Save dialogs and older-style dialogs). */
+  readonly folderOnly: boolean;
 }
 /** Event sent when Ctrl+Shift+G is pressed in another app's Open or Save dialog. */
 export const DIALOG_PICK_EVENT = "octopolis://dialog-pick";

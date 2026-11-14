@@ -31,8 +31,11 @@ pub struct Dialog {
     pub title: String,
     /// File name of the program showing it, e.g. `notepad.exe`. Empty if unknown.
     pub app: String,
-    /// A Save dialog: only its folder should be changed, never the file name.
-    pub save: bool,
+    /// Process id of that program, to make sure a later send reaches the same dialog.
+    pub pid: u32,
+    /// Only a folder can be sent, never files: Save dialogs, folder pickers and
+    /// older-style dialogs, where a file typed in could be offered for overwriting.
+    pub folder_only: bool,
 }
 
 /// Splits the "don't help in these apps" setting into lower-case program names.
@@ -68,7 +71,7 @@ fn refuse(what: &str) -> Error {
     Error::io(Path::new("dialog"), std::io::Error::other(what.to_string()))
 }
 
-type Callback = Box<dyn Fn(Key, Dialog) + Send + Sync>;
+type Callback = std::sync::Arc<dyn Fn(Key, Dialog) + Send + Sync>;
 
 struct Shared {
     excluded: Vec<String>,
@@ -78,15 +81,26 @@ struct Shared {
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared { excluded: Vec::new(), on_key: None, worker: None });
 
+/// Held for the whole of [`set`], so two calls can never start two shortcut threads.
+static SETTING: Mutex<()> = Mutex::new(());
+
 fn shared() -> std::sync::MutexGuard<'static, Shared> {
     SHARED.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The callback, taken out of the lock so it never runs while `SHARED` is held.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn callback() -> Option<Callback> {
+    shared().on_key.clone()
+}
+
 /// Turns the dialog shortcuts on or off. `on_key` runs on the shortcut thread; keep it quick.
+/// Turning them off waits for that thread to end, so never call this from a thread `on_key` waits on.
 pub fn set(enabled: bool, excluded: Vec<String>, on_key: impl Fn(Key, Dialog) + Send + Sync + 'static) {
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
     let mut s = shared();
     s.excluded = excluded;
-    s.on_key = Some(Box::new(on_key));
+    s.on_key = Some(std::sync::Arc::new(on_key));
     match (enabled, s.worker.is_some()) {
         (true, false) => {
             drop(s);
@@ -109,24 +123,25 @@ pub fn inspect(hwnd: isize) -> Option<Dialog> {
     imp::inspect(hwnd)
 }
 
-/// Sends the dialog to `folder`, keeping whatever file name was typed.
-pub fn go_to_folder(hwnd: isize, folder: &Path) -> Result<()> {
+/// Sends the dialog to `folder`, keeping whatever file name was typed. Refused
+/// if `dialog` has closed, or its window now belongs to another program.
+pub fn go_to_folder(dialog: &Dialog, folder: &Path) -> Result<()> {
     if !folder.is_dir() {
         return Err(Error::NotFound(folder.to_path_buf()));
     }
-    imp::go_to_folder(hwnd, &folder_text(folder))
+    imp::go_to_folder(dialog, &folder_text(folder))
 }
 
 /// Opens `files` in the dialog, as if their paths had been typed and Open pressed.
-/// Refused for Save dialogs, where a picked file would be offered for overwriting.
-pub fn choose_files(hwnd: isize, files: &[PathBuf]) -> Result<()> {
+/// Refused unless it is an Open dialog (see [`Dialog::folder_only`]).
+pub fn choose_files(dialog: &Dialog, files: &[PathBuf]) -> Result<()> {
     if files.is_empty() {
         return Err(refuse("nothing is selected"));
     }
     if let Some(missing) = files.iter().find(|f| !f.exists()) {
         return Err(Error::NotFound(missing.clone()));
     }
-    imp::choose(hwnd, &file_name_text(files))
+    imp::choose(dialog, &file_name_text(files))
 }
 
 /// Brings the dialog back in front.
@@ -142,20 +157,19 @@ mod imp {
     use std::thread::JoinHandle;
     use std::time::Duration;
 
-    use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, WPARAM};
-    use windows::Win32::System::Threading::{
-        GetCurrentProcessId, GetCurrentThreadId, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-    };
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::System::Threading::{GetCurrentProcessId, GetCurrentThreadId};
     use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
     use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, UnregisterHotKey, VK_G};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EVENT_SYSTEM_FOREGROUND, EnumChildWindows, GetClassNameW, GetDlgItem, GetForegroundWindow, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
+        EVENT_SYSTEM_FOREGROUND, EnumChildWindows, GetClassNameW, GetDlgItem, GetForegroundWindow, GetMessageW, GetWindowTextW, IsWindow,
         KillTimer, MSG, PM_NOREMOVE, PeekMessageW, PostMessageW, PostThreadMessageW, SMTO_ABORTIFHUNG, SendMessageTimeoutW, SetForegroundWindow, SetTimer,
         WINEVENT_OUTOFCONTEXT, WM_COMMAND, WM_GETTEXT, WM_GETTEXTLENGTH, WM_HOTKEY, WM_QUIT, WM_SETTEXT, WM_TIMER,
     };
-    use windows::core::{BOOL, PCWSTR, PWSTR};
+    use windows::core::{BOOL, PCWSTR};
 
-    use super::{Dialog, Key, Result, is_excluded, refuse, shared};
+    use super::{Dialog, Key, Result, callback, is_excluded, refuse, shared};
+    use crate::process::{image_name, window_pid};
 
     const ID_JUMP: i32 = 1;
     const ID_PICK: i32 = 2;
@@ -170,6 +184,10 @@ mod imp {
     const HELD_CHECK_MS: u32 = 400;
     /// Never wait on a hung app.
     const SEND_TIMEOUT_MS: u32 = 1000;
+    /// Longest text read back from a file-name box.
+    const MAX_TEXT: usize = 32_767;
+    /// How long to wait for the dialog to take a folder in before giving up on restoring the file name.
+    const CONSUME_WAIT: Duration = Duration::from_millis(3000);
 
     /// Whether the shortcut thread holds the two shortcuts. Only that thread touches these.
     static HELD: AtomicBool = AtomicBool::new(false);
@@ -220,27 +238,7 @@ mod imp {
     }
 
     fn pid_of(hwnd: HWND) -> u32 {
-        let mut pid = 0;
-        // SAFETY: plain window query.
-        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-        pid
-    }
-
-    /// The program's file name. Asks only for the limited query right, which reads nothing from the process.
-    fn exe_of(pid: u32) -> Option<String> {
-        // SAFETY: the handle is closed before returning; the buffer is local.
-        unsafe {
-            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-            let mut buf = [0u16; 1024];
-            let mut len = buf.len() as u32;
-            let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
-            let _ = CloseHandle(process);
-            if !ok {
-                return None;
-            }
-            let path = String::from_utf16_lossy(&buf[..len as usize]);
-            Some(path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string())
-        }
+        window_pid(hwnd.0 as isize)
     }
 
     /// The box the file name is typed in.
@@ -252,7 +250,7 @@ mod imp {
             return Some(edit);
         }
         // Save dialogs keep the file-name box inside the folder view's frame.
-        find_child(dialog, "FloatNotifySink").and_then(|sink| find_child(sink, "Edit")).or_else(|| find_child(dialog, "Edit"))
+        find_child(dialog, "FloatNotifySink").and_then(|sink| find_child(sink, "Edit"))
     }
 
     pub fn inspect(hwnd: isize) -> Option<Dialog> {
@@ -268,14 +266,24 @@ mod imp {
         }
         let modern = find_child(dialog, "DUIViewWndClassName").is_some();
         let open_combo = dlg_item(dialog, CMB13).is_some();
-        if !(modern || open_combo || dlg_item(dialog, EDT1).is_some()) {
+        let plain_edit = dlg_item(dialog, EDT1).is_some();
+        if !(modern || open_combo || plain_edit) {
+            return None;
+        }
+        // A folder picker ("Select Folder") is left alone: when its focus is not in the name box,
+        // pressing OK with a folder path picks that folder and ends the app's action instead of
+        // moving there, and another app's focus can't be set from outside.
+        if modern && !open_combo && plain_edit {
             return None;
         }
         file_name_edit(dialog)?;
         let mut buf = [0u16; 256];
         // SAFETY: plain window query into a local buffer.
         let n = unsafe { GetWindowTextW(dialog, &mut buf) }.max(0) as usize;
-        Some(Dialog { hwnd, title: String::from_utf16_lossy(&buf[..n.min(buf.len())]), app: exe_of(pid).unwrap_or_default(), save: modern && !open_combo })
+        // Only the modern Open dialog is told apart for certain (it has the file-name combo box);
+        // everything else gets a folder at most.
+        let folder_only = !(modern && open_combo);
+        Some(Dialog { hwnd, title: String::from_utf16_lossy(&buf[..n.min(buf.len())]), app: image_name(pid).unwrap_or_default(), pid, folder_only })
     }
 
     fn send(hwnd: HWND, msg: u32, wparam: usize, lparam: isize) -> Option<usize> {
@@ -286,7 +294,8 @@ mod imp {
     }
 
     fn get_text(edit: HWND) -> Option<String> {
-        let len = send(edit, WM_GETTEXTLENGTH, 0, 0)?;
+        // The length comes from another program: never trust it beyond what an edit box can hold.
+        let len = send(edit, WM_GETTEXTLENGTH, 0, 0)?.min(MAX_TEXT);
         let mut buf = vec![0u16; len + 1];
         let got = send(edit, WM_GETTEXT, buf.len(), buf.as_mut_ptr() as isize)?;
         Some(String::from_utf16_lossy(&buf[..got.min(len)]))
@@ -306,33 +315,47 @@ mod imp {
         unsafe { PostMessageW(Some(dialog), WM_COMMAND, WPARAM(IDOK), LPARAM(0)) }.map_err(|_| refuse("the dialog did not respond"))
     }
 
-    fn target(hwnd: isize) -> Result<(Dialog, HWND)> {
-        let dialog = inspect(hwnd).ok_or_else(|| refuse("the dialog is no longer open"))?;
-        let edit = file_name_edit(h(hwnd)).ok_or_else(|| refuse("the dialog has no file name box"))?;
+    /// The dialog as it is now, if it is still the one `expected` describes.
+    fn target(expected: &Dialog) -> Result<(Dialog, HWND)> {
+        let dialog = inspect(expected.hwnd).filter(|d| d.pid == expected.pid).ok_or_else(|| refuse("the dialog is no longer open"))?;
+        let edit = file_name_edit(h(expected.hwnd)).ok_or_else(|| refuse("the dialog has no file name box"))?;
         Ok((dialog, edit))
     }
 
-    pub fn go_to_folder(hwnd: isize, folder_text: &str) -> Result<()> {
-        let (_, edit) = target(hwnd)?;
+    pub fn go_to_folder(expected: &Dialog, folder_text: &str) -> Result<()> {
+        let (dialog, edit) = target(expected)?;
         let typed = get_text(edit).unwrap_or_default();
         set_text(edit, folder_text)?;
-        press_ok(h(hwnd))?;
-        // Give the dialog a moment to read the path, then put the file name back.
-        std::thread::sleep(Duration::from_millis(250));
-        if inspect(hwnd).is_some() {
-            let _ = set_text(edit, &typed);
+        press_ok(h(dialog.hwnd))?;
+        // Put the typed name back only once the dialog has visibly taken the folder in.
+        // Restoring it earlier could let a slow dialog read the old name and save in the old folder.
+        let waiting = std::time::Instant::now();
+        while waiting.elapsed() < CONSUME_WAIT {
+            std::thread::sleep(Duration::from_millis(50));
+            if inspect(dialog.hwnd).is_none_or(|d| d.pid != dialog.pid) {
+                return Ok(());
+            }
+            match get_text(edit) {
+                Some(now) if now != folder_text => {
+                    if now.is_empty() && !typed.is_empty() {
+                        let _ = set_text(edit, &typed);
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
 
-    pub fn choose(hwnd: isize, text: &str) -> Result<()> {
-        let (dialog, edit) = target(hwnd)?;
-        if dialog.save {
-            return Err(refuse("a Save dialog only takes a folder"));
+    pub fn choose(expected: &Dialog, text: &str) -> Result<()> {
+        let (dialog, edit) = target(expected)?;
+        if dialog.folder_only {
+            return Err(refuse("this dialog only takes a folder"));
         }
         set_text(edit, text)?;
-        focus(hwnd);
-        press_ok(h(hwnd))
+        focus(dialog.hwnd);
+        press_ok(h(dialog.hwnd))
     }
 
     pub fn focus(hwnd: isize) {
@@ -421,7 +444,7 @@ mod imp {
                     WM_HOTKEY => {
                         let key = if msg.wParam.0 as i32 == ID_PICK { Key::Pick } else { Key::Jump };
                         if let Some(dialog) = inspect(GetForegroundWindow().0 as isize)
-                            && let Some(f) = &shared().on_key
+                            && let Some(f) = callback()
                         {
                             f(key, dialog);
                         }
@@ -458,10 +481,10 @@ mod imp {
     pub fn inspect(_: isize) -> Option<Dialog> {
         None
     }
-    pub fn go_to_folder(_: isize, _: &str) -> Result<()> {
+    pub fn go_to_folder(_: &Dialog, _: &str) -> Result<()> {
         Err(refuse("not available on this system"))
     }
-    pub fn choose(_: isize, _: &str) -> Result<()> {
+    pub fn choose(_: &Dialog, _: &str) -> Result<()> {
         Err(refuse("not available on this system"))
     }
     pub fn focus(_: isize) {}
@@ -494,8 +517,10 @@ mod tests {
 
     #[test]
     fn missing_folders_and_files_are_refused_before_touching_the_dialog() {
-        assert!(go_to_folder(0, Path::new("Z:\\no\\such\\folder")).is_err());
-        assert!(choose_files(0, &[]).is_err());
-        assert!(choose_files(0, &[PathBuf::from("Z:\\no\\such\\file.txt")]).is_err());
+        let gone = Dialog { hwnd: 0, title: String::new(), app: String::new(), pid: 0, folder_only: false };
+        assert!(go_to_folder(&gone, Path::new("Z:\\no\\such\\folder")).is_err());
+        assert!(choose_files(&gone, &[]).is_err());
+        assert!(choose_files(&gone, &[PathBuf::from("Z:\\no\\such\\file.txt")]).is_err());
+        assert!(go_to_folder(&gone, &std::env::temp_dir()).is_err(), "a closed dialog is refused");
     }
 }

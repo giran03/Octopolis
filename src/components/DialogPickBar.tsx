@@ -17,12 +17,12 @@ export function DialogPickBar() {
               <span class="muted"> in {pick().app}</span>
             </Show>
           </span>
-          <Show when={!pick().save}>
+          <Show when={!pick().folderOnly}>
             <button class="btn primary" disabled={count() === 0} onClick={() => void dialogAssist.useSelection()}>
               {count() > 1 ? `Use ${count()} selected files` : "Use selected file"}
             </button>
           </Show>
-          <button class="btn" classList={{ primary: pick().save }} disabled={!folder()} onClick={() => void dialogAssist.useFolder()}>
+          <button class="btn" classList={{ primary: pick().folderOnly }} disabled={!folder()} onClick={() => void dialogAssist.useFolder()}>
             Use this folder
           </button>
           <button class="btn" onClick={() => dialogAssist.cancel()}>

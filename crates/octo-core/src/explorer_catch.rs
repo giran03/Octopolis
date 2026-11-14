@@ -101,7 +101,7 @@ mod imp {
 
     use std::collections::HashSet;
     use std::ffi::c_void;
-    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
     use std::thread::JoinHandle;
     use std::time::{Duration, Instant};
 
@@ -112,10 +112,11 @@ mod imp {
     };
     use windows::Win32::System::Variant::VARIANT;
     use windows::Win32::UI::Shell::{IShellFolderViewDual, IShellWindows, IWebBrowserApp, ShellWindows};
-    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, IsWindow, SW_HIDE, SW_SHOW, ShowWindow};
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow, IsWindow, IsWindowVisible, SW_HIDE, SW_SHOW, ShowWindow};
     use windows::core::{GUID, Interface, PCWSTR, Result, implement};
 
     use super::{Caught, path_from_url, paused};
+    use crate::process::{image_name, window_pid};
 
     /// The shell windows table's event interface, and its "a window registered" event.
     const DIID_SHELL_WINDOWS_EVENTS: GUID = GUID::from_u128(0xFE4106E0_399A_11D0_A48C_00A0C90A8F39);
@@ -125,6 +126,10 @@ mod imp {
     /// How long to wait for the app that opened it to select its file.
     const SELECTION_WAIT: Duration = Duration::from_millis(600);
     const STEP: Duration = Duration::from_millis(40);
+    /// How long a closed window may take to go away before it is shown again.
+    const QUIT_WAIT: Duration = Duration::from_millis(1500);
+    /// How often to check that the shell windows table is still there; it is gone when File Explorer restarts.
+    const HEALTH_CHECK: Duration = Duration::from_secs(5);
 
     enum Msg {
         Registered,
@@ -155,11 +160,17 @@ mod imp {
         }
     }
 
-    fn is_explorer_window(hwnd: isize) -> bool {
+    fn class_of(hwnd: isize) -> String {
         let mut buf = [0u16; 32];
         // SAFETY: plain window query into a local buffer.
         let n = unsafe { GetClassNameW(HWND(hwnd as *mut c_void), &mut buf) } as usize;
-        String::from_utf16_lossy(&buf[..n.min(buf.len())]) == "CabinetWClass"
+        String::from_utf16_lossy(&buf[..n.min(buf.len())])
+    }
+
+    /// A File Explorer folder window: the right window class, owned by explorer.exe itself.
+    /// Entries in the table describe themselves, so neither is taken on their word.
+    fn is_explorer_window(hwnd: isize) -> bool {
+        class_of(hwnd) == "CabinetWClass" && image_name(window_pid(hwnd)).is_some_and(|n| n.eq_ignore_ascii_case("explorer.exe"))
     }
 
     /// Every File Explorer entry in the table, with its window handle.
@@ -221,12 +232,62 @@ mod imp {
                 std::thread::sleep(STEP);
                 selected = selected_paths(window);
             }
-            if window.Quit().is_err() {
-                let _ = ShowWindow(handle, SW_SHOW);
+            let _ = window.Quit();
+            let closing = Instant::now();
+            while IsWindow(Some(handle)).as_bool() && closing.elapsed() < QUIT_WAIT {
+                std::thread::sleep(STEP);
+            }
+            if IsWindow(Some(handle)).as_bool() {
+                // It did not close: give it back to the user rather than leave it hidden.
+                if !IsWindowVisible(handle).as_bool() {
+                    let _ = ShowWindow(handle, SW_SHOW);
+                }
                 return None;
             }
             Some(Caught { folder, selected })
         }
+    }
+
+    /// A live connection to the shell windows table and its events.
+    struct Connection {
+        shell: IShellWindows,
+        point: Option<IConnectionPoint>,
+        cookie: Option<u32>,
+    }
+
+    impl Connection {
+        fn open(sender: &Sender<Msg>) -> Option<Connection> {
+            // SAFETY: plain COM calls on a COM-initialised thread.
+            unsafe {
+                let shell = CoCreateInstance::<_, IShellWindows>(&ShellWindows, None, CLSCTX_ALL).ok()?;
+                let point: Option<IConnectionPoint> = shell.cast::<IConnectionPointContainer>().and_then(|c| c.FindConnectionPoint(&DIID_SHELL_WINDOWS_EVENTS)).ok();
+                let sink: IDispatch = Sink { events: sender.clone() }.into();
+                let cookie = point.as_ref().and_then(|p| p.Advise(&sink).ok());
+                Some(Connection { shell, point, cookie })
+            }
+        }
+
+        fn alive(&self) -> bool {
+            // SAFETY: a plain call; on a dead connection it fails instead of blocking.
+            unsafe { self.shell.Count() }.is_ok()
+        }
+    }
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            if let (Some(point), Some(cookie)) = (&self.point, self.cookie) {
+                // SAFETY: the cookie came from `Advise` on this connection point.
+                let _ = unsafe { point.Unadvise(cookie) };
+            }
+        }
+    }
+
+    /// Windows opened while the user was working in File Explorer (Ctrl+N, "Open in new
+    /// window") are the user's own choice and stay.
+    fn opened_from_explorer(new_window: isize, known: &HashSet<isize>) -> bool {
+        // SAFETY: plain window query.
+        let front = unsafe { GetForegroundWindow() }.0 as isize;
+        front != new_window && known.contains(&front) && class_of(front) == "CabinetWClass"
     }
 
     fn run(events: Receiver<Msg>, sender: Sender<Msg>, on_caught: Box<dyn Fn(Caught) + Send + Sync>) {
@@ -235,31 +296,44 @@ mod imp {
             if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
                 return;
             }
-            if let Ok(shell) = CoCreateInstance::<_, IShellWindows>(&ShellWindows, None, CLSCTX_ALL) {
-                let point: Option<IConnectionPoint> = shell.cast::<IConnectionPointContainer>().and_then(|c| c.FindConnectionPoint(&DIID_SHELL_WINDOWS_EVENTS)).ok();
-                let sink: IDispatch = Sink { events: sender }.into();
-                let cookie = point.as_ref().and_then(|p| p.Advise(&sink).ok());
-                // Windows that are already open stay as they are.
-                let mut known: HashSet<isize> = explorer_windows(&shell).into_iter().map(|(h, _)| h).collect();
-                while let Ok(Msg::Registered) = events.recv() {
-                    let windows = explorer_windows(&shell);
-                    known.retain(|h| IsWindow(Some(HWND(*h as *mut c_void))).as_bool());
-                    for (hwnd, window) in &windows {
-                        if known.contains(hwnd) {
-                            continue;
+            let mut conn = Connection::open(&sender);
+            // Windows that are already open stay as they are.
+            let mut known: HashSet<isize> = conn.as_ref().map(|c| explorer_windows(&c.shell).into_iter().map(|(h, _)| h).collect()).unwrap_or_default();
+            loop {
+                match events.recv_timeout(HEALTH_CHECK) {
+                    Ok(Msg::Registered) => {}
+                    Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        if !conn.as_ref().is_some_and(Connection::alive) {
+                            // File Explorer restarted (or was not running): connect again, and leave the
+                            // windows it reopens by itself alone.
+                            drop(conn.take());
+                            conn = Connection::open(&sender);
+                            known = conn.as_ref().map(|c| explorer_windows(&c.shell).into_iter().map(|(h, _)| h).collect()).unwrap_or_default();
                         }
-                        known.insert(*hwnd);
-                        // A window that already has several tabs is the user's own; only single new windows are taken.
-                        let alone = windows.iter().filter(|(h, _)| h == hwnd).count() == 1;
-                        if let Some(caught) = take_over(*hwnd, window, alone) {
-                            on_caught(caught);
-                        }
+                        continue;
                     }
                 }
-                if let (Some(point), Some(cookie)) = (point, cookie) {
-                    let _ = point.Unadvise(cookie);
+                let Some(c) = conn.as_ref() else { continue };
+                let windows = explorer_windows(&c.shell);
+                known.retain(|h| IsWindow(Some(HWND(*h as *mut c_void))).as_bool());
+                for (hwnd, window) in &windows {
+                    if known.contains(hwnd) {
+                        continue;
+                    }
+                    let from_explorer = opened_from_explorer(*hwnd, &known);
+                    known.insert(*hwnd);
+                    // A window that already has several tabs is the user's own; only single new windows are taken.
+                    let alone = windows.iter().filter(|(h, _)| h == hwnd).count() == 1;
+                    if from_explorer {
+                        continue;
+                    }
+                    if let Some(caught) = take_over(*hwnd, window, alone) {
+                        on_caught(caught);
+                    }
                 }
             }
+            drop(conn);
             CoUninitialize();
         }
     }
