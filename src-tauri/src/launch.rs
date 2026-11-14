@@ -52,6 +52,7 @@ pub fn launch_targets(args: &[String], cwd: &Path) -> Vec<String> {
 /// Paths given when Octopolis was started; empty after the first call.
 #[tauri::command]
 pub fn startup_paths(state: State<'_, LaunchState>) -> Vec<String> {
+    crate::failsafe::started();
     std::mem::take(&mut *state.startup.lock().unwrap_or_else(|e| e.into_inner()))
 }
 

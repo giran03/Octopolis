@@ -16,6 +16,7 @@ pub mod enumerate;
 pub mod fonts;
 pub mod error;
 pub mod explorer_mode;
+pub mod failsafe;
 pub mod git;
 pub mod hotkey;
 pub mod lock;

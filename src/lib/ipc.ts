@@ -486,6 +486,8 @@ export const explorerModeStatus = () => invoke<ExplorerMode>("explorer_mode_stat
 export const explorerModeSet = (on: boolean) => invoke<ExplorerMode>("explorer_mode_set", { on });
 /** Adds or removes "Open in Octopolis" in File Explorer's folder right-click menu. */
 export const explorerMenuSet = (on: boolean) => invoke<ExplorerMode>("explorer_menu_set", { on });
+/** True once after Octopolis failed to start twice and gave folders back to File Explorer. */
+export const explorerFailsafeTripped = () => invoke<boolean>("explorer_failsafe_tripped");
 /** Event sent when another launch asks this window to open paths. */
 export const OPEN_PATHS_EVENT = "octopolis://open-paths";
 

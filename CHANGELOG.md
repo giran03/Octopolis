@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Start-up failsafe for the default file manager**: If **Use Octopolis instead of File Explorer** is on and Octopolis fails to start twice in a row, folders are handed back to File Explorer automatically and the folder you were opening opens there.
+
+### Changed
+
+- **Summon shortcut without a keyboard hook**: `Ctrl+E` on the desktop and `Ctrl+Alt+E` are now registered Windows hotkeys, so Octopolis no longer watches the keyboard to catch them.
+
 ## [0.1.1] - 2026-11-14
 
 ### Added
