@@ -1,4 +1,4 @@
-import { createEffect, createSignal, lazy, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, lazy, on, onCleanup, onMount, Show } from "solid-js";
 import { Shelf } from "./components/Shelf";
 import { inspector } from "./state/inspector";
 import { Overlays } from "./components/Overlays";
@@ -9,7 +9,8 @@ import { TitleBar } from "./components/TitleBar";
 import { TooltipLayer } from "./components/Tooltip";
 import { trackDrags } from "./state/drag";
 import { isGoogleFont, loadGoogleFont } from "./lib/fonts";
-import { detectEditors, errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, startupPaths, type KnownFolder } from "./lib/ipc";
+import { sidebarWidthForRowPx } from "./lib/sidebar";
+import { detectEditors, errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
 import { classifyTarget } from "./lib/launch";
 import { samePath } from "./lib/paths";
 import { parsePreset } from "./lib/session";
@@ -18,6 +19,7 @@ import { setAppIcon } from "./lib/ipc";
 import { BUILT_IN_THEMES, DENSITIES, THEME_TOKENS } from "./lib/themes";
 import { onKeyDown, onMouseNav } from "./keys";
 import { loadJson, saveJson, settings } from "./state/settings";
+import { rules } from "./state/rules";
 import { ops } from "./state/ops";
 import { sidebar } from "./state/sidebar";
 import { startVideoThumbPrefetch } from "./state/thumbs";
@@ -51,6 +53,7 @@ function applyTheme() {
   }
   if (settings.accent()) root.style.setProperty("--accent", settings.accent()!);
   root.dataset.density = settings.density();
+  root.dataset.windowCorners = settings.windowCorners();
   root.classList.toggle("sidebar-names-only", settings.rowPx() <= DENSITIES.compact || settings.sidebarNamesOnly());
   root.style.setProperty("--row", `${settings.rowPx()}px`);
   // The whole chrome (sidebar, tabs, toolbar, menus, status bar) follows the density, relative to "normal".
@@ -62,7 +65,7 @@ function applyTheme() {
   root.style.setProperty("--icon-weight", String(settings.iconWeight()));
   root.style.setProperty("--icon-fill", settings.iconFill() ? "1" : "0");
   root.dataset.iconStyle = settings.iconStyle();
-  root.style.setProperty("--icon-scale", String(settings.iconScale() / 100));
+  root.style.setProperty("--icon-scale", String((settings.iconScale() / 100) * 1.15));
   // Interface font: the chosen one first, then the usual stack.
   // A Google font only applies while Google Fonts is switched on.
   const font = settings.uiFont();
@@ -179,7 +182,24 @@ export function App() {
     // First run: a short welcome once the window has settled.
     if (!settings.welcomeSeen()) setTimeout(() => ui.setWelcomeOpen(true), 1500);
     window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+    const preventBrowserShortcuts = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (
+        (e.ctrlKey && !e.altKey && (k === "p" || k === "s" || k === "u" || k === "g" || k === "j" || k === "r" || k === "=" || k === "+" || k === "-" || k === "0")) ||
+        (import.meta.env.PROD && e.ctrlKey && e.shiftKey && k === "i") ||
+        (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) ||
+        e.key === "F3" ||
+        e.key === "F5" ||
+        e.key === "F7"
+      ) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", preventBrowserShortcuts);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", preventBrowserShortcuts);
+    });
     // Files copied in Explorer or another app enable Paste here.
     const onFocus = () => void ops.checkExternalClipboard();
     window.addEventListener("focus", onFocus);
@@ -216,17 +236,28 @@ export function App() {
     } else startFolder = home || "C:\\";
     await openLaunchTargets(await startupPaths().catch(() => []));
     updater.start();
+    rules.startScheduler();
   });
+  // Sync sidebar width whenever the user changes density (presets or row height slider), preserving custom widths on startup.
+  createEffect(
+    on(
+      () => settings.rowPx(),
+      (px, prev) => {
+        if (prev !== undefined && px !== prev) sidebar.setWidth(sidebarWidthForRowPx(px));
+      },
+      { defer: true },
+    ),
+  );
+
   // Tray mode lives in the backend, which decides what closing the window does.
   createEffect(() => void setKeepInTray(settings.keepInTray()).catch(() => undefined));
   createEffect(() => void setSummon(settings.summonKey()).catch(() => undefined));
+  createEffect(() => void setWindowCorners(settings.windowCorners()).catch(() => undefined));
 
   return (
     <div class="app" classList={{ "no-sidebar": !settings.sidebarOpen() }} style={{ "--sidebar-w": `${sidebar.width()}px` }}>
       <TitleBar />
-      <Show when={settings.sidebarOpen()}>
-        <Sidebar />
-      </Show>
+      <Sidebar />
       <main class="workspace">
         <div class="main-stack">
           <div class="panes">

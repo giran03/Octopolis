@@ -86,6 +86,18 @@ export const IconForward = make("E72A");
 export const IconUp = make("E74A");
 export const IconDown = make("E70D");
 export const IconRefresh = make("E72C");
+export const IconSort = (p: P) => (
+  <svg style={{ width: `calc(${p.size ?? 16}px * var(--icon-scale, 1))`, height: `calc(${p.size ?? 16}px * var(--icon-scale, 1))` }} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" class={p.class} aria-hidden="true">
+    <path d="M2.5 4.5h11" />
+    <path d="M4.5 8h7" />
+    <path d="M6.5 11.5h3" />
+  </svg>
+);
+export const IconPlay = (p: P) => (
+  <svg style={{ width: `calc(${p.size ?? 16}px * var(--icon-scale, 1))`, height: `calc(${p.size ?? 16}px * var(--icon-scale, 1))` }} viewBox="0 0 16 16" fill="currentColor" class={p.class} aria-hidden="true">
+    <path d="M4.5 3.3a.6.6 0 0 1 .9-.52l7.5 4.7a.6.6 0 0 1 0 1.04l-7.5 4.7a.6.6 0 0 1-.9-.52V3.3z" />
+  </svg>
+);
 export const IconReset = sym("restart_alt");
 export const IconPlus = make("E710");
 export const IconClose = make("E711");

@@ -2,7 +2,7 @@
 import { batch, createEffect, createMemo, createRoot, createSignal } from "solid-js";
 import { cachedFolderSizes, cancelSearch, errorText, folderSizes, gitLastCommits, gitStatus, insideRepository, listDir, search as runSearchIpc, unwatchDir, watchDir, type CommitInfo, type GitInfo, type SearchSummary } from "../lib/ipc";
 import { createBuilder, decodeBatch, emptyListing, indexOfName, snapshot, type Listing } from "../lib/listing";
-import { baseName, joinPath, parentPath, samePath } from "../lib/paths";
+import { baseName, isDrivesPath, joinPath, parentPath, samePath } from "../lib/paths";
 import { groupStarts, type GroupKey } from "../lib/group";
 import { buildView, DEFAULT_SORT, toggleSort, type SortKey, type SortSpec } from "../lib/sort";
 import { chooseView, folderStats } from "../lib/autoView";
@@ -206,6 +206,21 @@ export function createTab(initialPath: string) {
     async function load(dir: string, select?: readonly string[]) {
       const gen = ++generation;
       const builder = createBuilder(dir);
+      if (isDrivesPath(dir)) {
+        batch(() => {
+          setListing(emptyListing(dir));
+          setSelection(new Set<number>());
+          setFocus(0);
+          setRenaming(null);
+          setArchive(null);
+          setDirSizes(null);
+          setStaleSizes(new Set<string>());
+          setSizesLive(false);
+          setTreemap(false);
+          setStatus({ loading: false, error: null, elapsedMs: null });
+        });
+        return;
+      }
       const sameDir = samePath(listing().path, dir);
       if (select) pendingSelect = select;
       setStatus({ loading: true, error: null, elapsedMs: null });
@@ -604,7 +619,7 @@ export function createTab(initialPath: string) {
       },
       selectedPaths: () => [...selection()].filter((i) => i < listing().count).map(pathOf),
       pathOf,
-      title: () => baseName(path()) || path(),
+      title: () => (isDrivesPath(path()) ? "All drives" : baseName(path()) || path()),
     };
     selfRef = model;
     return model;

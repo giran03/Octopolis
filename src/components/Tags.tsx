@@ -1,14 +1,15 @@
 // Tags and color labels: editing them, listing tagged items, and the sidebar's
 // Tags and Searches sections.
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
-import { errorText, tagsInDir, taggedPaths } from "../lib/ipc";
+import { errorText, pathsAreDirs, runPath, tagsInDir, taggedPaths } from "../lib/ipc";
 import { baseName, parentPath } from "../lib/paths";
 import { TAB_COLORS } from "../lib/session";
 import { savedSearches } from "../state/savedSearches";
 import { tags } from "../state/tags";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
-import { Glyph } from "./Icons";
+import { Checkbox } from "./Checkbox";
+import { Glyph, IconClose, IconCopy, IconRefresh, IconSearch, IconSort, TypeIcon } from "./Icons";
 
 /** Color labels are tags named after a color. */
 export const isColorTag = (t: string) => (TAB_COLORS as readonly string[]).includes(t.toLowerCase());
@@ -115,10 +116,9 @@ export function TagsDialog(props: { paths: readonly string[] }) {
         <div class="tag-list">
           <For each={named()} fallback={<p class="muted small">No tags yet. Type one below.</p>}>
             {(t) => (
-              <label class="props-check">
-                <input type="checkbox" checked={state(t) === "all"} ref={(el) => queueMicrotask(() => (el.indeterminate = state(t) === "some"))} onChange={(e) => void toggle(t, e.currentTarget.checked)} />
+              <Checkbox class="props-check" checked={state(t) === "all"} indeterminate={state(t) === "some"} onChange={(checked) => void toggle(t, checked)}>
                 {t}
-              </label>
+              </Checkbox>
             )}
           </For>
         </div>
@@ -149,18 +149,102 @@ export function TagsDialog(props: { paths: readonly string[] }) {
 
 /** Everything carrying one tag, wherever it is. */
 export function TaggedList(props: { tag: string }) {
-  const [paths] = createResource(() => props.tag, (t) => taggedPaths(t));
+  const [paths, { refetch }] = createResource(
+    () => [props.tag, tags.version()] as const,
+    ([t]) => taggedPaths(t).catch(() => [] as string[]),
+  );
+  const [dirMap] = createResource(
+    () => paths.latest ?? null,
+    async (list) => {
+      if (!list.length) return new Map<string, boolean>();
+      const flags = await pathsAreDirs(list).catch(() => list.map(() => false));
+      const out = new Map<string, boolean>();
+      list.forEach((p, i) => out.set(p, Boolean(flags[i])));
+      return out;
+    },
+  );
+  const [filter, setFilter] = createSignal("");
+  const [sortBy, setSortBy] = createSignal<"name" | "folder">("name");
+  const [confirmClear, setConfirmClear] = createSignal(false);
+
+  const isDir = (p: string) => dirMap()?.get(p) ?? false;
   const close = () => ui.setTaggedView(null);
-  const open = (p: string) => {
+  const showInFolder = (p: string) => {
     const dir = parentPath(p);
     close();
     if (dir) void workspace.activeTab()?.navigate(dir, [baseName(p)]);
   };
+  const openItem = (p: string) => {
+    if (isDir(p)) {
+      close();
+      void workspace.activeTab()?.navigate(p);
+    } else {
+      close();
+      void runPath(p).catch((e) => ui.toast(errorText(e)));
+    }
+  };
+  const copyPath = (p: string) => {
+    void navigator.clipboard.writeText(p).then(
+      () => ui.toast("Copied path"),
+      () => ui.toast("Could not copy path"),
+    );
+  };
+  const untag = async (target: readonly string[]) => {
+    if (!target.length) return;
+    try {
+      await tags.set(target, props.tag, false);
+      setConfirmClear(false);
+      await refetch();
+      ui.toast(target.length === 1 ? `Removed tag from ${baseName(target[0])}` : `Removed tag from ${target.length} items`);
+    } catch (e) {
+      ui.toast(errorText(e));
+    }
+  };
+
+  const labelFor = (t: string) => (isColorTag(t) ? `${COLOR_LABEL[t.toLowerCase()]} label` : t);
   const title = () => (isColorTag(props.tag) ? `${COLOR_LABEL[props.tag.toLowerCase()]} label` : `Tag: ${props.tag}`);
+
+  const visible = createMemo(() => {
+    const list = paths.latest ?? [];
+    const q = filter().trim().toLowerCase();
+    const filtered = q ? list.filter((p) => baseName(p).toLowerCase().includes(q) || (parentPath(p) ?? "").toLowerCase().includes(q)) : [...list];
+    return filtered.sort((a, b) => {
+      if (sortBy() === "folder") {
+        const cmp = (parentPath(a) ?? "").localeCompare(parentPath(b) ?? "");
+        if (cmp !== 0) return cmp;
+      }
+      return baseName(a).localeCompare(baseName(b));
+    });
+  });
+
+  const countLabel = () => {
+    const total = paths.latest?.length ?? 0;
+    const shown = visible().length;
+    if (filter().trim() && shown !== total) return `${shown} of ${total} ${total === 1 ? "item" : "items"}`;
+    return `${total} ${total === 1 ? "item" : "items"}`;
+  };
+
+  const rowMenu = (e: MouseEvent, p: string) => {
+    e.preventDefault();
+    ui.openMenu(e.clientX, e.clientY, [
+      { label: isDir(p) ? "Open folder" : "Open", run: () => openItem(p) },
+      { label: "Show in folder", run: () => showInFolder(p) },
+      { label: "Copy path", run: () => copyPath(p) },
+      {
+        label: "Edit tags…",
+        run: () => {
+          close();
+          ui.setTagPaths([p]);
+        },
+      },
+      { label: `Remove "${labelFor(props.tag)}"`, danger: true, run: () => void untag([p]) },
+    ]);
+  };
+
   return (
     <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
-        class="dialog bin-dialog"
+        class="dialog bin-dialog tagged-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="tagged-title"
@@ -170,32 +254,149 @@ export function TaggedList(props: { tag: string }) {
         }}
       >
         <div class="bin-head">
-          <h2 id="tagged-title">{title()}</h2>
-          <span class="muted small">{paths()?.length ?? 0} items</span>
+          <div class="tagged-title-wrap">
+            <Show when={isColorTag(props.tag)} fallback={<Glyph code="E8EC" size={16} />}>
+              <span class="tag-dot big" style={{ background: `var(--tab-${props.tag.toLowerCase()})` }} />
+            </Show>
+            <h2 id="tagged-title">{title()}</h2>
+          </div>
+          <span class="muted small">{countLabel()}</span>
         </div>
-        <Show when={paths()} fallback={<p class="muted">Loading…</p>}>
-          {(list) => (
-            <div class="bin-list">
-              <For each={list()} fallback={<p class="muted bin-empty">Nothing carries this tag anymore</p>}>
-                {(p) => (
-                  <div class="bin-row" onDblClick={() => open(p)} title="Double-click to show it in its folder">
-                    <Glyph code="E8B7" size={16} />
-                    <span class="bin-names">
-                      <span class="bin-name">{baseName(p)}</span>
-                      <span class="muted small bin-from">{parentPath(p)}</span>
-                    </span>
-                    <span />
-                    <button class="link-btn small" onClick={() => open(p)}>
+
+        <Show when={tags.all().length > 1}>
+          <div class="tagged-switcher" role="tablist" aria-label="Switch tag">
+            <For each={tags.all()}>
+              {([t, n]) => {
+                const active = () => t.toLowerCase() === props.tag.toLowerCase();
+                return (
+                  <button
+                    class="tagged-chip"
+                    classList={{ active: active() }}
+                    role="tab"
+                    aria-selected={active()}
+                    onClick={() => {
+                      setConfirmClear(false);
+                      ui.setTaggedView(t);
+                    }}
+                  >
+                    <Show when={isColorTag(t)} fallback={<Glyph code="E8EC" size={12} />}>
+                      <span class="tag-dot" style={{ background: `var(--tab-${t.toLowerCase()})` }} />
+                    </Show>
+                    <span>{isColorTag(t) ? COLOR_LABEL[t.toLowerCase()] : t}</span>
+                    <span class="tagged-chip-count">{n}</span>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+        </Show>
+
+        <div class="tagged-toolbar">
+          <div class="tagged-search">
+            <IconSearch size={14} class="muted" />
+            <input
+              class="tagged-search-input"
+              placeholder="Filter by name or folder…"
+              value={filter()}
+              onInput={(e) => setFilter(e.currentTarget.value)}
+            />
+            <Show when={filter().length > 0}>
+              <button class="icon-btn tiny" aria-label="Clear filter" onClick={() => setFilter("")}>
+                <IconClose size={12} />
+              </button>
+            </Show>
+          </div>
+          <button
+            class="btn small tagged-sort-btn"
+            onClick={() => setSortBy((s) => (s === "name" ? "folder" : "name"))}
+            data-tooltip={`Sorted by ${sortBy() === "name" ? "name" : "folder"} · Click to switch`}
+          >
+            <IconSort size={14} />
+            <span>{sortBy() === "name" ? "Name" : "Folder"}</span>
+          </button>
+          <button class="icon-btn" aria-label="Refresh tagged items" data-tooltip="Refresh" onClick={() => void refetch()}>
+            <IconRefresh size={15} />
+          </button>
+        </div>
+
+        <Show when={paths.latest !== undefined} fallback={<p class="muted bin-empty">Loading…</p>}>
+          <div class="bin-list" aria-busy={paths.loading}>
+            <For
+              each={visible()}
+              fallback={
+                <p class="muted bin-empty">
+                  {filter().trim() ? "No tagged items match your filter" : "Nothing carries this tag anymore"}
+                </p>
+              }
+            >
+              {(p) => (
+                <div
+                  class="bin-row tagged-row"
+                  onDblClick={() => showInFolder(p)}
+                  onContextMenu={(e) => rowMenu(e, p)}
+                >
+                  <TypeIcon path={p} name={baseName(p)} isDir={isDir(p)} size={18} />
+                  <span class="bin-names">
+                    <span class="bin-name">{baseName(p)}</span>
+                    <span class="muted small bin-from">{parentPath(p)}</span>
+                  </span>
+                  <div class="tagged-row-actions">
+                    <button class="link-btn small" onClick={() => openItem(p)} title={isDir(p) ? "Open folder" : "Open file"}>
+                      Open
+                    </button>
+                    <button class="link-btn small" onClick={() => showInFolder(p)} title="Reveal in parent folder">
                       Show
                     </button>
+                    <button class="icon-btn tiny" aria-label="Copy path" data-tooltip="Copy path" onClick={() => copyPath(p)}>
+                      <IconCopy size={13} />
+                    </button>
+                    <button
+                      class="icon-btn tiny tagged-remove-btn"
+                      aria-label="Remove tag"
+                      data-tooltip="Remove tag"
+                      onClick={() => void untag([p])}
+                    >
+                      <IconClose size={13} />
+                    </button>
                   </div>
-                )}
-              </For>
-            </div>
-          )}
+                </div>
+              )}
+            </For>
+          </div>
         </Show>
-        <div class="dialog-actions">
-          <button class="btn" onClick={close}>
+
+        <div class="dialog-actions bin-actions">
+          <Show when={(paths.latest?.length ?? 0) > 0}>
+            <Show
+              when={confirmClear()}
+              fallback={
+                <button class="btn small" onClick={() => setConfirmClear(true)}>
+                  Remove from all
+                </button>
+              }
+            >
+              <div class="tagged-confirm">
+                <span class="muted small">Remove tag from all {paths.latest?.length}?</span>
+                <button class="btn small danger" onClick={() => void untag(paths.latest ?? [])}>
+                  Confirm
+                </button>
+                <button class="btn small" onClick={() => setConfirmClear(false)}>
+                  Cancel
+                </button>
+              </div>
+            </Show>
+          </Show>
+          <span class="bin-spacer" />
+          <Show when={visible().length > 0}>
+            <button
+              class="btn small"
+              onClick={() => copyPath(visible().join("\n"))}
+              data-tooltip="Copy all visible paths"
+            >
+              Copy paths
+            </button>
+          </Show>
+          <button class="btn primary" onClick={close}>
             Close
           </button>
         </div>

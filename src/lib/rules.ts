@@ -2,6 +2,31 @@
 import { baseName } from "./paths";
 
 export type RuleAction = "move" | "recycle";
+export type ScheduleMode = "manual" | "interval" | "daily" | "weekly" | "monthly" | "startup";
+export type IntervalUnit = "minutes" | "hours" | "days";
+export type ScheduleLimitKind = "forever" | "runs" | "duration";
+export type ScheduleActionMode = "auto" | "preview";
+
+export interface RuleSchedule {
+  readonly mode: ScheduleMode;
+  readonly every: number;
+  readonly unit: IntervalUnit;
+  /** 24-hour `HH:MM` for daily, weekly, and monthly schedules. */
+  readonly time: string;
+  /** 0 (Sun) .. 6 (Sat) for weekly schedules. */
+  readonly weekday: number;
+  /** 1..31 for monthly schedules. */
+  readonly monthDay: number;
+  readonly limitKind: ScheduleLimitKind;
+  /** Run count (when `limitKind === "runs"`) or duration count (when `limitKind === "duration"`). */
+  readonly limitValue: number;
+  readonly limitUnit: "hours" | "days";
+  /** Remaining runs when `limitKind === "runs"`. */
+  readonly runsRemaining: number | null;
+  /** Epoch ms deadline when `limitKind === "duration"`. */
+  readonly untilAt: number | null;
+  readonly actionMode: ScheduleActionMode;
+}
 
 export interface Rule {
   readonly id: string;
@@ -22,6 +47,7 @@ export interface Rule {
   readonly enabled: boolean;
   /** When the rule last ran from here, and on how many files. */
   readonly lastRun: { readonly at: number; readonly count: number } | null;
+  readonly schedule: RuleSchedule;
 }
 
 /** What the file finder is asked for. */
@@ -44,7 +70,22 @@ export function newRuleId(): string {
   return `r${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
 
-export const NEW_RULE: Omit<Rule, "id"> = { name: "", folder: "", patterns: "", olderThanDays: 30, newerThanDays: null, minSizeMb: 0, recursive: false, action: "move", dest: "", enabled: true, lastRun: null };
+export const DEFAULT_SCHEDULE: RuleSchedule = {
+  mode: "manual",
+  every: 1,
+  unit: "days",
+  time: "09:00",
+  weekday: 1,
+  monthDay: 1,
+  limitKind: "forever",
+  limitValue: 3,
+  limitUnit: "days",
+  runsRemaining: null,
+  untilAt: null,
+  actionMode: "auto",
+};
+
+export const NEW_RULE: Omit<Rule, "id"> = { name: "", folder: "", patterns: "", olderThanDays: 30, newerThanDays: null, minSizeMb: 0, recursive: false, action: "move", dest: "", enabled: true, lastRun: null, schedule: DEFAULT_SCHEDULE };
 
 export const blankRule = (): Rule => ({ ...NEW_RULE, id: newRuleId() });
 
@@ -113,6 +154,125 @@ export function groupByDestination<T extends { path: string; modifiedMs: number 
 
 const num = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 0);
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+export const SCHEDULE_PRESETS: readonly { label: string; patch: Partial<RuleSchedule> }[] = [
+  { label: "Manual", patch: { mode: "manual", limitKind: "forever", runsRemaining: null, untilAt: null } },
+  { label: "On startup", patch: { mode: "startup", limitKind: "forever", runsRemaining: null, untilAt: null } },
+  { label: "Every 15 min", patch: { mode: "interval", every: 15, unit: "minutes" } },
+  { label: "Every hour", patch: { mode: "interval", every: 1, unit: "hours" } },
+  { label: "Every 6 hours", patch: { mode: "interval", every: 6, unit: "hours" } },
+  { label: "Daily 09:00", patch: { mode: "daily", time: "09:00" } },
+  { label: "Weekly (Mon)", patch: { mode: "weekly", weekday: 1, time: "09:00" } },
+  { label: "Monthly (1st)", patch: { mode: "monthly", monthDay: 1, time: "09:00" } },
+];
+
+export function intervalMs(every: number, unit: IntervalUnit): number {
+  const n = Math.max(1, Math.floor(every || 1));
+  const mult = unit === "minutes" ? 60_000 : unit === "hours" ? 3_600_000 : 86_400_000;
+  return n * mult;
+}
+
+function parseTimeParts(time: string): [number, number] {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+  const hh = m ? Math.min(23, Math.max(0, Number(m[1]))) : 9;
+  const mm = m ? Math.min(59, Math.max(0, Number(m[2]))) : 0;
+  return [hh, mm];
+}
+
+/** Human-readable label for a rule's schedule. */
+export function scheduleSummary(s: RuleSchedule): string {
+  if (s.mode === "manual") return "Manual";
+  let base = "";
+  if (s.mode === "startup") base = "On startup";
+  else if (s.mode === "interval") {
+    const unit = s.every === 1 ? s.unit.slice(0, -1) : s.unit;
+    base = `Every ${s.every} ${unit}`;
+  } else if (s.mode === "daily") base = `Daily at ${s.time}`;
+  else if (s.mode === "weekly") base = `Weekly (${WEEKDAYS[s.weekday] ?? "Mon"} ${s.time})`;
+  else if (s.mode === "monthly") base = `Monthly (day ${s.monthDay} at ${s.time})`;
+
+  if (s.limitKind === "runs") {
+    const left = s.runsRemaining ?? s.limitValue;
+    base += ` · ${left} run${left === 1 ? "" : "s"}`;
+  } else if (s.limitKind === "duration") {
+    const u = s.limitValue === 1 ? s.limitUnit.slice(0, -1) : s.limitUnit;
+    base += ` · for ${s.limitValue} ${u}`;
+  }
+  return base;
+}
+
+/** Whether a scheduled rule has exhausted its configured run count or duration window. */
+export function isScheduleExpired(s: RuleSchedule, now: number): boolean {
+  if (s.mode === "manual" || s.mode === "startup") return false;
+  if (s.limitKind === "runs" && s.runsRemaining !== null && s.runsRemaining <= 0) return true;
+  if (s.limitKind === "duration" && s.untilAt !== null && now >= s.untilAt) return true;
+  return false;
+}
+
+/** Computes the next wall-clock timestamp when a rule is due, or null for manual/startup/expired. */
+export function nextRuleRunAt(s: RuleSchedule, now: number, lastAt: number | null): number | null {
+  if (s.mode === "manual" || s.mode === "startup" || isScheduleExpired(s, now)) return null;
+  if (s.mode === "interval") {
+    const step = intervalMs(s.every, s.unit);
+    return lastAt !== null ? lastAt + step : now + step;
+  }
+  const [hh, mm] = parseTimeParts(s.time);
+  const base = new Date(lastAt ?? now);
+  if (s.mode === "daily") {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hh, mm, 0, 0);
+    if (d.getTime() <= (lastAt ?? now - 1)) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  if (s.mode === "weekly") {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hh, mm, 0, 0);
+    const diff = (s.weekday - d.getDay() + 7) % 7;
+    d.setDate(d.getDate() + diff);
+    if (d.getTime() <= (lastAt ?? now - 1)) d.setDate(d.getDate() + 7);
+    return d.getTime();
+  }
+  // monthly
+  const y = base.getFullYear();
+  const m = base.getMonth();
+  const clampDay = (yr: number, mo: number) => Math.min(Math.max(1, s.monthDay), new Date(yr, mo + 1, 0).getDate());
+  let d = new Date(y, m, clampDay(y, m), hh, mm, 0, 0);
+  if (d.getTime() <= (lastAt ?? now - 1)) d = new Date(y, m + 1, clampDay(y, m + 1), hh, mm, 0, 0);
+  return d.getTime();
+}
+
+export function isRuleDue(r: Rule, now: number, lastCheckAt: number | null): boolean {
+  if (!r.enabled || r.schedule.mode === "manual" || r.schedule.mode === "startup") return false;
+  if (isScheduleExpired(r.schedule, now)) return false;
+  const ref = Math.max(r.lastRun?.at ?? 0, lastCheckAt ?? 0) || null;
+  const next = nextRuleRunAt(r.schedule, now, ref);
+  return next !== null && now >= next;
+}
+
+export function parseSchedule(raw: unknown): RuleSchedule {
+  if (!raw || typeof raw !== "object") return DEFAULT_SCHEDULE;
+  const o = raw as Record<string, unknown>;
+  const mode: ScheduleMode = o.mode === "interval" || o.mode === "daily" || o.mode === "weekly" || o.mode === "monthly" || o.mode === "startup" ? o.mode : "manual";
+  const unit: IntervalUnit = o.unit === "minutes" || o.unit === "hours" || o.unit === "days" ? o.unit : "days";
+  const time = typeof o.time === "string" && /^\d{1,2}:\d{2}$/.test(o.time.trim()) ? o.time.trim().padStart(5, "0") : "09:00";
+  const limitKind: ScheduleLimitKind = o.limitKind === "runs" || o.limitKind === "duration" ? o.limitKind : "forever";
+  const limitUnit: "hours" | "days" = o.limitUnit === "hours" ? "hours" : "days";
+  const actionMode: ScheduleActionMode = o.actionMode === "preview" ? "preview" : "auto";
+  return {
+    mode,
+    every: Math.max(1, Math.min(999, Math.floor(num(o.every, 999)) || 1)),
+    unit,
+    time,
+    weekday: Math.min(6, Math.max(0, Math.floor(num(o.weekday, 6)))),
+    monthDay: Math.min(31, Math.max(1, Math.floor(num(o.monthDay, 31)) || 1)),
+    limitKind,
+    limitValue: Math.max(1, Math.min(999, Math.floor(num(o.limitValue, 999)) || 1)),
+    limitUnit,
+    runsRemaining: typeof o.runsRemaining === "number" && Number.isFinite(o.runsRemaining) ? Math.max(0, Math.floor(o.runsRemaining)) : null,
+    untilAt: typeof o.untilAt === "number" && Number.isFinite(o.untilAt) ? o.untilAt : null,
+    actionMode,
+  };
+}
+
 /** One rule from stored or imported data; older saves (name, folder, patterns, age, action, dest) still load. */
 export function parseRule(a: unknown): Rule | null {
   if (!a || typeof a !== "object") return null;
@@ -132,6 +292,7 @@ export function parseRule(a: unknown): Rule | null {
     dest: typeof o.dest === "string" ? o.dest.trim().slice(0, 500) : "",
     enabled: typeof o.enabled === "boolean" ? o.enabled : true,
     lastRun: last && typeof last.at === "number" && typeof last.count === "number" ? { at: last.at, count: wholeDays(last.count) } : null,
+    schedule: parseSchedule(o.schedule),
   };
 }
 

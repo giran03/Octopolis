@@ -2,12 +2,16 @@ import { Show } from "solid-js";
 import { invertSelected } from "../actions";
 import { formatCount, formatSize } from "../lib/format";
 import { isDir } from "../lib/listing";
+import { compactFooterTools } from "../lib/sidebar";
 import { ops } from "../state/ops";
 import { settings } from "../state/settings";
+import { sidebar } from "../state/sidebar";
 import type { SearchState } from "../state/tab";
+import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
+import { FooterTools } from "./FooterTools";
 import { StatusHints } from "./StatusHints";
-import { IconBranch, MaterialIcon, IconEye, IconGitCommit, IconGitIgnore, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow } from "./Icons";
+import { IconBranch, IconEye, IconGitCommit, IconGitIgnore, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow, MaterialIcon } from "./Icons";
 
 export function StatusBar() {
   const tab = () => workspace.activeTab();
@@ -21,6 +25,12 @@ export function StatusBar() {
   };
   return (
     <footer class="statusbar">
+      <Show when={compactFooterTools(settings.sidebarOpen(), sidebar.width())}>
+        <div class="status-actions">
+          <FooterTools size={14} />
+          <span class="status-sep" aria-hidden="true" />
+        </div>
+      </Show>
       <Show when={tab()}>
         {(t) => (
           <>
@@ -54,6 +64,21 @@ export function StatusBar() {
                 listed in {t().status().elapsedMs!.toFixed(1)} ms
               </span>
             </Show>
+            <Show when={ui.typeAhead()}>
+              {(ta) => (
+                <span class="status-typeahead" classList={{ miss: !ta().matched }}>
+                  Jump: <strong>{ta().prefix}</strong>
+                  <Show when={ta().total > 0}>
+                    <span class="muted">
+                      {ta().matched ? ` · ${ta().index}/${ta().total}` : " · no match"}
+                    </span>
+                  </Show>
+                  <Show when={ta().total === 0 && !ta().matched}>
+                    <span class="muted"> · no match</span>
+                  </Show>
+                </span>
+              )}
+            </Show>
             <Show when={ops.clip()}>
               {(c) => (
                 <span class="muted">
@@ -68,6 +93,7 @@ export function StatusBar() {
         {(b) => <span class="git-branch" data-tooltip="Git branch"><IconBranch size={12} /> {b()}</span>}
       </Show>
       <StatusHints />
+      <div class="status-actions">
       <Show when={tab()?.git()}>
         <button
           class="icon-btn"
@@ -127,6 +153,7 @@ export function StatusBar() {
           <MaterialIcon name={workspace.synced() ? "link" : "link_off"} size={14} />
         </button>
       </Show>
+      </div>
     </footer>
   );
 }

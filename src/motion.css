@@ -110,6 +110,38 @@
     transform: translateY(3px);
   }
 }
+@keyframes m-tab-reveal {
+  from {
+    opacity: 0;
+    min-width: 0;
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+}
+@keyframes m-tab-cue {
+  0% {
+    background: color-mix(in srgb, var(--accent) 24%, var(--surface-3));
+    box-shadow: inset 0 2px 0 var(--accent);
+    color: var(--text);
+  }
+  65% {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    box-shadow: inset 0 2px 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 2px 0 transparent;
+  }
+}
+.tab.tab-spawned {
+  transform-origin: left center;
+  animation: m-tab-reveal 260ms var(--m-out);
+}
+.tab.tab-spawned-bg {
+  animation: m-tab-reveal 260ms var(--m-out), m-tab-cue 850ms ease-out;
+}
 
 .menu,
 .path-suggest,
@@ -242,18 +274,14 @@
   pointer-events: none;
   transition:
     opacity var(--tt-out-dur) ease-out,
-    scale var(--tt-out-dur) ease-out,
-    translate var(--tt-move-dur) var(--tt-move-ease),
-    width var(--tt-move-dur) var(--tt-move-ease);
+    scale var(--tt-out-dur) ease-out;
 }
 .t-tt[data-show="true"] {
   opacity: 1;
   scale: 1;
   transition:
     opacity var(--tt-in-dur) ease-out var(--tt-delay),
-    scale var(--tt-in-dur) ease-out var(--tt-delay),
-    translate var(--tt-move-dur) var(--tt-move-ease),
-    width var(--tt-move-dur) var(--tt-move-ease);
+    scale var(--tt-in-dur) ease-out var(--tt-delay);
 }
 .t-tt,
 .t-tt * {
@@ -264,6 +292,42 @@
   white-space: normal;
   overflow-wrap: break-word;
   text-align: start;
+}
+.t-tt[data-mode="hints"] {
+  max-width: min(440px, calc(100vw - 16px));
+  padding: 7px 10px;
+}
+.t-tt-hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 10px;
+}
+.t-tt-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.t-tt-hint-label {
+  color: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+.t-tt-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--bg) 24%, transparent);
+  background: color-mix(in srgb, var(--bg) 14%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--bg) 16%, transparent);
+  color: var(--bg);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  vertical-align: baseline;
 }
 
 /* ---------- reduced motion: keep quick colour feedback, drop movement ---------- */
@@ -281,8 +345,12 @@
 :root.reduce-motion .inspector-body > *,
 :root.reduce-motion .git,
 :root.reduce-motion .size-bar,
-:root.reduce-motion .skel-row > span::after {
+:root.reduce-motion .skel-row > span::after,
+:root.reduce-motion .tab.tab-spawned {
   animation: none !important;
+}
+:root.reduce-motion .tab.tab-spawned-bg {
+  animation: m-tab-cue 550ms ease-out !important;
 }
 :root.reduce-motion .btn,
 :root.reduce-motion .icon-btn,
@@ -291,5 +359,75 @@
   transition: background-color 80ms ease-out, border-color 80ms ease-out, color 80ms ease-out !important;
 }
 :root.reduce-motion .t-tt {
+  transition: none !important;
+}
+
+/* ---------- CafeTako checkbox (adapted from CafeTako Site Builder ui-widgets) ---------- */
+[data-ui="checkbox"] {
+  --ui-size: 16px;
+  --ui-duration: 180ms;
+  --ui-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+[data-ui="checkbox"] input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+[data-ui="checkbox"] [data-ui-part="indicator"] {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--ui-size);
+  height: var(--ui-size);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--accent-on, #fff);
+  transition:
+    background-color 140ms ease-out,
+    border-color 140ms ease-out;
+}
+[data-ui="checkbox"]:hover input:not(:disabled) + [data-ui-part="indicator"] {
+  border-color: var(--accent);
+}
+[data-ui="checkbox"] input:checked + [data-ui-part="indicator"],
+[data-ui="checkbox"] input:indeterminate + [data-ui-part="indicator"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+[data-ui="checkbox"] input:disabled + [data-ui-part="indicator"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+[data-ui="checkbox"] svg {
+  width: calc(var(--ui-size) - 4px);
+  height: calc(var(--ui-size) - 4px);
+  opacity: 0;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+}
+[data-ui="checkbox"] input:checked + [data-ui-part="indicator"] svg {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--ui-duration) var(--ui-easing);
+}
+[data-ui="checkbox"] input:indeterminate + [data-ui-part="indicator"] svg {
+  opacity: 1;
+  stroke-dashoffset: 0;
+}
+[data-ui="checkbox"] input:focus-visible + [data-ui-part="indicator"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:root.reduce-motion [data-ui="checkbox"] svg,
+:root.reduce-motion [data-ui="checkbox"] [data-ui-part="indicator"] {
   transition: none !important;
 }

@@ -1,7 +1,7 @@
 // Pure helpers for the command palette: mode prefixes, the inline calculator and unit conversion,
 // remembered command use, and path typing.
 
-export type PaletteMode = "go" | "commands" | "search" | "tabs" | "pins" | "shell" | "guide" | "help";
+export type PaletteMode = "go" | "commands" | "search" | "tabs" | "pins" | "shell" | "settings" | "guide" | "help";
 
 export const MODE_PREFIXES: readonly { prefix: string; mode: PaletteMode; label: string; hint: string }[] = [
   { prefix: ">", mode: "commands", label: "Commands", hint: "Run a command" },
@@ -9,6 +9,7 @@ export const MODE_PREFIXES: readonly { prefix: string; mode: PaletteMode; label:
   { prefix: "@", mode: "tabs", label: "Tabs", hint: "Jump to an open tab" },
   { prefix: "#", mode: "pins", label: "Pinned", hint: "Jump to a pinned folder" },
   { prefix: "!", mode: "shell", label: "Shell", hint: "Run a command in this folder" },
+  { prefix: ",", mode: "settings", label: "Settings", hint: "Jump to a setting or tab" },
   { prefix: ";", mode: "guide", label: "Guide", hint: "Search the Octopolis guide" },
   { prefix: "?", mode: "help", label: "Help", hint: "Show these prefixes" },
 ];
@@ -20,6 +21,7 @@ export const MODE_LABELS: Record<PaletteMode, string> = {
   tabs: "Tabs",
   pins: "Pinned",
   shell: "Shell",
+  settings: "Settings",
   guide: "Guide",
   help: "Help",
 };

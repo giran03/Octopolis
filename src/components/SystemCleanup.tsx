@@ -4,6 +4,7 @@ import { formatSize } from "../lib/format";
 import { errorText, listDrives, openExternal, systemCleanupCancel, systemCleanupRun, systemCleanupScan, type SystemCleanupCategory, type SystemCleanupResult } from "../lib/ipc";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
+import { Checkbox } from "./Checkbox";
 import { IconMop } from "./Icons";
 
 type Group = SystemCleanupCategory["group"];
@@ -186,7 +187,7 @@ export function SystemCleanup() {
                         {(c) => (
                           <div class="sc-item">
                             <label class="sc-row" classList={{ off: !selectable(c) }}>
-                              <input type="checkbox" disabled={!selectable(c) || busy()} checked={picked().has(c.id)} onChange={() => setPicked((s) => flip(s, c.id))} />
+                              <Checkbox disabled={!selectable(c) || busy()} checked={picked().has(c.id)} onChange={() => setPicked((s) => flip(s, c.id))} />
                               <span class="bin-names">
                                 <span class="bin-name">
                                   {c.label}

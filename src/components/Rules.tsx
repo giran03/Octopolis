@@ -1,11 +1,32 @@
 // Folder rules: tidy folders by moving or deleting old files that match name patterns. Every run is previewed first.
 // The dialog works like Custom actions: a list with toggles, an editor, ready-made presets, import and export.
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { Checkbox } from "./Checkbox";
 import { formatSize } from "../lib/format";
 import { errorText, knownFolders, pickFolderDialog, ruleMatches, type RuleMatch } from "../lib/ipc";
 import { baseName } from "../lib/paths";
 import { presetFolderIds, resolvePreset, RULE_PRESET_GROUPS, RULE_PRESETS } from "../lib/rulePresets";
-import { blankRule, DEST_TOKENS, groupByDestination, newRuleId, parseRulesText, type Rule, ruleProblem, ruleQuery, rulesToJson, ruleSummary, sinceText, uniqueRuleName } from "../lib/rules";
+import {
+  blankRule,
+  DEST_TOKENS,
+  groupByDestination,
+  newRuleId,
+  parseRulesText,
+  type IntervalUnit,
+  type Rule,
+  type RuleSchedule,
+  type ScheduleActionMode,
+  type ScheduleLimitKind,
+  type ScheduleMode,
+  ruleProblem,
+  ruleQuery,
+  rulesToJson,
+  ruleSummary,
+  SCHEDULE_PRESETS,
+  scheduleSummary,
+  sinceText,
+  uniqueRuleName,
+} from "../lib/rules";
 import { downloadText, readTextFile } from "../lib/textFile";
 import { ops } from "../state/ops";
 import { rules } from "../state/rules";
@@ -19,6 +40,28 @@ const ACTIONS: readonly Option<Rule["action"]>[] = [
   { value: "move", label: "Move to a folder" },
   { value: "recycle", label: "Recycle Bin" },
 ];
+
+const SCHEDULE_MODES: readonly Option<ScheduleMode>[] = [
+  { value: "manual", label: "Manual" },
+  { value: "interval", label: "Every…" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "startup", label: "Startup" },
+];
+
+const LIMIT_KINDS: readonly Option<ScheduleLimitKind>[] = [
+  { value: "forever", label: "Forever" },
+  { value: "runs", label: "N runs" },
+  { value: "duration", label: "For duration" },
+];
+
+const ACTION_MODES: readonly Option<ScheduleActionMode>[] = [
+  { value: "auto", label: "Run automatically" },
+  { value: "preview", label: "Notify & preview" },
+];
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
 /** Name patterns to start from. */
 const PATTERN_SETS: readonly { label: string; patterns: string }[] = [
@@ -59,6 +102,20 @@ export function Rules() {
   };
   const close = () => ui.setRulesOpen(false);
   const set = (patch: Partial<Rule>) => setDraft({ ...draft(), ...patch });
+  const setSchedule = (patch: Partial<RuleSchedule>) => {
+    const next: RuleSchedule = { ...draft().schedule, ...patch };
+    const normalized: RuleSchedule = {
+      ...next,
+      runsRemaining: next.limitKind === "runs" ? (patch.runsRemaining !== undefined ? patch.runsRemaining : next.limitValue) : null,
+      untilAt:
+        next.limitKind === "duration"
+          ? patch.untilAt !== undefined
+            ? patch.untilAt
+            : Date.now() + next.limitValue * (next.limitUnit === "hours" ? 3_600_000 : 86_400_000)
+          : null,
+    };
+    set({ schedule: normalized });
+  };
   const go = (v: View) => (setError(null), setView(v));
 
   const edit = (r: Rule) => {
@@ -213,7 +270,12 @@ export function Rules() {
     if (r) void check([r], "list");
   });
 
-  const badges = (r: Pick<Rule, "action" | "recursive" | "minSizeMb">) => [r.action === "move" ? "Move" : "Recycle Bin", r.recursive ? "Subfolders" : "", r.minSizeMb > 0 ? `≥ ${r.minSizeMb} MB` : ""].filter(Boolean);
+  const badges = (r: Pick<Rule, "action" | "recursive" | "minSizeMb"> & { schedule?: RuleSchedule }) => [
+    r.action === "move" ? "Move" : "Recycle Bin",
+    r.schedule && r.schedule.mode !== "manual" ? scheduleSummary(r.schedule) : "",
+    r.recursive ? "Subfolders" : "",
+    r.minSizeMb > 0 ? `≥ ${r.minSizeMb} MB` : "",
+  ].filter(Boolean);
   const title = () => (view() === "edit" ? (list().some((r) => r.id === draft().id) ? "Edit rule" : "New rule") : view() === "presets" ? "Presets" : view() === "preview" ? "What would happen" : "Folder rules");
   const sub = () =>
     view() === "list" ? "Tidy a folder by moving or deleting old files. You always see the files first."
@@ -310,70 +372,247 @@ export function Rules() {
         </Show>
 
         <Show when={view() === "edit"}>
-          <div class="ax-form">
-            <label class="ax-field">
-              <span>Name</span>
-              <input class="text-input" maxLength={80} placeholder="Old downloads" value={draft().name} onInput={(e) => set({ name: e.currentTarget.value })} ref={(el) => queueMicrotask(() => el.focus())} />
-            </label>
-            <label class="ax-field">
-              <span>Folder to tidy</span>
-              <span class="rx-inline">
-                <input class="text-input mono" spellcheck={false} placeholder="Folder path" value={draft().folder} onInput={(e) => set({ folder: e.currentTarget.value.trim() })} />
-                <button class="btn small" onClick={() => void pick(draft().folder, (p) => set({ folder: p }))}>Browse…</button>
-              </span>
-            </label>
-
-            <h3>Which files</h3>
-            <label class="ax-field">
-              <span>Names (blank: every file)</span>
-              <input class="text-input mono" spellcheck={false} placeholder="*.pdf; invoice*" value={draft().patterns} onInput={(e) => set({ patterns: e.currentTarget.value })} />
-            </label>
-            <div class="ax-chips" aria-label="Common file types">
-              <For each={PATTERN_SETS}>{(s) => <button class="ax-chip" title={s.patterns} onClick={() => usePatterns(s.patterns)}>{s.label}</button>}</For>
-              <button class="ax-chip" title="Clear the names" onClick={() => set({ patterns: "" })}>Clear</button>
-            </div>
-            <div class="ax-field">
-              <span>Not changed for</span>
-              <span class="ax-count">
-                <input class="text-input" type="number" min="0" aria-label="Days since last change" value={draft().olderThanDays} onInput={(e) => set({ olderThanDays: Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)) })} />
-                <span class="muted small">days or more, and no more than</span>
-                <input class="text-input" type="number" min="0" aria-label="Newest age in days (blank: no limit)" placeholder="any" value={draft().newerThanDays ?? ""} onInput={(e) => set({ newerThanDays: optionalDays(e.currentTarget.value) })} />
-                <span class="muted small">days (blank: no limit)</span>
-              </span>
-            </div>
-            <div class="ax-field">
-              <span>At least this big</span>
-              <span class="ax-count">
-                <input class="text-input" type="number" min="0" step="any" aria-label="Smallest size in MB" value={draft().minSizeMb} onInput={(e) => set({ minSizeMb: Math.max(0, Number(e.currentTarget.value) || 0) })} />
-                <span class="muted small">MB (0: any size)</span>
-              </span>
-            </div>
-            <label class="props-check"><input type="checkbox" checked={draft().recursive} onChange={(e) => set({ recursive: e.currentTarget.checked })} /> Include files in subfolders</label>
-
-            <h3>What to do</h3>
-            <div class="ax-field">
-              <span>Action</span>
-              <Segmented label="Action" value={draft().action} options={ACTIONS} onChange={(action) => set({ action })} />
-            </div>
-            <Show when={draft().action === "move"}>
-              <label class="ax-field">
-                <span>Move them to</span>
-                <span class="rx-inline">
-                  <input class="text-input mono" spellcheck={false} placeholder="Destination folder" value={draft().dest} onInput={(e) => set({ dest: e.currentTarget.value.trim() })} />
-                  <button class="btn small" onClick={() => void pick(draft().dest, (p) => set({ dest: p }))}>Browse…</button>
-                </span>
-              </label>
-              <div class="ax-chips" aria-label="Destination placeholders">
-                <For each={DEST_TOKENS}>{(t) => <button class="ax-chip" title={t.hint} onClick={() => set({ dest: draft().dest + t.token })}>{t.token}</button>}</For>
+          <div class="ax-form rx-form">
+            <section class="rx-card">
+              <div class="rx-row">
+                <label class="rx-label" for="rule-name">Rule name</label>
+                <div class="rx-ctrl">
+                  <input id="rule-name" class="text-input" maxLength={80} placeholder="Old downloads" value={draft().name} onInput={(e) => set({ name: e.currentTarget.value })} ref={(el) => queueMicrotask(() => el.focus())} />
+                </div>
               </div>
-            </Show>
-            <Show when={draft().action === "recycle"}>
-              <p class="muted small rx-note">Files go to the Recycle Bin, so they can be restored from there or with Ctrl+Z.</p>
-            </Show>
+              <div class="rx-row">
+                <label class="rx-label" for="rule-folder">Folder to tidy</label>
+                <div class="rx-ctrl rx-inline-ctrl">
+                  <input id="rule-folder" class="text-input mono" spellcheck={false} placeholder="Folder path" value={draft().folder} onInput={(e) => set({ folder: e.currentTarget.value.trim() })} />
+                  <button class="btn small" onClick={() => void pick(draft().folder, (p) => set({ folder: p }))}>Browse…</button>
+                </div>
+              </div>
+            </section>
 
-            <div class="ax-preview" aria-live="polite">
-              <span class="muted small">{ruleSummary(draft())}</span>
-              <Show when={live()} fallback={<span class="muted small">Fill in the folder to see how many files match.</span>}>{(l) => <code>{l()}</code>}</Show>
+            <section class="rx-card">
+              <h3 class="rx-card-title">Which files</h3>
+              <div class="rx-row rx-row-top">
+                <label class="rx-label" for="rule-patterns">
+                  <span>File names</span>
+                  <span class="rx-hint muted small">Blank = every file</span>
+                </label>
+                <div class="rx-ctrl rx-stack">
+                  <input id="rule-patterns" class="text-input mono" spellcheck={false} placeholder="*.pdf; invoice*" value={draft().patterns} onInput={(e) => set({ patterns: e.currentTarget.value })} />
+                  <div class="ax-chips rx-chips" aria-label="Common file types">
+                    <For each={PATTERN_SETS}>{(s) => <button class="ax-chip" title={s.patterns} onClick={() => usePatterns(s.patterns)}>{s.label}</button>}</For>
+                    <button class="ax-chip rx-chip-clear" title="Clear the names" onClick={() => set({ patterns: "" })}>Clear</button>
+                  </div>
+                </div>
+              </div>
+              <div class="rx-row">
+                <span class="rx-label">
+                  <span>Not changed for</span>
+                  <span class="rx-hint muted small">Age in days</span>
+                </span>
+                <div class="rx-ctrl rx-num-row">
+                  <input class="text-input rx-num" type="number" min="0" aria-label="Days since last change" value={draft().olderThanDays} onInput={(e) => set({ olderThanDays: Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)) })} />
+                  <span class="muted small">to</span>
+                  <input class="text-input rx-num" type="number" min="0" aria-label="Newest age in days (blank: no limit)" placeholder="any" value={draft().newerThanDays ?? ""} onInput={(e) => set({ newerThanDays: optionalDays(e.currentTarget.value) })} />
+                  <span class="muted small">days (blank = no max)</span>
+                </div>
+              </div>
+              <div class="rx-row">
+                <label class="rx-label" for="rule-size">
+                  <span>Minimum size</span>
+                  <span class="rx-hint muted small">0 = any size</span>
+                </label>
+                <div class="rx-ctrl rx-num-row">
+                  <input id="rule-size" class="text-input rx-num" type="number" min="0" step="any" aria-label="Smallest size in MB" value={draft().minSizeMb} onInput={(e) => set({ minSizeMb: Math.max(0, Number(e.currentTarget.value) || 0) })} />
+                  <span class="muted small">MB</span>
+                </div>
+              </div>
+              <div class="rx-row">
+                <span class="rx-label" />
+                <div class="rx-ctrl">
+                  <Checkbox class="props-check" checked={draft().recursive} onChange={(recursive) => set({ recursive })}>Include files in subfolders</Checkbox>
+                </div>
+              </div>
+            </section>
+
+            <section class="rx-card">
+              <h3 class="rx-card-title">What to do</h3>
+              <div class="rx-row">
+                <span class="rx-label">Action</span>
+                <div class="rx-ctrl">
+                  <Segmented label="Action" value={draft().action} options={ACTIONS} onChange={(action) => set({ action })} />
+                </div>
+              </div>
+              <Show when={draft().action === "move"}>
+                <div class="rx-row rx-row-top">
+                  <label class="rx-label" for="rule-dest">Move them to</label>
+                  <div class="rx-ctrl rx-stack">
+                    <div class="rx-inline-ctrl">
+                      <input id="rule-dest" class="text-input mono" spellcheck={false} placeholder="Destination folder" value={draft().dest} onInput={(e) => set({ dest: e.currentTarget.value.trim() })} />
+                      <button class="btn small" onClick={() => void pick(draft().dest, (p) => set({ dest: p }))}>Browse…</button>
+                    </div>
+                    <div class="ax-chips rx-chips" aria-label="Destination placeholders">
+                      <For each={DEST_TOKENS}>{(t) => <button class="ax-chip" title={t.hint} onClick={() => set({ dest: draft().dest + t.token })}>{t.token}</button>}</For>
+                    </div>
+                  </div>
+                </div>
+              </Show>
+              <Show when={draft().action === "recycle"}>
+                <div class="rx-row">
+                  <span class="rx-label" />
+                  <div class="rx-ctrl">
+                    <p class="muted small rx-note">Files go to the Recycle Bin, so they can be restored from there or with Ctrl+Z.</p>
+                  </div>
+                </div>
+              </Show>
+            </section>
+
+            <section class="rx-card">
+              <h3 class="rx-card-title">Schedule</h3>
+              <div class="rx-row rx-row-top">
+                <span class="rx-label">
+                  <span>Presets</span>
+                  <span class="rx-hint muted small">One-click schedules</span>
+                </span>
+                <div class="rx-ctrl rx-stack">
+                  <div class="ax-chips rx-chips" aria-label="Schedule presets">
+                    <For each={SCHEDULE_PRESETS}>
+                      {(p) => <button class="ax-chip" onClick={() => setSchedule(p.patch)}>{p.label}</button>}
+                    </For>
+                  </div>
+                </div>
+              </div>
+              <div class="rx-row">
+                <span class="rx-label">Frequency</span>
+                <div class="rx-ctrl">
+                  <Segmented label="Schedule frequency" value={draft().schedule.mode} options={SCHEDULE_MODES} onChange={(mode) => setSchedule({ mode })} />
+                </div>
+              </div>
+              <Show when={draft().schedule.mode === "interval"}>
+                <div class="rx-row">
+                  <span class="rx-label">Run every</span>
+                  <div class="rx-ctrl rx-num-row">
+                    <input
+                      class="text-input rx-num"
+                      type="number"
+                      min="1"
+                      max="999"
+                      aria-label="Interval amount"
+                      value={draft().schedule.every}
+                      onInput={(e) => setSchedule({ every: Math.max(1, Math.min(999, Math.floor(Number(e.currentTarget.value) || 1))) })}
+                    />
+                    <select
+                      class="text-input rx-select"
+                      aria-label="Interval unit"
+                      value={draft().schedule.unit}
+                      onChange={(e) => setSchedule({ unit: e.currentTarget.value as IntervalUnit })}
+                    >
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                      <option value="days">days</option>
+                    </select>
+                  </div>
+                </div>
+              </Show>
+              <Show when={draft().schedule.mode === "weekly"}>
+                <div class="rx-row">
+                  <label class="rx-label" for="rule-weekday">Day of week</label>
+                  <div class="rx-ctrl">
+                    <select
+                      id="rule-weekday"
+                      class="text-input rx-select"
+                      value={draft().schedule.weekday}
+                      onChange={(e) => setSchedule({ weekday: Number(e.currentTarget.value) })}
+                    >
+                      <For each={WEEKDAY_NAMES}>{(d, idx) => <option value={idx()}>{d}</option>}</For>
+                    </select>
+                  </div>
+                </div>
+              </Show>
+              <Show when={draft().schedule.mode === "monthly"}>
+                <div class="rx-row">
+                  <label class="rx-label" for="rule-monthday">Day of month</label>
+                  <div class="rx-ctrl rx-num-row">
+                    <input
+                      id="rule-monthday"
+                      class="text-input rx-num"
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={draft().schedule.monthDay}
+                      onInput={(e) => setSchedule({ monthDay: Math.max(1, Math.min(31, Math.floor(Number(e.currentTarget.value) || 1))) })}
+                    />
+                    <span class="muted small">(1–31)</span>
+                  </div>
+                </div>
+              </Show>
+              <Show when={draft().schedule.mode === "daily" || draft().schedule.mode === "weekly" || draft().schedule.mode === "monthly"}>
+                <div class="rx-row">
+                  <label class="rx-label" for="rule-time">At time</label>
+                  <div class="rx-ctrl">
+                    <input
+                      id="rule-time"
+                      class="text-input rx-time"
+                      type="time"
+                      value={draft().schedule.time}
+                      onInput={(e) => setSchedule({ time: e.currentTarget.value || "09:00" })}
+                    />
+                  </div>
+                </div>
+              </Show>
+              <Show when={draft().schedule.mode !== "manual" && draft().schedule.mode !== "startup"}>
+                <div class="rx-row rx-row-top">
+                  <span class="rx-label">
+                    <span>Run for</span>
+                    <span class="rx-hint muted small">Optional stop limit</span>
+                  </span>
+                  <div class="rx-ctrl rx-stack">
+                    <Segmented label="Schedule duration" value={draft().schedule.limitKind} options={LIMIT_KINDS} onChange={(limitKind) => setSchedule({ limitKind })} />
+                    <Show when={draft().schedule.limitKind !== "forever"}>
+                      <div class="rx-num-row" style={{ display: "flex", "align-items": "center" }}>
+                        <input
+                          class="text-input rx-num"
+                          type="number"
+                          min="1"
+                          max="999"
+                          aria-label="Limit value"
+                          value={draft().schedule.limitValue}
+                          onInput={(e) => setSchedule({ limitValue: Math.max(1, Math.min(999, Math.floor(Number(e.currentTarget.value) || 1))) })}
+                        />
+                        <Show when={draft().schedule.limitKind === "runs"} fallback={
+                          <select
+                            class="text-input rx-select"
+                            aria-label="Duration unit"
+                            value={draft().schedule.limitUnit}
+                            onChange={(e) => setSchedule({ limitUnit: e.currentTarget.value as "hours" | "days" })}
+                          >
+                            <option value="hours">hours</option>
+                            <option value="days">days</option>
+                          </select>
+                        }>
+                          <span class="muted small">runs, then stop</span>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+              </Show>
+              <Show when={draft().schedule.mode !== "manual"}>
+                <div class="rx-row">
+                  <span class="rx-label">When due</span>
+                  <div class="rx-ctrl">
+                    <Segmented label="When due" value={draft().schedule.actionMode} options={ACTION_MODES} onChange={(actionMode) => setSchedule({ actionMode })} />
+                  </div>
+                </div>
+              </Show>
+            </section>
+
+            <div class="ax-preview rx-summary-card" aria-live="polite">
+              <span class="muted small">
+                {ruleSummary(draft())} · <strong>{scheduleSummary(draft().schedule)}</strong>
+              </span>
+              <Show when={live()} fallback={<span class="muted small">Fill in the folder to see how many files match.</span>}>
+                {(l) => <code class="rx-live-count">{l()}</code>}
+              </Show>
             </div>
           </div>
         </Show>

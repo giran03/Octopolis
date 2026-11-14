@@ -3,8 +3,12 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import * as A from "../actions";
 import { ACTION_PRESETS, PRESET_GROUPS } from "../lib/actionPresets";
 import {
+  actionApplies,
   actionsToJson,
+  batchActionFromPath,
+  batchActionFromText,
   expandCommand,
+  isBatchPath,
   leadingProgram,
   NEW_ACTION,
   newActionId,
@@ -16,12 +20,15 @@ import {
 } from "../lib/customActions";
 import { errorText, programExists } from "../lib/ipc";
 import { formatKeys } from "../lib/keymap";
+import { isDir } from "../lib/listing";
 import { downloadText, readTextFile } from "../lib/textFile";
-import { customActions } from "../state/customActions";
+import { customActions, type AddBatchResult } from "../state/customActions";
+import { carriesPaths, dragRaw, dragState, isExternalDrag, onDragReset } from "../state/drag";
 import { keybindings } from "../state/keybindings";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
-import { MaterialIcon } from "./Icons";
+import { Checkbox } from "./Checkbox";
+import { IconPlay, MaterialIcon } from "./Icons";
 import { Segmented, Toggle } from "./settings/controls";
 
 type View = "list" | "edit" | "presets";
@@ -46,8 +53,17 @@ export function ActionsEditor() {
   const [draft, setDraft] = createSignal<CustomAction>(NEW_ACTION);
   const [extText, setExtText] = createSignal("");
   const [missing, setMissing] = createSignal<string | null>(null);
+  const [dropHot, setDropHot] = createSignal(false);
+  let dragDepth = 0;
   let commandEl: HTMLTextAreaElement | undefined;
   let fileEl: HTMLInputElement | undefined;
+
+  onCleanup(
+    onDragReset(() => {
+      dragDepth = 0;
+      setDropHot(false);
+    }),
+  );
 
   const list = () => customActions.list();
   const shown = () => {
@@ -88,6 +104,99 @@ export function ActionsEditor() {
     });
 
   const duplicate = (a: CustomAction) => add({ ...a, name: `${a.name} copy`, enabled: a.enabled });
+
+  const activeExplorerFolder = (): string => {
+    const t = workspace.activeTab();
+    if (!t || t.archive()) return "";
+    const picked = [...t.selection()];
+    const entry = picked.length ? picked[0] : t.view()[t.focus()];
+    if (entry !== undefined && isDir(t.listing(), entry)) return t.pathOf(entry);
+    return t.path();
+  };
+
+  const runOne = (a: CustomAction) => {
+    const t = workspace.activeTab();
+    if (!t) return ui.toast("No active folder tab");
+    if (!actionApplies(a, A.targetItems(t))) return ui.toast(`"${a.name}" doesn't apply to this selection`);
+    close();
+    void A.runAction(t, a);
+  };
+
+  const announceBatchResult = (res: AddBatchResult) => {
+    setFilter("");
+    setView("list");
+    const total = [...res.added, ...res.existing];
+    if (total.length === 1) {
+      const target = total[0];
+      const msg = res.added.length ? `Added "${target.name}" as a runnable action` : `"${target.name}" is already in Custom actions`;
+      ui.toast(msg, workspace.activeTab() ? { label: "Run", onClick: () => runOne(target) } : undefined);
+      return;
+    }
+    if (res.added.length && res.existing.length) {
+      ui.toast(`Added ${res.added.length} batch action${res.added.length === 1 ? "" : "s"} (${res.existing.length} already present)`);
+    } else if (res.added.length) {
+      ui.toast(`Added ${res.added.length} batch action${res.added.length === 1 ? "" : "s"}`);
+    } else if (res.existing.length) {
+      ui.toast(`${res.existing.length} batch action${res.existing.length === 1 ? " is" : "s are"} already in Custom actions`);
+    }
+  };
+
+  const acceptsDrop = (dt: DataTransfer | null) => {
+    if (!dt) return false;
+    if (isExternalDrag(dt)) return dt.types.includes("Files");
+    return carriesPaths(dt) && dragState.paths.some(isBatchPath);
+  };
+
+  const handleDrop = async (e: DragEvent) => {
+    dragDepth = 0;
+    setDropHot(false);
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (isExternalDrag(dt) && dt.files.length) {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = [...dt.files];
+      const batFiles = files.filter((f) => isBatchPath(f.name));
+      const jsonFiles = files.filter((f) => /\.json$/i.test(f.name));
+      if (!batFiles.length && !jsonFiles.length) {
+        return ui.toast("Drop .bat or .cmd files to add them as runnable actions");
+      }
+      if (batFiles.length) {
+        const candidates = await Promise.all(
+          batFiles.map(async (f) => {
+            const nativePath = (f as File & { path?: string }).path;
+            return nativePath ? batchActionFromPath(nativePath) : batchActionFromText(f.name, await f.text());
+          }),
+        );
+        announceBatchResult(customActions.addBatchActions(candidates));
+      }
+      for (const jf of jsonFiles) {
+        try {
+          const incoming = parseActionsText(await jf.text());
+          const names = list().map((a) => a.name);
+          const added = incoming.map((a) => {
+            const name = uniqueActionName(a.name, names);
+            names.push(name);
+            return { ...a, name, id: newActionId() };
+          });
+          customActions.save([...list(), ...added]);
+          ui.toast(`Added ${added.length} action${added.length === 1 ? "" : "s"}`);
+        } catch (err) {
+          ui.toast(errorText(err));
+        }
+      }
+      return;
+    }
+    if (carriesPaths(dt)) {
+      const raw = dragRaw(dt);
+      const paths = raw ? (JSON.parse(raw) as string[]) : [];
+      const bats = paths.filter(isBatchPath);
+      if (!bats.length) return ui.toast("Drop .bat or .cmd files to add them as runnable actions");
+      e.preventDefault();
+      e.stopPropagation();
+      announceBatchResult(customActions.addBatchActions(bats.map(batchActionFromPath)));
+    }
+  };
 
   const insert = (token: string) => {
     const el = commandEl;
@@ -179,14 +288,39 @@ export function ActionsEditor() {
     <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
         class="dialog actions-dialog2"
+        classList={{ "ax-drop-hot": dropHot() }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="actions-title"
+        onDragEnter={(e) => {
+          if (!acceptsDrop(e.dataTransfer)) return;
+          e.preventDefault();
+          dragDepth++;
+          setDropHot(true);
+        }}
+        onDragOver={(e) => {
+          if (!acceptsDrop(e.dataTransfer)) return;
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+          setDropHot(true);
+        }}
+        onDragLeave={() => {
+          dragDepth = Math.max(0, dragDepth - 1);
+          if (dragDepth === 0) setDropHot(false);
+        }}
+        onDrop={(e) => void handleDrop(e)}
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === "Escape") return view() !== "list" ? setView("list") : close();
         }}
       >
+        <Show when={dropHot()}>
+          <div class="ax-drop-overlay" aria-hidden="true">
+            <MaterialIcon name="terminal" size={28} />
+            <strong>Drop .bat or .cmd files</strong>
+            <span class="muted small">Adds each batch script as a runnable custom action</span>
+          </div>
+        </Show>
         <div class="ax-head">
           <Show when={view() !== "list"}>
             <button class="btn small icon-btn" aria-label="Back" title="Back" onClick={() => setView("list")}>
@@ -202,7 +336,7 @@ export function ActionsEditor() {
         <Show when={view() === "list"}>
           <div class="ax-bar">
             <input class="text-input" placeholder="Filter actions" value={filter()} onInput={(e) => setFilter(e.currentTarget.value)} />
-            <button class="btn small primary" onClick={() => edit({ ...NEW_ACTION })}><MaterialIcon name="add" size={15} /> New</button>
+            <button class="btn small primary" onClick={() => edit({ ...NEW_ACTION, workDir: activeExplorerFolder() })}><MaterialIcon name="add" size={15} /> New</button>
             <button class="btn small" onClick={() => setView("presets")}><MaterialIcon name="auto_fix_high" size={15} /> Presets</button>
             <button class="btn small" title="Add actions from a JSON file" onClick={() => fileEl?.click()}><MaterialIcon name="upload_file" size={15} /> Import</button>
             <input ref={fileEl} type="file" accept=".json,application/json" hidden onChange={(e) => void importFile(e)} />
@@ -210,9 +344,9 @@ export function ActionsEditor() {
             <button class="btn small icon-btn" title="Save all as a file" aria-label="Save all actions as a file" onClick={() => void exportAll("file")}><MaterialIcon name="download" size={16} /></button>
           </div>
           <div class="ax-list">
-            <For each={shown()} fallback={<p class="muted ax-empty">{list().length ? "No action matches." : "No actions yet. Add one, or start from the presets."}</p>}>
+            <For each={shown()} fallback={<p class="muted ax-empty">{list().length ? "No action matches." : "No actions yet. Add one, start from the presets, or drop .bat / .cmd files here."}</p>}>
               {(a) => (
-                <div class="ax-row" classList={{ off: !a.enabled }}>
+                <div class="ax-row" classList={{ off: !a.enabled, "ax-new": customActions.highlighted().includes(a.id) }}>
                   <Toggle label={`${a.name} enabled`} checked={a.enabled} onChange={(enabled) => patchOne(a.id, { enabled })} />
                   <span class="ax-main">
                     <span class="ax-name">{a.name}</span>
@@ -224,6 +358,7 @@ export function ActionsEditor() {
                     </span>
                   </span>
                   <span class="ax-buttons">
+                    <button class="btn small icon-btn" title="Run" aria-label={`Run ${a.name}`} onClick={() => runOne(a)}><IconPlay size={15} /></button>
                     <button class="btn small icon-btn" title="Edit" aria-label={`Edit ${a.name}`} onClick={() => edit(a)}><MaterialIcon name="edit" size={16} /></button>
                     <button class="btn small icon-btn" title="Duplicate" aria-label={`Duplicate ${a.name}`} onClick={() => duplicate(a)}><MaterialIcon name="content_copy" size={16} /></button>
                     <button class="btn small icon-btn" title="Remove" aria-label={`Remove ${a.name}`} onClick={() => remove(a)}><MaterialIcon name="delete" size={16} /></button>
@@ -231,6 +366,12 @@ export function ActionsEditor() {
                 </div>
               )}
             </For>
+            <Show when={list().length > 0}>
+              <div class="ax-drop-hint muted small">
+                <MaterialIcon name="terminal" size={14} />
+                <span>Tip: Drag and drop <code>.bat</code> or <code>.cmd</code> files here to add them as runnable actions.</span>
+              </div>
+            </Show>
           </div>
         </Show>
 
@@ -313,14 +454,14 @@ export function ActionsEditor() {
             </div>
 
             <h3>When it runs</h3>
-            <label class="props-check"><input type="checkbox" checked={draft().each} onChange={(e) => set({ each: e.currentTarget.checked })} /> Run once for each selected item</label>
-            <label class="props-check"><input type="checkbox" checked={draft().mode === "console"} onChange={(e) => set({ mode: e.currentTarget.checked ? "console" : "hidden" })} /> Show a console window (to see the output)</label>
-            <label class="props-check"><input type="checkbox" checked={draft().elevate} onChange={(e) => set({ elevate: e.currentTarget.checked, confirm: e.currentTarget.checked ? true : draft().confirm })} /> Run as administrator (Windows asks first)</label>
-            <label class="props-check"><input type="checkbox" checked={draft().confirm} onChange={(e) => set({ confirm: e.currentTarget.checked })} /> Show the command and ask before running</label>
-            <label class="props-check"><input type="checkbox" checked={draft().refresh} onChange={(e) => set({ refresh: e.currentTarget.checked })} /> Reload the folder when it finishes</label>
+            <Checkbox class="props-check" checked={draft().each} onChange={(each) => set({ each })}>Run once for each selected item</Checkbox>
+            <Checkbox class="props-check" checked={draft().mode === "console"} onChange={(checked) => set({ mode: checked ? "console" : "hidden" })}>Show a console window (to see the output)</Checkbox>
+            <Checkbox class="props-check" checked={draft().elevate} onChange={(elevate) => set({ elevate, confirm: elevate ? true : draft().confirm })}>Run as administrator (Windows asks first)</Checkbox>
+            <Checkbox class="props-check" checked={draft().confirm} onChange={(confirm) => set({ confirm })}>Show the command and ask before running</Checkbox>
+            <Checkbox class="props-check" checked={draft().refresh} onChange={(refresh) => set({ refresh })}>Reload the folder when it finishes</Checkbox>
             <label class="ax-field">
               <span>Start in folder (blank: the folder you are viewing)</span>
-              <input class="text-input mono" spellcheck={false} value={draft().workDir} onInput={(e) => set({ workDir: e.currentTarget.value })} />
+              <input class="text-input mono" spellcheck={false} placeholder={activeExplorerFolder() || "The folder you are viewing"} value={draft().workDir} onInput={(e) => set({ workDir: e.currentTarget.value })} />
             </label>
             <Show when={draft().id}>
               <div class="ax-field">

@@ -1,126 +1,119 @@
 # Changelog
 
-## [0.1.1] - Unreleased
+## [0.1.1] - 2026-11-14
+
+### Added
+
+- **Movable & customizable Details columns**: Drag column headers directly in Details view to reorder them, auto-size one or all columns to fit, or open **Customize columns…** (header context menu or Command Palette) to toggle columns, drag/step reorder them, and adjust per-column widths.
+- **PowerBar Settings search & `/` filter hints**: Search and jump straight to Settings tabs/rows from the Command Palette, and use `/` filter mode with clean, non-overlapping filter examples.
+- **Runnable script & installer actions**: Run `.bat`/`.cmd` scripts directly and use **Run** / **Install** context menu actions on executables and installers.
+- **Welcome wizard re-run**: Added a **Run wizard** button under **Settings > About > Help** to re-launch the first-run setup tour anytime.
+- **Bento layout customization & media tags**: Added **Hide file names** and **Show tags** toggles under **Settings > Appearance > Bento layout** (both enabled by default). Non-folder Bento cards display colorized top-right media extension tags (`JPG`, `PNG`, `GIF`, `WEBP`, `SVG`, `AVIF`, `MP4`, `MOV`, `WEBM`, `MKV`, etc.) synced across all built-in themes and customizable in the Theme Factory.
+- **Toolbar Sort & Group menu**: Added a **Sort & group** button beside the **View** button in the pane toolbar with **Sort by** (`Name`, `Date modified`, `Type`, `Size`, plus `Relevance` when searching), **Ascending / Descending** direction toggles, **Group by** (`None`, `Type`, `Date modified`, `Size`, `Name`), and **Reset to default**.
+- **Custom actions Run button**: Added a **Run** icon button to each row in **Custom actions** to run it directly on the active explorer selection or focused item, and defaulted **Start in folder** on new actions to the active, focused explorer folder.
+- **Drag & drop `.bat` / `.cmd` to Custom actions**: Dragging `.bat` or `.cmd` files onto the **Custom actions** footer button or into the **Custom actions** dialog adds them as runnable actions (with console output enabled, working folder set to the script's directory, row highlight, and a quick **Run** toast action).
+- **Window corners setting**: Added **Window corners** (`Default`, `Square`, `Small`, `Rounded`) under **Settings > Appearance > Size and density** to customize the main window's corner roundedness.
+- **Tooltip delay setting**: Added a **Tooltip delay** slider (`Instant` to `5.0 s`, defaulting to `0.7 s`) under **Settings > Appearance > Motion and help**.
+- **Folder rules scheduling & presets**: Added per-rule schedules with one-click presets (`Manual`, `On startup`, `Every 15 min`, `Every hour`, `Every 6 hours`, `Daily 09:00`, `Weekly`, `Monthly`), custom intervals (`Every N minutes/hours/days`), bounded run limits (**Forever**, **N runs**, or **For duration** in hours/days), and **Run automatically** vs **Notify & preview** modes.
+- **Type-ahead jump indicator**: Added a transient `Jump:` pill with match count (`index/total`) in the status bar when cycling or typing to jump to items.
+- **All drives overview**: Added **All drives** as the first item in the sidebar **Drives** section, opening a **Devices and drives** grid view showing all local, USB/removable, optical, network drives, and WSL distros with usage bars, free/total capacity, and context actions.
+- **Window buttons style**: Added **Window buttons** (`macOS` traffic lights or `Windows` controls, defaulting to `macOS`) under **Settings > Appearance > Size and density**.
+
+### Changed
+
+- **Responsive sidebar & density**: Sidebar footer tool icons automatically anchor to the left side of the status bar when the sidebar is narrow or collapsed; dragging the sidebar below ~100 px smoothly snaps it collapsed (and dragging back out re-opens it); **Compact** density defaults the sidebar to `150 px`.
+- **Accent color dot**: Styled the **Accent color** preview in **Settings > Appearance** as a circular dot that reflects the active theme's default accent when set to **Theme default**.
+- **Edit rule modal**: Re-styled the **Edit rule** dialog with grouped section cards, aligned labels and controls, and a clearer live rule summary card.
+- **Settings > Appearance**: Moved **Shortcut hints in the status bar** into its own row under **Motion and help**, and added spacing between the **New theme…** and **Import file…** buttons under **Your themes**.
+- **Shortcut tooltips**: Stylized tooltips containing keyboard shortcuts (including status bar hint tooltips) with inline `<kbd>` keycaps and wrapped key-action chips so shortcuts stay paired with their labels.
+- **Checkboxes**: Replaced all native `<input type="checkbox">` controls across dialogs, Cleanup, Duplicates, Tags, Properties, Rules, Custom actions, and Terminal with the animated CafeTako Site Builder checkbox element (`data-ui="checkbox"`).
+- **Shortcuts settings sections**: Grouped **Settings > Shortcuts** into categorized sections (`Navigate`, `File`, `Tabs`, `Panes`, `View`, `Search`, `List`, `App`, `Actions`) with icons, descriptions, command counts, and category filter chips.
+
+### Fixed
+
+- **Native browser shortcuts & tooltips**: Disabled native WebView2 browser shortcuts (such as `Ctrl+P` print) and prevented unstyled native `title` tooltips from flashing or appearing over Octopolis's styled tooltip layer.
+- **Tag modal row icon hover**: Added contrasting hover backgrounds for row icon buttons in the **Tags** modal so their hover animations remain visible over hovered rows.
+- **Letter-press cycling**: Pressing the same letter key repeatedly (such as `G`) now cycles cleanly through every matching folder and file in order instead of treating repeated presses as a multi-letter prefix.
+- **Toolbar icon alignment**: Centered icons inside toolbar `.icon-btn` buttons (including the **View** and **Sort & group** buttons).
 
 ## [0.1.0] - 2026-11-13
 
 ### Added
 
-- A full guide to Octopolis that opens in your browser and works offline: press F1 (or use Settings › About, the Welcome tour or the palette's ? help) and it opens on the part that matches what you have open. It explains every feature in detail, has animated demos of the command palette, views and drag and drop, a searchable keyboard reference generated from the app's own commands, a gallery of all the themes, and this changelog. It wears the same theme, accent and font as the app, follows your animation setting, and picks up a changed theme when you come back to its tab; a selector at the top lets you preview any theme in it. Search it with / or Ctrl+K. Type ; in the command palette (or just a few words, then pick the Guide row) to search the guide: it opens in your browser with its search already filled in.
-- The command palette (Ctrl+P) is much more capable. A first character picks a mode: `>` commands, `/` search subfolders, `@` jump to an open tab, `#` jump to a pinned folder, `!` run a shell command in the folder, `?` help. Plain text also finds files in the current folder, completes folders as you type a path (`~` and `%VAR%` work), and calculates: `12*8` or `5 mb in kb` shows the result and Enter copies it. Commands you use rise to the top with a Recent group, commands that need a selection are listed first when something is selected and shown muted (with the reason) when nothing is. Keys: Ctrl+N/P or Ctrl+J/K, PageUp/PageDown, Home/End, Tab completes, Shift+Enter opens in a new tab, Ctrl+Enter in the other pane (or a new split), Alt+Enter Properties, Alt+Shift+Enter shows it in Windows Explorer, Ctrl+C copies the path, Ctrl+D pins, Shift+Delete forgets a folder from history. Rows show dimmed parent folders, when a folder was last visited and the free space of drives; the empty palette lists pinned, recent and drive folders and recent commands; a mode badge and a key hint bar show what each key does. Reopening within 10 seconds keeps what you typed.
-- The icon, tile and list views now stretch their cells to share the whole width, so resizing the window never leaves an empty strip at the side.
-- Auto view, on by default: each folder opens in the view that suits what it holds (a bento for folders of pictures or videos, rows for music, tiles for folders of folders, details for everything else, and always details for a repository and every folder inside one), decided once when you open it. A view you pick by hand sticks to that folder; Auto in the View menu (or Ctrl+Shift+0) hands it back, and the View menu says why Auto chose what it did. It can be turned off under Settings > General.
-- Bento view (View menu, Ctrl+Shift+9): pictures keep their shape and fill every row, and the one you hover or select grows while its neighbours give way. Ctrl+wheel changes the row height. Icon-view thumbnails also no longer run over the names under them.
-- A folder with a custom icon now says so in its right-click menu: Change icon shows the emoji or the kind of Windows icon it wears, and Reset icon is marked Default.
-- Change icon now has a Windows tab, laid out like the emoji: the colored icons of the special folders (Documents, Downloads, 3D Objects and so on), the icons of the apps in your Start menu, and every icon inside Windows' own icon files (Windows, Shell and more). Icons load as they scroll into view, and only ones this PC has are listed.
-- Explorer-style views and a zoom slider: a View button in the toolbar offers Extra large, Large, Medium and Small icons, List (flows in columns), Details, Tiles, Content and Columns, plus one slider that moves smoothly through them (List, Details, Content and Tiles as steps, then icons from 40 to 256 px). Ctrl+wheel zooms in any view, Ctrl+Shift+1 to 8 switch views like Explorer, and each folder remembers its view and icon size. The new views support selecting by dragging a box, drag and drop (including dragging files out), and drops on folders.
-- Opening several files at once is now a single batch: text files go to your editor in one launch, the rest open together, more than 10 asks first, and at most 50 open. Properties for a big selection loads in one call, and dragging many files out of the app skips anything Windows can't reference instead of failing.
-- Dragging selected files out of the app now works like Explorer: drop them in a File Explorer folder, a browser upload box, or a chat or mail app and they arrive as real files (moved or copied as the target decides). Dropping back on the app still moves or copies as before.
-- Drop a file dragged from a web page (a picture, video, audio, PDF, archive or any other link to a file, named with the right extension) onto a folder (or onto a folder row) to save it there. Files dragged in from other programs are copied in too. Names are made safe and never overwrite anything, links to this PC or a private network are refused, and a drop nobody handles no longer makes the window open the dropped item.
-- Custom actions grew up: a button in the sidebar footer opens the window, which now has search, an on/off switch per action, duplicate, import and export (JSON), and 20 ready-made presets that use only Windows' own cmd and PowerShell. An action can run in cmd or PowerShell, as administrator, with a confirmation, once per item, in a chosen folder, and reload the folder when finished. It can be limited to files or folders, file types, name patterns and item counts, and each one gets a command-palette entry and a shortcut slot in Settings > Shortcuts. New placeholders: {parent}, {ext}, {pslist}, {list}, {pickfolder} and {prompt:Label}, with a live preview of the finished command and a warning when its program is missing.
-- 12 new built-in themes in six families (light, dark, high contrast, minimal, vibrant, pastel), including OLED Black and a light high-contrast theme, shown in a gallery under Settings > Appearance. Each card can be customized as a copy. Theme dropdowns show a round color preview, grouped by family, and Follow Windows can use a different theme for light and dark mode.
-- Theme creator: make as many custom themes as you like (Settings > Appearance > New theme). Pick every color with a live mock-up, start from any theme, auto-shade the surfaces from three colors, or try a random palette. It warns about hard-to-read colors, has a per-color undo, and themes can be edited, duplicated, deleted, copied as JSON, saved as a file and imported from a file or text (single themes or lists).
-- Settings window (Ctrl+,) with General, Appearance, Shortcuts, Advanced, Updates and About tabs: start folder, folder sizes, file icons and thumbnails, delete confirmation, terminal shell, themes, accent, text size, density, animation level, tooltips, sidebar and shelf options, shortcut editing, settings backup and restore, and a reset.
-- Updates tab and About page with automatic background updates, SHA-256 verification, and silent install from GitHub Releases.
-- Collapsible sidebar sections, pinned folders, recent folders and a resizable sidebar.
-- Shelf that opens by itself while you drag files.
-- Custom title bar with window controls, a go-to pill, and icon-font icons throughout.
-- Fast folder browsing that stays smooth with folders of 100,000+ items.
-- Details list with Name, Date modified, Type and Size columns; click a column to sort, folders always on top, natural number order.
-- Tabs in every pane, and split panes side by side or stacked, with draggable dividers.
-- Path bar with clickable breadcrumbs; click it (or Ctrl+L) to type a path, including `~`, `%USERPROFILE%` and file paths.
-- Back, forward and up navigation that returns you to the folder you came from.
-- Quick filter box (Ctrl+F) to narrow the current folder by name.
-- Sidebar with Quick access folders and drives, showing free space.
-- Copy, cut and paste, drag and drop between panes (Ctrl to force a copy), with a progress tray and Cancel button.
-- Delete to the Recycle Bin, or permanently with Shift+Delete after a confirmation.
-- Inline rename (F2) and New folder (Ctrl+Shift+N).
-- Folders update by themselves when files change outside the app.
-- Right-click menu with common actions, Copy path and Show in Explorer.
-- Keyboard navigation, type-to-find, and shortcuts for tabs (Ctrl+T, Ctrl+W, Ctrl+Tab) and panes (Ctrl+\, F6, Tab).
-- Show or hide hidden files (Ctrl+H) and toggle the sidebar (Ctrl+B).
-- Dark and light themes that follow Windows.
-- Search in subfolders (Ctrl+Shift+F): fuzzy matching as you type, results ranked by relevance and shown with their folder.
-- Search filters: `ext:pdf,docx`, `size:>100mb`, `dm:today` / `dm:week` / `dm:2026-01-01..2026-03-31`, `re:` for regular expressions and `type:file` / `type:dir`.
-- Flat view (Ctrl+Shift+E) lists every file in all subfolders in one sortable list.
-- Command palette: Ctrl+P jumps to folders you use often and recently, or to a typed path; Ctrl+Shift+P runs any command.
-- Keyboard shortcuts editor (Ctrl+K Ctrl+S): change any shortcut, including two-step shortcuts.
-- Optional Vim keys: h j k l, gg, G, yy, dd, p, v for visual selection, / to filter.
-- Reopen the last closed tab with Ctrl+Shift+T.
-- Inspector panel (Ctrl+I or Space): syntax-highlighted code, Markdown, images, SVG, PDF, video, audio with a waveform, 3D models (OBJ, STL), hex dumps for binary files, and folder thumbnails.
-- Browse inside zip, 7z and tar archives like folders, preview files in them, and copy items out.
-- Real Windows file icons in the list.
-- Batch rename (select several, F2): name patterns with numbering, dates, photo and music tags, find and replace with regular expressions, an editable list of names, and a live preview that flags conflicts.
-- What is locking this? shows which programs hold a file, with the option to end them.
-- Undo and redo (Ctrl+Z, Ctrl+Y) for moves, renames, copies, new folders and Recycle Bin deletes.
-- Transfers now wait in a queue, can be paused and resumed, can be verified with checksums, and can be limited to a chosen speed.
-- Folder sizes (Ctrl+Shift+S) with proportional bars, and a disk space treemap (Ctrl+Shift+M).
-- Git status badges on files and folders, the current branch in the status bar, and an optional last commit column.
-- Built-in terminal (Ctrl+`) that follows the folder you browse, and moves the file list when you `cd`.
-- Thumbnail grid view (Ctrl+2) and macOS-style column view (Ctrl+3).
-- Shelf: collect files from many folders (Ctrl+Shift+D or drag them in), then copy or move them all at once.
-- Settings (Ctrl+,): themes, accent color, text size, list density, importable custom themes.
-- Path bar suggestions as you type, and a folder list on each breadcrumb arrow.
-- Drag tabs to reorder them or move them to another pane; save and reopen workspaces.
-- Context menu you can type to filter, with pinned actions and a link to the classic Windows menu.
-- "Where I left off" now brings back every pane and tab from your last session.
-- Middle-click (or Ctrl+click) a folder, breadcrumb or sidebar place to open it in a new tab; Shift opens it in front. Folders also have "Open in new tab" in their menu.
-- Invert selection (Ctrl+Shift+I), select by pattern (Ctrl+Shift+A, e.g. `*.jpg; IMG_*` or `re:`) and select items of the same type.
-- Selecting several items shows their total size, a breakdown by kind and their date range in the inspector, with quick Batch rename, Add to shelf and Copy paths buttons.
-- New text file (Ctrl+Alt+N), plus new Markdown or empty files and your own templates from a templates folder. Undo removes a new file to the Recycle Bin.
-- Copy as: path in quotes, with forward slashes, relative to the folder, name only, file URL or WSL path (Ctrl+Alt+C).
-- Open with… and Run as administrator (Ctrl+Shift+Enter) for programs and scripts.
-- Eject button and menu item for USB drives, memory cards and discs.
-- When pasted or dropped items already exist, choose Replace, Replace if newer, Skip or Keep both, for all items or one by one.
-- Files you copy or cut in Octopolis paste in File Explorer and other apps, and files copied there paste in Octopolis.
-- Use Octopolis instead of File Explorer (Settings › General): folders opened from the desktop, Start, the Run box and other apps, and Win+E, open in Octopolis. Turn it off at any time; uninstalling also undoes it.
-- Only one Octopolis runs at a time: opening a folder or starting it again adds a tab to the open window.
-- Keep running in the notification area, so Octopolis opens again instantly. Quit with Ctrl+Q or from its icon.
-- Optional shortcut to bring Octopolis forward: Ctrl+E on the desktop or taskbar, or Ctrl+Alt+E anywhere.
-- Compress to .zip, .7z or .tar.gz, with progress and cancel.
-- Paste a screenshot or copied text as a new file.
-- Recycle Bin window: search deleted items, restore them, delete them for good, or empty the bin.
-- Symbolic links and junctions are copied as links instead of failing, and Paste as link makes symbolic links, junctions or hard links.
-- Properties (Alt+Enter): size on disk, editable dates and attributes (for several items at once), hard links, extra streams, and SHA-256, MD5 and BLAKE3 checksums with a compare box.
-- Drag a box to select items in the list (from any column but the name) and in the grid.
-- Hold a dragged item over a folder, breadcrumb or tab to open it, and drop onto breadcrumbs.
-- Each folder remembers its view and sort.
-- Resize columns by dragging their edge, and right-click the header to show Extension and Attributes columns or hide others.
-- Pin and color tabs, duplicate them, or close the others from the tab's right-click menu.
-- OneDrive files show whether they are online only or kept on this device, with Always keep on this device and Free up space. Thumbnails and previews no longer download online-only files.
-- Very long paths (over 260 characters) copy, move and delete normally.
-- Search inside files with content: (for example `content:TODO ext:rs`); the inspector shows the matching lines.
-- Duplicate finder: groups identical files under a folder, biggest waste first, and moves the extra copies to the Recycle Bin.
-- Compare the folders in two panes: items only on one side, newer, older or a different size are marked, with Select differences and Copy or Move to the other pane.
-- Tags and color labels for files and folders (Ctrl+Shift+G), shown in the list, listed in the sidebar, and searchable with tag:. Tags follow items you move or rename in Octopolis.
-- Save searches to the sidebar and run them again with one click.
-- Custom actions: your own commands in the right-click menu, with placeholders for the selected paths.
-- Git: stage, unstage and discard changes from the right-click menu, see a file's changes in the inspector, and optionally hide files Git ignores.
-- Clean up a folder: rebuildable folders, largest files, old large files, temporary files and empty folders, ready to move to the Recycle Bin.
-- Map and disconnect network drives, and browse WSL distros from the sidebar.
-- Add Open in Octopolis to File Explorer's right-click menu for folders, drives and folder backgrounds, while File Explorer stays the default (Settings › General). Uninstalling removes it.
-- Quick look (Shift+Space): the preview fills the window; arrow keys step through files, Delete moves to the Recycle Bin and Esc closes.
-- Font previews with sample text at several sizes, every character, and an Install button.
-- CSV, TSV and JSON Lines files preview as a sortable table of up to 10,000 rows, with a switch to the raw text.
-- Text previews show the encoding, line endings and line count, with Open in editor (Ctrl+Shift+O). Choose the editor in Settings › General.
-- A Windows notification when a copy, move, compress or delete that took over 10 seconds finishes while Octopolis is in the background.
-- The PC stays awake while files are copied or moved. Both options are in Settings › General.
-- Diagnostics log with startup times and errors, with file and folder names removed (Settings › Advanced › Open log folder).
-- Faster start: the inspector and terminal load the first time you open them.
-- Screen readers hear the file list as a grid with selected rows, and when file operations start and finish. Windows contrast themes are supported.
-- Free up space (broom button in the sidebar footer): caches, Windows Update leftovers, browser caches, developer caches and the Recycle Bin that are safe to delete, previewed before anything is removed.
-- Settings › General › Editor: pick an installed editor (found automatically) or any program, and choose whether double-clicking text and code files uses it. Folders open in the editor and terminals from the right-click menu.
-- Settings › Appearance › Icons: Material Symbols with style (Outlined, Rounded, Sharp), weight, size, filled icons and presets; interface font choice.
-- Settings search across every tab, and an outline of the current tab's sections.
-- Hide file extensions (Settings › General), taskbar progress for copies and moves, Copy to… / Move to… with the folder picker, and Back and Forward history lists on right-click.
-- Recent file operations list, friendlier empty, access-denied and missing-folder states, and a short first-run welcome.
-- Folder rules: tidy a folder by moving old files or sending them to the Recycle Bin, always previewed first and undoable. The dialog now works like Custom actions: a filter, on/off switches, duplicate, import and export as JSON, and 12 ready-made presets (old installers, old PDFs, unfinished downloads, big and old files, pictures sorted by month…) that fill in your own Downloads, Documents and Pictures folders. Rules can also look at file size and an optional newest age, and a move destination can use {year}, {month} and {ext}. "Run all enabled" previews every rule together, each rule remembers when it last ran, there is a button in the sidebar footer, and every enabled rule has a "Run folder rule" entry in the command palette.
-- Duplicate finder can look for similar pictures; Resize or convert pictures from the right-click menu.
-- Word, PowerPoint, Excel and OpenDocument files preview as text.
-- Group by (right-click the list background, or the command palette): type, date modified, size or first letter, remembered per folder.
-- Swap the two panes, and synchronized browsing so going into a folder or up in one pane does the same in the other (buttons in the status bar).
-- Drag files, folders or tabs to the edge of a pane to open a new pane there: a skeleton previews it, panes glide to their new places when one is added, closed or resized (without being rebuilt), and repeating it builds a grid of up to six panes. Tabs also have Move to a new pane on the right or below.
-- Optional confirmation before moving a folder into another folder (Settings › General, off by default).
-- Density: an exact row-height slider (18–40 px) beside the Compact, Normal and Comfortable presets.
-- Google Fonts (Settings › Appearance): pick an interface font from a curated list. It downloads when chosen and can be saved on the PC to work offline. The uninstaller asks whether to remove saved fonts.
-- Column view stays smooth in folders of any size, follows the list's sort and filter, and has Left and Right to move between folders, the usual keys and the right-click menu.
+- **Offline guide (`F1`)**: A full guide to Octopolis that opens in your browser and works offline. Press `F1` (or use **Settings > About**, the Welcome tour, or `?` in the palette) and it opens on the section matching what you have open. It includes animated demos, a searchable keyboard reference, a theme gallery, and this changelog, wearing the same theme, accent, font, and animation setting as the app. Search it with `/` or `Ctrl+K`, or type `;` in the command palette.
+- **Command palette (`Ctrl+P`)**: Mode prefixes (`>` commands, `/` search subfolders, `@` open tabs, `#` pinned folders, `!` shell command, `?` help), fuzzy file matching, path completion (`~` and `%VAR%`), and inline math/unit calculation (`12*8`, `5 mb in kb`). Keys: `Ctrl+N`/`P` or `Ctrl+J`/`K`, `PageUp`/`PageDown`, `Home`/`End`, `Tab` completes, `Shift+Enter` new tab, `Ctrl+Enter` other pane, `Alt+Enter` Properties, `Alt+Shift+Enter` Explorer, `Ctrl+C` copy path, `Ctrl+D` pin, `Shift+Delete` forget. Reopening within 10 seconds keeps what you typed.
+- **Full-width responsive cells**: Icon, tile, and list views stretch their cells to share the full width when resizing the window.
+- **Auto view (on by default)**: Each folder opens in the view that suits what it holds (Bento for pictures/videos, rows for music, tiles for folders of folders, details for everything else and repositories). A manually picked view sticks to that folder; **Auto** in the View menu (`Ctrl+Shift+0`) hands it back. Toggleable under **Settings > General**.
+- **Bento view (`Ctrl+Shift+9`)**: Pictures keep their aspect ratio and fill every row; hovered or selected items grow while neighbours give way, and `Ctrl+wheel` adjusts row height.
+- **Custom folder icons**: Right-click menu shows the active emoji or Windows icon kind and marks **Reset icon** as Default. **Change icon** includes a **Windows** tab with special folders, Start menu app icons, and system icon files loaded on scroll.
+- **Explorer-style views & zoom slider**: Toolbar **View** menu with Extra large, Large, Medium, and Small icons, List, Details, Tiles, Content, and Columns, plus a smooth zoom slider, `Ctrl+wheel` zoom, `Ctrl+Shift+1`–`8` shortcuts, per-folder view memory, marquee box selection, and drag-and-drop.
+- **Batch file opening & properties**: Text files open together in your editor, other files open in one batch (asking above 10, max 50), and Properties loads in one call.
+- **Native drag-and-drop out**: Drag selected files out to File Explorer, browser upload boxes, or chat/mail apps as real files.
+- **Web & app drop support**: Drag files or file links from web pages or other apps onto a folder to save or copy them safely without overwriting.
+- **Custom actions**: Searchable manager in the sidebar footer with per-action enable switches, duplicate, JSON import/export, 20 built-in presets, `cmd` / `PowerShell` / admin / confirmation / per-item / working-folder options, command palette & shortcut integration, live preview, missing-program warnings, and placeholders (`{path}`, `{paths}`, `{dir}`, `{parent}`, `{name}`, `{stem}`, `{ext}`, `{pslist}`, `{list}`, `{pickfolder}`, `{prompt:Label}`).
+- **12 built-in themes & gallery**: Six families (`light`, `dark`, `high contrast`, `minimal`, `vibrant`, `pastel`), including **OLED Black** and light high contrast, with per-family gallery cards and separate light/dark **Follow Windows** themes.
+- **Theme creator (Theme Factory)**: Create, edit, duplicate, delete, and import/export custom themes with a live mock-up, 3-color auto-shading, random palette generator, contrast warnings, and per-color undo.
+- **Settings window (`Ctrl+,`)**: General, Appearance, Shortcuts, Advanced, Updates, and About tabs covering startup folder, folder sizes, thumbnails, delete confirmation, terminal shell, themes, accent, text size, density, animations, tooltips, sidebar/shelf options, custom shortcuts, backup/restore, and reset.
+- **In-app updater**: Updates tab and About page with automatic background checks, SHA-256 verification, and silent install from GitHub Releases.
+- **Sidebar & Shelf**: Collapsible sidebar sections, pinned and recent folders, resizable sidebar, and a Shelf that opens automatically while dragging files.
+- **Custom title bar**: Window controls, go-to pill, and icon-font glyphs throughout.
+- **High-speed directory listing**: Smooth browsing in folders with `100,000+` items.
+- **Details list**: `Name`, `Date modified`, `Type`, and `Size` columns with natural number sorting and folders always on top.
+- **Tabs & split panes**: Multi-tab panes, side-by-side or stacked splits, and draggable dividers.
+- **Path bar (`Ctrl+L`)**: Clickable breadcrumbs, path suggestions as you type, and support for `~`, `%USERPROFILE%`, and file paths.
+- **History navigation**: Back, forward, and up navigation returning focus to the folder you came from.
+- **Quick filter (`Ctrl+F`)**: Narrow the current folder by name as you type.
+- **Sidebar Quick access & drives**: Pinned folders and drives with free space indicators.
+- **Clipboard & file transfers**: Copy, cut, paste, and drag-and-drop between panes (`Ctrl` to force copy) with a progress tray and Cancel button.
+- **Delete & Recycle Bin**: Move to Recycle Bin or delete permanently (`Shift+Delete`) with confirmation, plus a built-in Recycle Bin window to search, restore, purge, or empty.
+- **Inline rename (`F2`) & New folder (`Ctrl+Shift+N`)**: Quick creation and renaming directly in the list.
+- **Live folder watching**: Automatic updates when files change outside Octopolis.
+- **Context menu**: Type-to-filter right-click menu with pinned actions, **Copy path**, **Show in Explorer**, and link to the classic Windows menu.
+- **Keyboard navigation**: Type-to-find and shortcuts for tabs (`Ctrl+T`, `Ctrl+W`, `Ctrl+Tab`) and panes (`Ctrl+\`, `F6`, `Tab`).
+- **View toggles**: Show/hide hidden files (`Ctrl+H`) and toggle sidebar (`Ctrl+B`).
+- **System theme sync**: Light and dark themes that follow Windows automatically.
+- **Subfolder search (`Ctrl+Shift+F`)**: Fuzzy matching ranked by relevance, with filters (`ext:pdf,docx`, `size:>100mb`, `dm:today`, `dm:week`, `dm:2026-01-01..2026-03-31`, `re:`, `type:file`, `type:dir`, and `content:` inside files).
+- **Flat view (`Ctrl+Shift+E`)**: List every file across subfolders in one sortable view.
+- **Shortcuts editor (`Ctrl+K Ctrl+S`)**: Customize any shortcut, including two-step chords.
+- **Optional Vim keys**: `h`, `j`, `k`, `l`, `gg`, `G`, `yy`, `dd`, `p`, `v` for visual selection, `/` to filter.
+- **Reopen closed tab (`Ctrl+Shift+T`)**: Restore the last closed tab.
+- **Inspector panel (`Ctrl+I` or `Space`)**: Syntax-highlighted code, Markdown, images, SVG, PDF, video, audio with waveform, 3D models (`OBJ`, `STL`), hex dumps, and folder thumbnails; plus **Quick look** (`Shift+Space`).
+- **Archive browsing & compression**: Browse `.zip`, `.7z`, and `.tar` archives like folders, preview/copy items out, and compress files to `.zip`, `.7z`, or `.tar.gz` with progress and cancel.
+- **Windows shell icons**: Native file icons in the list.
+- **Batch rename (`F2` on multi-selection)**: Numbering, dates, photo/music tags, regex find/replace, editable name list, and conflict detection.
+- **Lock inspector ("What is locking this?")**: Shows processes holding a file open with an option to end them.
+- **Undo & redo (`Ctrl+Z`, `Ctrl+Y`)**: Supports moves, renames, copies, new folders, and Recycle Bin deletes.
+- **Transfer queue**: Pause/resume, optional checksum verification, and speed limiting.
+- **Folder sizes (`Ctrl+Shift+S`) & disk space treemap (`Ctrl+Shift+M`)**: Proportional size bars and interactive treemap.
+- **Git integration**: Status badges, status bar branch indicator, optional last commit column, stage/unstage/discard, inspector diffs, and hide git-ignored files.
+- **Built-in terminal (`Ctrl+``)**: Follows the active folder and syncs the file list when you `cd`.
+- **Grid (`Ctrl+2`) & Column view (`Ctrl+3`)**: Thumbnail grid and macOS-style Miller columns.
+- **Session restore**: *"Where I left off"* restores every pane and tab from your last session, plus workspace save/reopen and tab pinning/coloring.
+- **Multi-selection tools**: Invert selection (`Ctrl+Shift+I`), select by pattern (`Ctrl+Shift+A`, e.g. `*.jpg; IMG_*` or `re:`), select same type, and multi-item Inspector summary.
+- **New file templates (`Ctrl+Alt+N`)**: New text, Markdown, empty, or custom template files; **Copy as** formats (`Ctrl+Alt+C`), **Open with…**, **Run as administrator** (`Ctrl+Shift+Enter`), and USB **Eject**.
+- **Conflict resolution**: Replace, Replace if newer, Skip, or Keep both (per item or for all).
+- **Default file manager & single-instance**: Optional File Explorer replacement (`Win+E`), context-menu integration, notification area mode (`Ctrl+Q` to quit), and global summon shortcut (`Ctrl+E` / `Ctrl+Alt+E`).
+- **Symlinks, long paths & OneDrive**: Copy/create symbolic links, junctions, and hard links; full `>260`-character path support; OneDrive online-only status badges and pin/free-up actions.
+- **Properties (`Alt+Enter`)**: Size on disk, editable dates/attributes, hard links, alternate streams, and `SHA-256` / `MD5` / `BLAKE3` checksums.
+- **Tools & cleanup**: Duplicate finder, folder compare mode, file tags & color labels (`Ctrl+Shift+G`, searchable with `tag:`), saved searches, Cleanup assistant, network drive mapping, and WSL distro browsing.
+- **Font, table & text previews**: Font previews with install button; CSV/TSV/JSONL sortable table previews (up to `10,000` rows); text encoding/line-ending info and **Open in editor** (`Ctrl+Shift+O`).
+- **Background transfer polish**: Windows notifications for long operations (`>10s`) and wake-lock while copying or moving.
+- **Diagnostics log**: Logs startup times and errors with file and folder names removed (**Settings > Advanced > Open log folder**).
+- **Faster startup**: The inspector and terminal load on demand the first time you open them.
+- **Accessibility & contrast**: Screen readers hear the file list as a grid with selected rows and operation announcements, with Windows contrast theme support.
+- **Free up space (sidebar broom button)**: Safely preview and remove caches, Windows Update leftovers, browser caches, developer caches, and Recycle Bin items.
+- **Editor preferences (Settings > General > Editor)**: Pick an installed or custom editor, choose whether double-clicking text/code files opens it, and open folders in your editor or terminal from the right-click menu.
+- **Icon customization (Settings > Appearance > Icons)**: Material Symbols with style (`Outlined`, `Rounded`, `Sharp`), weight, size, filled icons, presets, and interface font choice.
+- **Settings search & outline**: Search across every settings tab with an outline of the current tab's sections.
+- **Navigation & transfer polish**: Hide file extensions (**Settings > General**), taskbar progress for copies and moves, **Copy to… / Move to…** folder picker, and Back/Forward history lists on right-click.
+- **Operations history & empty states**: Recent file operations list, friendlier empty/access-denied/missing-folder states, and a short first-run welcome.
+- **Folder rules**: Tidy folders by moving old files or sending them to the Recycle Bin with live previews, undo support, filtering, on/off switches, duplicate, JSON import/export, 12 built-in presets, size and age bounds, destination placeholders (`{year}`, `{month}`, `{ext}`), **Run all enabled**, last-run tracking, and command palette integration.
+- **Image tools**: Duplicate finder can search for similar pictures; resize or convert images from the right-click menu.
+- **Office document previews**: Word, PowerPoint, Excel, and OpenDocument files preview as text.
+- **Group by**: Group items by type, date modified, size, or first letter (remembered per folder) via the background menu or command palette.
+- **Pane swapping & synchronized browsing**: Swap panes and keep navigation synchronized across two panes from the status bar.
+- **Flexible pane splits**: Drag files, folders, or tabs to any pane edge to split (up to 6 panes) with animated layout transitions, or move tabs to a new pane on the right or below.
+- **Folder move confirmation**: Optional confirmation before moving a folder into another folder (**Settings > General**, off by default).
+- **Custom density slider**: Exact row-height slider (`18–40 px`) alongside `Compact`, `Normal`, and `Comfortable` presets.
+- **Google Fonts (Settings > Appearance)**: Curated interface font list with on-demand download, offline saving, and uninstaller cleanup option.
+- **Column view polish**: Smooth browsing in folders of any size, synced sort/filter, `Left`/`Right` folder navigation, keyboard shortcuts, and right-click menu.

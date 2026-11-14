@@ -67,7 +67,7 @@ describe("curated context menu", () => {
 });
 
 import { recentVisits, recordVisit } from "./frecency";
-import { clampSidebarWidth, isPinned, movePin, renamePin, togglePin } from "./sidebar";
+import { clampSidebarWidth, isPinned, movePin, renamePin, sidebarWidthForRowPx, togglePin } from "./sidebar";
 
 describe("sidebar pins", () => {
   it("toggles a pin case-insensitively and labels it by folder name", () => {
@@ -91,9 +91,17 @@ describe("sidebar pins", () => {
   });
 
   it("clamps the sidebar width", () => {
-    expect(clampSidebarWidth(50)).toBe(188);
+    expect(clampSidebarWidth(-20)).toBe(0);
+    expect(clampSidebarWidth(50)).toBe(50);
     expect(clampSidebarWidth(900)).toBe(380);
     expect(clampSidebarWidth(250.4)).toBe(250);
+  });
+
+  it("maps density row heights to sidebar widths", () => {
+    expect(sidebarWidthForRowPx(22)).toBe(150);
+    expect(sidebarWidthForRowPx(24)).toBe(195);
+    expect(sidebarWidthForRowPx(26)).toBe(240);
+    expect(sidebarWidthForRowPx(32)).toBe(280);
   });
 });
 

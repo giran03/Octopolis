@@ -228,3 +228,44 @@ export function leadingProgram(command: string, shell: ActionShell): string | nu
   if (!prog || prog.startsWith("%") || prog.includes("{")) return null;
   return CMD_BUILTINS.has(prog.toLowerCase()) ? null : prog;
 }
+
+/** True when a path or filename points to a Windows batch script (.bat or .cmd). */
+export function isBatchPath(pathOrName: string): boolean {
+  return /\.(bat|cmd)$/i.test(pathOrName.trim());
+}
+
+/** Builds a runnable CustomAction from a .bat/.cmd file path. */
+export function batchActionFromPath(filePath: string): Omit<CustomAction, "id"> {
+  const normalized = filePath.trim().replace(/\//g, "\\");
+  const name = stemOf(baseName(normalized)) || "Batch script";
+  const dir = normalized.includes("\\") ? parentOf(normalized) : "";
+  return {
+    ...NEW_ACTION,
+    name: name.slice(0, 80),
+    command: `call ${quotePath(normalized, "cmd")}`,
+    shell: "cmd",
+    mode: "console",
+    workDir: dir,
+    refresh: true,
+    enabled: true,
+  };
+}
+
+/** Builds a runnable CustomAction from an externally dropped .bat/.cmd file's name and text content. */
+export function batchActionFromText(fileName: string, content: string): Omit<CustomAction, "id"> {
+  const name = stemOf(baseName(fileName.trim().replace(/\//g, "\\"))) || "Batch script";
+  const lines = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^@?echo\s+(off|on)$/i.test(l) && !/^rem(?:\s|$)/i.test(l) && !l.startsWith("::"));
+  const command = lines.join(" & ").slice(0, 4000);
+  return {
+    ...NEW_ACTION,
+    name: name.slice(0, 80),
+    command: command || "echo (empty batch file)",
+    shell: "cmd",
+    mode: "console",
+    refresh: true,
+    enabled: true,
+  };
+}

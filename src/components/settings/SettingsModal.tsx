@@ -1,6 +1,7 @@
 // The settings dialog: a rail of tabs on the left and the active tab's settings on the right.
 import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { installDragScroll } from "../../lib/dragScroll";
 import { ui, type SettingsTab } from "../../state/ui";
 import { updater } from "../../state/updater";
 import { Glyph, IconClose } from "../Icons";
@@ -31,7 +32,11 @@ export function SettingsModal() {
   const tab = () => ui.settingsTab() ?? "general";
   const index = () => Math.max(0, TABS.findIndex((t) => t.id === tab()));
 
-  onMount(() => dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus());
+  onMount(() => {
+    dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+    const disposeDragScroll = installDragScroll(dialog);
+    onCleanup(disposeDragScroll);
+  });
   // Each tab starts at the top.
   createEffect(() => {
     tab();
@@ -108,7 +113,10 @@ export function SettingsModal() {
           [...panel.querySelectorAll<HTMLElement>(".shortcut-row")].find((r) => r.querySelector(".shortcut-title")?.textContent?.trim() === label);
       } else if (target.sectionTitle) {
         const title = target.sectionTitle;
-        match = [...panel.querySelectorAll<HTMLElement>(".sset")].find((s) => s.querySelector(".sset-title")?.textContent?.trim() === title);
+        match = [...panel.querySelectorAll<HTMLElement>(".sset")].find((s) => {
+          const h = s.querySelector<HTMLElement>(".sset-title");
+          return (h?.dataset.outlineLabel ?? h?.textContent)?.trim() === title;
+        });
       }
       if (!match) return;
       match.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -116,6 +124,12 @@ export function SettingsModal() {
       setTimeout(() => match.classList.remove("srow-flash"), 1400);
     });
   };
+  createEffect(() => {
+    const req = ui.settingsJump();
+    if (!req) return;
+    jumpToTab(req.tab, req.rowLabel ? { rowLabel: req.rowLabel } : undefined);
+    ui.clearSettingsJump();
+  });
   const onPanelClick = (e: MouseEvent) => {
     if (!searching()) return;
     const target = e.target as HTMLElement;
@@ -135,7 +149,7 @@ export function SettingsModal() {
     }
     const ssetTitle = target.closest<HTMLElement>(".sset-title");
     if (ssetTitle) {
-      const title = ssetTitle.textContent?.trim();
+      const title = (ssetTitle.dataset.outlineLabel ?? ssetTitle.textContent)?.trim();
       if (title) return jumpToTab(tabId, { sectionTitle: title });
     }
   };
@@ -219,7 +233,7 @@ export function SettingsModal() {
               <For each={outline()}>
                 {(el, i) => (
                   <button class="sout-link" classList={{ on: current() === i() }} aria-current={current() === i() ? "location" : undefined} onClick={() => jump(el)}>
-                    {el.textContent}
+                    {el.dataset.outlineLabel ?? el.textContent}
                   </button>
                 )}
               </For>

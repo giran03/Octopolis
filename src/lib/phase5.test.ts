@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cellsInRect, extensionOf, invertSelection, marqueeSelection, namePattern, rowsInBand, selectWhere } from "./selection";
-import { attributeLetters, gridTemplate, toggleColumn, visibleColumns } from "./columns";
+import { attributeLetters, gridTemplate, moveColumn, stepColumn, toggleColumn, visibleColumns } from "./columns";
 import { compareListings, countStatuses, isDifference } from "./compare";
 import { planTransfer } from "./conflicts";
 import { cloudState } from "./listing";
@@ -218,9 +218,13 @@ describe("columns", () => {
     expect(gridTemplate([], {})).toBe("minmax(160px, 1fr)");
   });
 
-  it("toggles columns in a stable order and spells attributes", () => {
-    expect(toggleColumn(["size", "modified"], "type")).toEqual(["modified", "type", "size"]);
+  it("toggles and reorders columns while preserving custom order", () => {
+    expect(toggleColumn(["size", "modified"], "type")).toEqual(["size", "modified", "type"]);
     expect(toggleColumn(["modified", "type"], "type")).toEqual(["modified"]);
+    expect(moveColumn(["modified", "type", "size"], "size", "modified", "before")).toEqual(["size", "modified", "type"]);
+    expect(moveColumn(["modified", "type", "size"], "modified", "size", "after")).toEqual(["type", "size", "modified"]);
+    expect(stepColumn(["modified", "type", "size"], "type", -1)).toEqual(["type", "modified", "size"]);
+    expect(stepColumn(["modified", "type", "size"], "size", 1)).toEqual(["modified", "type", "size"]);
     expect(attributeLetters(0x1 | 0x2 | 0x20)).toBe("RHA");
   });
 });

@@ -11,6 +11,7 @@ import { isDir } from "../lib/listing";
 import { ago, calculate, expandTyped, MODE_LABELS, MODE_PREFIXES, parseQuery, splitLabel, splitTyped, wrapIndex, type PaletteMode } from "../lib/paletteLogic";
 import { baseName, isRoot, joinPath } from "../lib/paths";
 import { isPinned } from "../lib/sidebar";
+import { SETTINGS_INDEX, type SettingsEntry } from "../lib/settingsIndex";
 import { recentVisits } from "../lib/frecency";
 import { history } from "../state/history";
 import { keybindings } from "../state/keybindings";
@@ -37,7 +38,7 @@ const last = { text: "", at: 0 };
 const NEEDS_SELECTION = new Set([
   "file.open", "file.rename", "file.copy", "file.cut", "file.delete", "file.deletePermanently", "file.batchRename",
   "git.stage", "git.unstage", "git.discard", "file.tags", "file.whoLocks", "file.compress", "file.compressAs",
-  "file.extract", "file.edit", "file.openWith", "file.runAsAdmin", "file.selectSameType",
+  "file.extract", "file.edit", "file.openWith", "file.run", "file.install", "file.runAsAdmin", "file.selectSameType",
 ]);
 
 interface Row {
@@ -93,6 +94,7 @@ const PLACEHOLDERS: Record<PaletteMode, string> = {
   tabs: "Jump to an open tab",
   pins: "Jump to a pinned folder",
   shell: "Run a command in this folder (cmd)",
+  settings: "Jump to a Settings tab or option",
   guide: "Search the Octopolis guide for…",
   help: "Pick a prefix",
 };
@@ -259,7 +261,9 @@ export function Palette() {
       return out;
     }
     const scored = (c: Command) => paletteUse.boost(c.id) + (sel && NEEDS_SELECTION.has(c.id) ? 4 : 0) - ((c.when && !c.when()) || (!sel && NEEDS_SELECTION.has(c.id)) ? 100 : 0);
-    return fuzzyRank(q, all, (c: Command) => `${c.category}: ${c.title}`, scored).map(({ item, match }) => commandRow(item, match));
+    const cmds = fuzzyRank(q, all, (c: Command) => `${c.category}: ${c.title}`, scored).map(({ item, match }) => commandRow(item, match));
+    const settingMatches = settingsRows(q, { tabsOnly: false, skipTabs: true }).slice(0, 6);
+    return [...cmds, ...settingMatches];
   };
 
   // Subfolders of the folder being typed, for completing a path.
@@ -340,6 +344,15 @@ export function Palette() {
         const c = commandById(id);
         if (c) rows.push(commandRow(c, undefined, "Recent commands"));
       });
+      rows.push({
+        key: "go-tips",
+        label: "Prefixes: > commands · / search · , settings · ! shell · @ tabs · # pins",
+        group: "PowerBar",
+        icon: () => <MaterialIcon name="auto_awesome" size={16} />,
+        hint: "12*8 calculates",
+        enterLabel: "All modes",
+        run: () => pick("?"),
+      });
       return rows;
     }
 
@@ -409,6 +422,7 @@ export function Palette() {
     if (!t) fileRows(trimmed).forEach((r) => push(r));
 
     if (!t) {
+      settingsRows(trimmed).slice(0, 4).forEach((r) => rows.push(r));
       rows.push(...guideRows(trimmed).map((r) => ({ ...r, key: "guide-search-go" })));
       const here = tab();
       rows.push({
@@ -427,23 +441,69 @@ export function Palette() {
     return rows;
   };
 
+  const exampleRow = (
+    key: string,
+    label: string,
+    hint: string,
+    complete: string,
+    icon: string,
+    enterLabel: string,
+    run: () => void,
+    group = "Examples",
+  ): Row => ({
+    key,
+    label,
+    group,
+    icon: () => <MaterialIcon name={icon} size={16} />,
+    hint,
+    complete,
+    enterLabel,
+    run,
+  });
+
+  const SEARCH_EXAMPLES: readonly { sample: string; complete: string; hint: string }[] = [
+    { sample: "ext:pdf,docx", complete: "/ext:", hint: "By extension (e.g. ext:rs,toml)" },
+    { sample: "size:>100mb", complete: "/size:>", hint: "By size (>100mb, <=4k, 1mb..2gb)" },
+    { sample: "dm:week", complete: "/dm:", hint: "Modified date (today, week, month, 2026-11-01)" },
+    { sample: "type:dir", complete: "/type:", hint: "Only folders (type:dir) or files (type:file)" },
+    { sample: "re:^report", complete: "/re:", hint: "Match file name with regex" },
+    { sample: "content:TODO", complete: "/content:", hint: "Search text inside files" },
+  ];
+
   const searchRows = (q: string): Row[] => {
     const here = tab();
     const trimmed = q.trim();
-    return [
+    const runSearch = (queryText: string) => {
+      finish();
+      void here?.runSearch(queryText);
+    };
+    const out: Row[] = [
       {
         key: "search",
         label: trimmed ? `Search subfolders of ${here?.title() ?? "this folder"} for "${trimmed}"` : "Type what to search for in this folder and its subfolders",
         icon: () => <IconSearch size={15} />,
-        disabled: trimmed ? undefined : "Type to search",
+        disabled: trimmed ? undefined : "Type a name or filter",
         hint: here ? here.path() : undefined,
         enterLabel: "Search",
-        run: () => {
-          finish();
-          void here?.runSearch(trimmed);
-        },
+        run: () => runSearch(trimmed),
       },
     ];
+    if (!trimmed) {
+      for (const ex of SEARCH_EXAMPLES) {
+        out.push(exampleRow(`search-ex:${ex.sample}`, `/${ex.sample}`, ex.hint, ex.complete, "search", "Search", () => runSearch(ex.sample), "Filter examples"));
+      }
+    } else {
+      const lastTok = trimmed.split(/\s+/).pop()?.toLowerCase() ?? "";
+      const matching = SEARCH_EXAMPLES.filter((ex) => {
+        const prefix = ex.sample.split(":")[0] + ":";
+        return prefix.startsWith(lastTok) || (lastTok.startsWith(prefix) && lastTok.length === prefix.length);
+      });
+      for (const ex of matching) {
+        const base = trimmed.slice(0, trimmed.length - lastTok.length);
+        out.push(exampleRow(`search-hint:${ex.sample}`, ex.sample, ex.hint, `/${base}${ex.sample.split(":")[0]}:`, "search", "Try example", () => runSearch(`${base}${ex.sample}`), "Filter syntax"));
+      }
+    }
+    return out;
   };
 
   const tabRows = (q: string): Row[] => {
@@ -490,15 +550,73 @@ export function Palette() {
       runCustomAction(cmd, dir, true, shell, false, false).catch((e) => ui.toast(errorText(e)));
     };
     const disabled = !cmd ? "Type a command" : t?.archive() ? "Not inside an archive" : undefined;
-    return [
+    const out: Row[] = [
       { key: "sh-cmd", label: cmd ? `cmd: ${cmd}` : "Type a command to run in this folder", group: "Run in", hint: dir, icon: () => <MaterialIcon name="terminal" size={16} />, disabled, enterLabel: "Run in cmd", run: run("cmd") },
       { key: "sh-ps", label: cmd ? `PowerShell: ${cmd}` : "PowerShell", hint: dir, icon: () => <MaterialIcon name="terminal" size={16} />, disabled, enterLabel: "Run in PowerShell", run: run("powershell") },
     ];
+    if (!cmd && !t?.archive()) {
+      const examples = [
+        { sample: "git status", hint: "Check Git status in this folder" },
+        { sample: "dir /b", hint: "List file names in cmd" },
+        { sample: "code .", hint: "Open this folder in VS Code" },
+      ];
+      for (const ex of examples) {
+        out.push(
+          exampleRow(
+            `sh-ex:${ex.sample}`,
+            `!${ex.sample}`,
+            ex.hint,
+            `!${ex.sample}`,
+            "terminal",
+            "Run in cmd",
+            () => {
+              finish();
+              runCustomAction(ex.sample, dir, true, "cmd", false, false).catch((e) => ui.toast(errorText(e)));
+            },
+          ),
+        );
+      }
+    }
+    return out;
+  };
+
+  const settingRow = (s: SettingsEntry, match?: FuzzyMatch): Row => ({
+    key: `setting:${s.id}`,
+    label: s.title,
+    group: "Settings",
+    icon: () => <MaterialIcon name={s.icon} size={16} />,
+    hint: s.isTab ? `Open ${s.tabLabel} tab` : `Settings › ${s.tabLabel}`,
+    match,
+    enterLabel: "Open",
+    run: () => {
+      finish();
+      ui.openSettingsAt(s.tab, s.rowLabel);
+    },
+  });
+
+  const settingsRows = (q: string, opts?: { tabsOnly?: boolean; skipTabs?: boolean }): Row[] => {
+    const trimmed = q.trim();
+    const pool = opts?.skipTabs ? SETTINGS_INDEX.filter((s) => !s.isTab) : SETTINGS_INDEX;
+    if (!trimmed) {
+      const tabs = SETTINGS_INDEX.filter((s) => s.isTab);
+      const rest = opts?.tabsOnly ? [] : SETTINGS_INDEX.filter((s) => !s.isTab);
+      return [...tabs, ...rest].map((s) => settingRow(s));
+    }
+    return fuzzyRank(
+      trimmed,
+      pool,
+      (s) => `${s.title} ${s.tabLabel} ${s.keywords}`,
+      (s) => (s.isTab && s.tabLabel.toLowerCase().includes(trimmed.toLowerCase()) ? 8 : 0),
+    ).map(({ item, match }) => settingRow(item, match.positions.some((p) => p >= item.title.length) ? undefined : match));
   };
 
   const guideRows = (q: string): Row[] => {
     const words = q.trim();
-    return [
+    const openGuide = (queryText: string | null) => {
+      finish();
+      void guide.open(null, queryText);
+    };
+    const out: Row[] = [
       {
         key: "guide-search",
         label: words ? `Search the guide for "${words}"` : "Type what to look up in the Octopolis guide",
@@ -506,12 +624,21 @@ export function Palette() {
         icon: () => <MaterialIcon name="menu_book" size={16} />,
         hint: "Opens in your browser",
         enterLabel: "Search",
-        run: () => {
-          finish();
-          void guide.open(null, words || null);
-        },
+        run: () => openGuide(words || null),
       },
     ];
+    if (!words) {
+      const topics = [
+        { topic: "shortcuts", hint: "Keyboard shortcuts & Vim keys" },
+        { topic: "search", hint: "Subfolder search filters (ext:, size:, dm:)" },
+        { topic: "palette", hint: "PowerBar modes & calculator" },
+        { topic: "rules", hint: "Folder rules & cleanup" },
+      ];
+      for (const t of topics) {
+        out.push(exampleRow(`guide-ex:${t.topic}`, `;${t.topic}`, t.hint, `;${t.topic}`, "menu_book", "Open topic", () => openGuide(t.topic), "Topics"));
+      }
+    }
+    return out;
   };
 
   const helpRows = (): Row[] => [
@@ -541,6 +668,7 @@ export function Palette() {
       : mode === "tabs" ? tabRows(query)
       : mode === "pins" ? pinRows(query)
       : mode === "shell" ? shellRows(query)
+      : mode === "settings" ? settingsRows(query)
       : mode === "guide" ? guideRows(query)
       : mode === "help" ? helpRows()
       : goRows(query);

@@ -1,7 +1,7 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
 import type { ArchiveFormat, GitChange, LinkKind } from "./lib/ipc";
 import { GROUP_KEYS, GROUP_TITLES } from "./lib/group";
-import { openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, openInEditor, openInEditorMany, openPaths, runCustomAction, writeTempList, saveDroppedFile, downloadDroppedUrl, startNativeDrag, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, templatesFolder } from "./lib/ipc";
+import { openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, installFont, openInEditor, openInEditorMany, openPaths, runCustomAction, writeTempList, saveDroppedFile, downloadDroppedUrl, startNativeDrag, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, runPath, templatesFolder } from "./lib/ipc";
 import { baseOf, isDir } from "./lib/listing";
 import { baseName, joinPath, parentPath, samePath, sameVolume } from "./lib/paths";
 import { entryPattern, extensionOf, invertSelection, selectEntriesWhere } from "./lib/selection";
@@ -62,7 +62,7 @@ export function singleFolderPath(tab: TabModel): string | null {
 }
 
 /** Plain-text and source files, which open in the chosen editor instead of the Windows default. */
-const TEXT_FILE = /\.(txt|md|markdown|mdx|log|json|jsonc|json5|ya?ml|toml|ini|cfg|conf|env|properties|xml|csv|tsv|html?|css|scss|sass|less|js|mjs|cjs|jsx|ts|mts|cts|tsx|vue|svelte|astro|py|pyi|rb|php|java|kt|kts|scala|groovy|gradle|go|rs|c|h|cc|cpp|cxx|hpp|hh|cs|fs|vb|swift|m|mm|dart|lua|pl|r|jl|sql|graphql|gql|proto|sh|bash|zsh|ps1|psm1|psd1|bat|cmd|dockerfile|makefile|cmake|tf|gitignore|gitattributes|editorconfig|lock|diff|patch|tex|rst|srt)$/i;
+export const TEXT_FILE = /\.(txt|md|markdown|mdx|log|json|jsonc|json5|ya?ml|toml|ini|cfg|conf|env|properties|xml|csv|tsv|html?|css|scss|sass|less|js|mjs|cjs|jsx|ts|mts|cts|tsx|vue|svelte|astro|py|pyi|rb|php|java|kt|kts|scala|groovy|gradle|go|rs|c|h|cc|cpp|cxx|hpp|hh|cs|fs|vb|swift|m|mm|dart|lua|pl|r|jl|sql|graphql|gql|proto|sh|bash|zsh|ps1|psm1|psd1|dockerfile|makefile|cmake|tf|gitignore|gitattributes|editorconfig|lock|diff|patch|tex|rst|srt)$/i;
 
 /** The program for a double-clicked file: the editor from Settings for text files, else null (Windows decides). */
 const opener = (tab: TabModel, name: string): ((path: string) => Promise<void>) => {
@@ -819,8 +819,22 @@ export async function writeClipboardText(text: string) {
   }
 }
 
+/** Programs and scripts that can be run directly. */
+export const RUNNABLE = /\.(exe|com|bat|cmd|ps1|vbs|vbe|wsf|wsh|hta|scr|msc|cpl)$/i;
+/** Installable files: fonts, setup INFs, Windows installers/packages, registry files and certificates. */
+export const INSTALLABLE = /\.(ttf|otf|ttc|fon|inf|msi|msix|appx|msixbundle|appxbundle|reg|cer|crt)$/i;
+const INSTALL_VERB = /\.(ttf|otf|ttc|fon|inf)$/i;
 /** Programs and scripts Windows can start with administrator rights (mirrors the backend's list). */
 export const ADMIN_RUNNABLE = /\.(exe|bat|cmd|msi|ps1|com)$/i;
+
+function matchingTarget(tab: TabModel, pattern: RegExp, invalidMessage: string): string | null {
+  const path = targets(tab)[0];
+  if (!path || tab.archive() || !pattern.test(path)) {
+    ui.toast(invalidMessage);
+    return null;
+  }
+  return path;
+}
 
 export function openWithDialog(tab: TabModel) {
   const path = targets(tab)[0];
@@ -828,9 +842,22 @@ export function openWithDialog(tab: TabModel) {
   openWith(path).catch((e) => ui.toast(errorText(e)));
 }
 
+export function runSelected(tab: TabModel) {
+  const path = matchingTarget(tab, RUNNABLE, "Select a program or script to run");
+  if (!path) return;
+  runPath(path).catch((e) => ui.toast(`Couldn't run ${baseName(path)}: ${errorText(e)}`));
+}
+
+export function installSelected(tab: TabModel) {
+  const path = matchingTarget(tab, INSTALLABLE, "Select a font, installer or package to install");
+  if (!path) return;
+  const action = INSTALL_VERB.test(path) ? installFont(path) : openPath(path);
+  action.catch((e) => ui.toast(`Couldn't install ${baseName(path)}: ${errorText(e)}`));
+}
+
 export function runSelectedAsAdmin(tab: TabModel) {
-  const path = targets(tab)[0];
-  if (!path || tab.archive() || !ADMIN_RUNNABLE.test(path)) return ui.toast("Select a program or script to run as administrator");
+  const path = matchingTarget(tab, ADMIN_RUNNABLE, "Select a program or script to run as administrator");
+  if (!path) return;
   runAsAdmin(path).catch((e) => ui.toast(`Couldn't run as administrator: ${errorText(e)}`));
 }
 

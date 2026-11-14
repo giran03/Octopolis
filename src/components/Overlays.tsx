@@ -25,6 +25,7 @@ const ThemeEditor = lazy(() => import("./ThemeEditor").then((m) => ({ default: m
 const ImageTools = lazy(() => import("./ImageTools").then((m) => ({ default: m.ImageTools })));
 const Duplicates = lazy(() => import("./Duplicates").then((m) => ({ default: m.Duplicates })));
 const ActionsEditor = lazy(() => import("./ActionsEditor").then((m) => ({ default: m.ActionsEditor })));
+const ColumnsDialog = lazy(() => import("./ColumnsDialog").then((m) => ({ default: m.ColumnsDialog })));
 const Cleanup = lazy(() => import("./Cleanup").then((m) => ({ default: m.Cleanup })));
 const BatchRename = lazy(() => import("./Dialogs").then((m) => ({ default: m.BatchRename })));
 const LockHunter = lazy(() => import("./Dialogs").then((m) => ({ default: m.LockHunter })));
@@ -45,11 +46,14 @@ export function Overlays() {
       <Show when={ui.actionsEditorOpen()}>
         <ActionsEditor />
       </Show>
+      <Show when={ui.columnsOpen()}>
+        <ColumnsDialog />
+      </Show>
       <Show when={ui.tagPaths()} keyed>
         {(paths) => <TagsDialog paths={paths} />}
       </Show>
-      <Show when={ui.taggedView()} keyed>
-        {(tag) => <TaggedList tag={tag} />}
+      <Show when={ui.taggedView()}>
+        {(tag) => <TaggedList tag={tag()} />}
       </Show>
       <Show when={ui.duplicatesRoot()} keyed>
         {(root) => <Duplicates root={root} />}

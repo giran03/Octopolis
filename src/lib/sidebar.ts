@@ -1,16 +1,35 @@
 // Pure helpers for the sidebar's pinned folders.
 import { baseName, samePath } from "./paths";
+import { DENSITIES } from "./themes";
 
 export interface Pin {
   readonly path: string;
   readonly label: string;
 }
 
-export const MIN_SIDEBAR_WIDTH = 188;
+export const MIN_SIDEBAR_WIDTH = 0;
 export const MAX_SIDEBAR_WIDTH = 380;
+export const COMPACT_SIDEBAR_WIDTH = 150;
 export const DEFAULT_SIDEBAR_WIDTH = 240;
+export const COMFORTABLE_SIDEBAR_WIDTH = 280;
+/** Dragging the sidebar to or below this width snaps it closed ("Collapsed sidebar"). */
+export const SIDEBAR_COLLAPSE_THRESHOLD = 100;
+/** Below this sidebar width, the 7 footer tool buttons move to the window status bar. */
+export const SIDEBAR_FOOT_BREAKPOINT = 224;
 
 export const clampSidebarWidth = (w: number) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(w)));
+export const compactFooterTools = (sidebarOpen: boolean, sidebarWidth: number) => !sidebarOpen || sidebarWidth < SIDEBAR_FOOT_BREAKPOINT;
+
+/** Target sidebar width for the current density / row height setting. */
+export function sidebarWidthForRowPx(rowPx: number): number {
+  if (rowPx <= DENSITIES.compact) return COMPACT_SIDEBAR_WIDTH;
+  if (rowPx <= DENSITIES.normal) {
+    const t = (rowPx - DENSITIES.compact) / (DENSITIES.normal - DENSITIES.compact);
+    return Math.round(COMPACT_SIDEBAR_WIDTH + t * (DEFAULT_SIDEBAR_WIDTH - COMPACT_SIDEBAR_WIDTH));
+  }
+  const t = Math.min(1, (rowPx - DENSITIES.normal) / (DENSITIES.comfortable - DENSITIES.normal));
+  return Math.round(DEFAULT_SIDEBAR_WIDTH + t * (COMFORTABLE_SIDEBAR_WIDTH - DEFAULT_SIDEBAR_WIDTH));
+}
 
 export const isPinned = (pins: readonly Pin[], path: string) => pins.some((p) => samePath(p.path, path));
 

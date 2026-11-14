@@ -6,6 +6,7 @@ import { baseName, parentPath } from "../lib/paths";
 import { ops } from "../state/ops";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
+import { Checkbox } from "./Checkbox";
 
 const SCAN_ID = "cleanup";
 type SectionKey = "junkDirs" | "largest" | "oldLarge" | "tempFiles" | "emptyDirs";
@@ -128,7 +129,7 @@ export function Cleanup(props: { root: string }) {
                           <For each={r()[s.key]} fallback={<p class="muted bin-empty">Nothing here</p>}>
                             {([p, size, modified]) => (
                               <label class="dupe-file" onDblClick={() => reveal(p)} title="Double-click to show it in its folder">
-                                <input type="checkbox" checked={picked().has(p)} onChange={() => toggle(p)} />
+                                <Checkbox checked={picked().has(p)} onChange={() => toggle(p)} />
                                 <span class="bin-names">
                                   <span class="bin-name">{baseName(p)}</span>
                                   <span class="muted small bin-from">{parentPath(p)}</span>

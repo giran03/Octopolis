@@ -202,6 +202,7 @@ export const setKeepAwake = (on: boolean) => invoke<void>("set_keep_awake", { on
 export const notify = (title: string, body: string) => invoke<void>("notify", { title, body });
 /** Opens Windows' font installer for a font file. */
 export const installFont = (path: string) => invoke<void>("install_font", { path });
+export const runPath = (path: string) => invoke<void>("run_path", { path });
 export const readBytes = (path: string) => invoke<ArrayBuffer>("read_bytes", { path });
 export const thumbnail = (path: string, size: number, iconOnly: boolean) => invoke<ArrayBuffer>("thumbnail", { path, size, iconOnly });
 /** Starts a Windows drag of real files out of the window; resolves true when they were dropped somewhere. */
@@ -453,6 +454,9 @@ export const quitApp = () => invoke<void>("quit_app");
 export type SummonKey = "off" | "ctrlE" | "ctrlAltE";
 /** Sets the system-wide shortcut that brings Octopolis forward. */
 export const setSummon = (mode: SummonKey) => invoke<void>("set_summon", { mode });
+export type WindowCorners = "system" | "square" | "small" | "rounded";
+/** Sets the main window's corner rounding preference on Windows 11. */
+export const setWindowCorners = (mode: WindowCorners) => invoke<void>("set_window_corners", { mode });
 /** Runs a filled-in custom action command from `cwd`, hidden or in a new console. */
 /** Runs a custom action's finished command line. Hidden runs that are waited for return the exit code. */
 export const runCustomAction = (command: string, cwd: string, console: boolean, shell: string, elevate: boolean, wait: boolean) => invoke<number | null>("run_custom_action", { command, cwd, console, shell, elevate, wait });

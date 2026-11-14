@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACTION_PRESETS } from "./actionPresets";
-import { actionApplies, actionsToJson, expandCommand, leadingProgram, NEW_ACTION, parseActions, parseActionsText, parseExtensions, placeholderNeeds, uniqueActionName, wildcardMatcher, type CustomAction } from "./customActions";
+import { actionApplies, actionsToJson, batchActionFromPath, batchActionFromText, expandCommand, isBatchPath, leadingProgram, NEW_ACTION, parseActions, parseActionsText, parseExtensions, placeholderNeeds, uniqueActionName, wildcardMatcher, type CustomAction } from "./customActions";
 
 const act = (patch: Partial<CustomAction> = {}): CustomAction => ({ ...NEW_ACTION, id: "x", name: "A", command: "c", ...patch });
 const file = (name: string) => ({ name, isDir: false });
@@ -116,5 +116,39 @@ describe("presets", () => {
       expect(out.match(/\{(path|paths|pslist|dir|parent|name|stem|ext|list|pickfolder|prompt:[^}]*)\}/g), p.action.name).toBeNull();
       expect(parseActions([{ ...p.action, id: "t" }])[0], p.action.name).toMatchObject({ name: p.action.name, shell: p.action.shell, elevate: p.action.elevate });
     }
+  });
+});
+
+describe("batch file drop helpers", () => {
+  it("detects .bat and .cmd files case-insensitively", () => {
+    expect(isBatchPath("C:\\Tools\\build.bat")).toBe(true);
+    expect(isBatchPath("deploy.CMD")).toBe(true);
+    expect(isBatchPath("notes.txt")).toBe(false);
+    expect(isBatchPath("script.bat.bak")).toBe(false);
+  });
+
+  it("builds a runnable cmd action from a batch file path", () => {
+    const action = batchActionFromPath("C:\\My Scripts\\Build App.bat");
+    expect(action).toMatchObject({
+      name: "Build App",
+      command: 'call "C:\\My Scripts\\Build App.bat"',
+      shell: "cmd",
+      mode: "console",
+      workDir: "C:\\My Scripts",
+      enabled: true,
+      refresh: true,
+    });
+    expect(leadingProgram(action.command, action.shell)).toBeNull();
+  });
+
+  it("builds a runnable cmd action from batch file text when no OS path is available", () => {
+    const action = batchActionFromText("cleanup.bat", "@echo off\r\nREM wipe temp\r\n:: comment\r\ndel /q temp\\*.tmp\r\necho Done\r\n");
+    expect(action).toMatchObject({
+      name: "cleanup",
+      command: "del /q temp\\*.tmp & echo Done",
+      shell: "cmd",
+      mode: "console",
+      enabled: true,
+    });
   });
 });

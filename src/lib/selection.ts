@@ -136,12 +136,71 @@ export function moveFocus(length: number, pos: number, key: NavKey, pageRows: nu
 export function typeAhead(names: readonly string[], view: Uint32Array, from: number, prefix: string): number {
   const want = prefix.toLowerCase();
   const n = view.length;
-  const start = prefix.length === 1 ? from + 1 : from;
+  if (n === 0 || want === "") return -1;
+  const validFrom = from >= 0 && from < n;
+  const start = prefix.length === 1 ? (validFrom ? (from + 1) % n : 0) : validFrom ? from : 0;
   for (let k = 0; k < n; k++) {
     const pos = (start + k) % n;
-    if (names[view[pos]].toLowerCase().startsWith(want)) return pos;
+    if (baseOfName(names[view[pos]]).toLowerCase().startsWith(want)) return pos;
   }
   return -1;
+}
+
+export interface TypeAheadState {
+  readonly prefix: string;
+  readonly at: number;
+  readonly context: string;
+}
+
+export const EMPTY_TYPE_AHEAD: TypeAheadState = { prefix: "", at: 0, context: "" };
+
+/**
+ * Advances the type-ahead buffer for a single printable key.
+ * Pressing the same single letter repeatedly within `resetMs` keeps a 1-char
+ * prefix so `typeAhead` cycles through every matching item in order.
+ */
+export function nextTypeAhead(
+  state: TypeAheadState,
+  key: string,
+  now: number,
+  resetMs: number,
+  context = "",
+): TypeAheadState | null {
+  const expired = state.prefix === "" || now - state.at > resetMs || state.context !== context;
+  if (expired && key === " ") return null;
+  const prefix =
+    expired
+      ? key
+      : state.prefix.length === 1 && key.toLowerCase() === state.prefix.toLowerCase()
+        ? key
+        : state.prefix + key;
+  return { prefix, at: now, context };
+}
+
+export interface TypeAheadMatchInfo {
+  readonly index: number;
+  readonly total: number;
+}
+
+/** 1-based match position and total matches for `prefix` (capped on huge folders). */
+export function typeAheadMatchInfo(
+  names: readonly string[],
+  view: Uint32Array,
+  pos: number,
+  prefix: string,
+): TypeAheadMatchInfo {
+  const want = prefix.toLowerCase();
+  const n = view.length;
+  if (n === 0 || want === "" || n > 10_000) return { index: 0, total: 0 };
+  let total = 0;
+  let index = 0;
+  for (let i = 0; i < n; i++) {
+    if (baseOfName(names[view[i]]).toLowerCase().startsWith(want)) {
+      total++;
+      if (i === pos) index = total;
+    }
+  }
+  return { index, total };
 }
 
 /** View positions of list rows that a vertical band (content pixels) touches. */

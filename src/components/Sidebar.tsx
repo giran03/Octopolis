@@ -3,22 +3,22 @@ import { DENSITIES } from "../lib/themes";
 import { createEffect, createResource, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { formatSize } from "../lib/format";
 import { disconnectNetworkDrive, errorText, knownFolders, listDrives, mapNetworkDrive, wslDistros, type Drive } from "../lib/ipc";
-import { baseName, parentPath, samePath } from "../lib/paths";
-import { DEFAULT_SIDEBAR_WIDTH, isPinned, type Pin } from "../lib/sidebar";
+import { ALL_DRIVES_PATH, baseName, isDrivesPath, parentPath, samePath } from "../lib/paths";
+import { compactFooterTools, DEFAULT_SIDEBAR_WIDTH, isPinned, SIDEBAR_COLLAPSE_THRESHOLD, sidebarWidthForRowPx, type Pin } from "../lib/sidebar";
 import * as A from "../actions";
-import { carriesPaths, dragRaw, dragState, onDragReset, PIN_MIME } from "../state/drag";
+import { carriesPaths, dragState, onDragReset, PIN_MIME } from "../state/drag";
 import { history } from "../state/history";
 import { settings } from "../state/settings";
-import { shelf } from "../state/shelf";
 import { type SectionId, sidebar } from "../state/sidebar";
 import { ui, type MenuEntry } from "../state/ui";
 import { folderIcons } from "../state/folderIcons";
 import { workspace } from "../state/workspace";
 import { folderMenuEntries } from "./FileList";
+import { FooterTools } from "./FooterTools";
 import { savedSearches } from "../state/savedSearches";
 import { tags } from "../state/tags";
 import { SearchItems, TagItems } from "./Tags";
-import { FileGlyph, Glyph, MaterialIcon, IconMop, IconBolt, IconChevron, IconDiskSpace, IconDrive, IconPin, IconPlus, IconTrash, PathIcon, PlaceGlyph } from "./Icons";
+import { FileGlyph, Glyph, IconChevron, IconDrive, IconPin, IconPlus, PathIcon, PlaceGlyph } from "./Icons";
 
 /** Opens a place; Ctrl+click opens it in a new tab (Ctrl+Shift in front). */
 const go = (path: string, e?: MouseEvent) => (e?.ctrlKey ? A.openInNewTab(path, !e.shiftKey) : void workspace.activeTab()?.navigate(path));
@@ -122,46 +122,24 @@ export function Sidebar() {
   const [folders] = createResource(() => knownFolders().catch(() => []));
   const [drives, { refetch }] = createResource(() => listDrives().catch(() => []));
   const [distros] = createResource(() => wslDistros().catch(() => [] as string[]));
-  const [binDrag, setBinDrag] = createSignal(false);
-  const [binHot, setBinHot] = createSignal(false);
 
   onMount(() => {
     // Drives come and go (USB sticks); recheck when the window regains focus.
     const onFocus = () => void refetch();
-    const dragStart = (e: DragEvent) => {
-      if (carriesPaths(e.dataTransfer) && !dragState.archive) setBinDrag(true);
-    };
-    const dragEnd = () => {
-      setBinDrag(false);
-      setBinHot(false);
-    };
+    const dragEnd = () => setPinDrop(null);
     // A drag that ends without a dragend reaching the window (its source vanished) still clears these.
-    onCleanup(onDragReset(() => {
-      setBinDrag(false);
-      setBinHot(false);
-      setPinDrop(null);
-    }));
+    onCleanup(onDragReset(() => setPinDrop(null)));
     window.addEventListener("focus", onFocus);
-    window.addEventListener("dragstart", dragStart);
     window.addEventListener("dragend", dragEnd);
     window.addEventListener("drop", dragEnd, true);
     onCleanup(() => {
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("dragstart", dragStart);
       window.removeEventListener("dragend", dragEnd);
       window.removeEventListener("drop", dragEnd, true);
     });
   });
 
   const current = () => workspace.activeTab()?.path() ?? "";
-  const activeDriveRoot = () => {
-    const cur = current().toLowerCase();
-    const list = drives() ?? [];
-    const match = list.find((d) => cur.startsWith(d.root.toLowerCase()));
-    if (match) return match.root;
-    const driveMatch = /^[a-z]:[\\/]/i.exec(current());
-    return driveMatch ? `${driveMatch[0].slice(0, 2)}\\` : (list[0]?.root ?? "C:\\");
-  };
   const pinCurrent = () => {
     if (!current()) return;
     sidebar.expand("pinned");
@@ -169,7 +147,7 @@ export function Sidebar() {
   };
 
   return (
-    <div class="sidebar-wrap">
+    <div class="sidebar-wrap" aria-hidden={!settings.sidebarOpen() || undefined} inert={!settings.sidebarOpen()}>
       <nav class="sidebar" aria-label="Places">
         <Show when={settings.showPinned()}>
         <Section
@@ -244,6 +222,16 @@ export function Sidebar() {
             </button>
           }
         >
+          <button
+            class="side-item"
+            classList={{ current: isDrivesPath(current()) }}
+            onClick={(e) => go(ALL_DRIVES_PATH, e)}
+            onMouseDown={goMiddle(() => ALL_DRIVES_PATH)}
+            data-tooltip="View all drives, connected USBs, and network shares"
+          >
+            <Glyph code="EDA2" size={18} />
+            <span class="side-label">All drives</span>
+          </button>
           <For each={drives() ?? []}>{(d) => <DriveItem drive={d} current={current()} home={folders()?.find((x) => x.id === "home")?.path ?? "C:\\"} onEjected={() => void refetch()} />}</For>
           <For each={distros() ?? []}>
             {(root) => (
@@ -255,103 +243,11 @@ export function Sidebar() {
           </For>
         </Section>
       </nav>
-      <div class="sidebar-foot">
-        <button
-          class="icon-btn foot-btn"
-          data-shelf-toggle
-          classList={{ on: shelf.open(), calling: shelf.dragging(), hot: shelf.dragging() && shelf.hot() }}
-          onDragOver={(e) => {
-            if (!shelf.dragging() || !carriesPaths(e.dataTransfer)) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-            shelf.setHot(true);
-          }}
-          onDragLeave={() => shelf.setHot(false)}
-          onDrop={(e) => {
-            const raw = dragRaw(e.dataTransfer);
-            if (!raw) return;
-            e.preventDefault();
-            shelf.add(JSON.parse(raw) as string[]);
-          }}
-          aria-label="Shelf"
-          aria-pressed={shelf.open()}
-          data-tooltip={shelf.open() ? "Hide shelf" : "Shelf · hold files here while you browse"}
-          onClick={() => shelf.setOpen(!shelf.open())}
-        >
-          <Glyph code="E7B8" size={17} />
-          <Show when={shelf.items().length > 0}>
-            <span class="foot-badge">{shelf.items().length}</span>
-          </Show>
-        </button>
-        <button
-          class="icon-btn foot-btn bin-btn"
-          classList={{ on: ui.recycleBinOpen(), calling: binDrag(), hot: binDrag() && binHot() }}
-          onDragOver={(e) => {
-            if (!binDrag() || !carriesPaths(e.dataTransfer)) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setBinHot(true);
-          }}
-          onDragLeave={() => setBinHot(false)}
-          onDrop={(e) => {
-            setBinHot(false);
-            setBinDrag(false);
-            const raw = dragRaw(e.dataTransfer);
-            if (!raw || dragState.archive) return;
-            e.preventDefault();
-            A.recyclePaths(JSON.parse(raw) as string[]);
-          }}
-          aria-label="Recycle Bin"
-          aria-pressed={ui.recycleBinOpen()}
-          data-tooltip="Recycle Bin · drop items here to delete, or click to open"
-          onClick={() => ui.setRecycleBinOpen(true)}
-        >
-          <IconTrash size={17} />
-        </button>
-        <button
-          class="icon-btn foot-btn"
-          classList={{ on: !!ui.diskSpaceRoot() }}
-          aria-label="Disk space preview"
-          aria-pressed={!!ui.diskSpaceRoot()}
-          data-tooltip={`Disk space preview (${activeDriveRoot().replace(/\\$/, "")})`}
-          onClick={() => ui.openDiskSpace(activeDriveRoot())}
-        >
-          <IconDiskSpace size={17} />
-        </button>
-        <button
-          class="icon-btn foot-btn"
-          classList={{ on: ui.systemCleanupOpen() }}
-          aria-label="Free up space"
-          aria-pressed={ui.systemCleanupOpen()}
-          data-tooltip="Free up space · caches, Windows leftovers, Recycle Bin"
-          onClick={() => ui.setSystemCleanupOpen(true)}
-        >
-          <IconMop size={17} />
-        </button>
-        <button
-          class="icon-btn foot-btn"
-          classList={{ on: ui.actionsEditorOpen() }}
-          aria-label="Custom actions"
-          aria-pressed={ui.actionsEditorOpen()}
-          data-tooltip="Custom actions · your own commands, presets and shortcuts"
-          onClick={() => ui.setActionsEditorOpen(true)}
-        >
-          <IconBolt size={17} />
-        </button>
-        <button
-          class="icon-btn foot-btn"
-          classList={{ on: ui.rulesOpen() }}
-          aria-label="Folder rules"
-          aria-pressed={ui.rulesOpen()}
-          data-tooltip="Folder rules · tidy old files, always previewed first"
-          onClick={() => ui.setRulesOpen(true)}
-        >
-          <MaterialIcon name="rule" size={17} />
-        </button>
-        <button class="icon-btn foot-btn" aria-label="Settings" data-tooltip="Settings · Ctrl+," onClick={() => ui.openSettings()}>
-          <Glyph code="E713" size={17} />
-        </button>
-      </div>
+      <Show when={!compactFooterTools(settings.sidebarOpen(), sidebar.width())}>
+        <div class="sidebar-foot">
+          <FooterTools size={17} />
+        </div>
+      </Show>
       <Resizer />
     </div>
   );
@@ -584,23 +480,55 @@ function DriveItem(props: { drive: Drive; current: string; home: string; onEject
 /** Drag the sidebar's right edge to resize; double-click or Home resets it. Arrow keys nudge. */
 function Resizer() {
   const scale = () => settings.uiScale() / 100;
+  const collapse = (restoreWidth: number) => {
+    settings.set({ sidebarOpen: false });
+    sidebar.setWidth(restoreWidth > SIDEBAR_COLLAPSE_THRESHOLD ? restoreWidth : DEFAULT_SIDEBAR_WIDTH);
+  };
   const onDown = (e: PointerEvent) => {
     const el = e.currentTarget as HTMLElement;
+    const startWidth = sidebar.width();
+    let snapTimer: ReturnType<typeof setTimeout> | undefined;
     el.setPointerCapture(e.pointerId);
-    el.classList.add("dragging");
-    const move = (m: PointerEvent) => sidebar.setWidth(m.clientX / scale());
+    el.classList.add("dragging", "resizing");
+    const move = (m: PointerEvent) => {
+      const next = m.clientX / scale();
+      if (next <= SIDEBAR_COLLAPSE_THRESHOLD) {
+        clearTimeout(snapTimer);
+        snapTimer = undefined;
+        el.classList.remove("resizing");
+        if (settings.sidebarOpen()) settings.set({ sidebarOpen: false });
+        return;
+      }
+      if (!settings.sidebarOpen()) {
+        settings.set({ sidebarOpen: true });
+        sidebar.setWidth(next);
+        clearTimeout(snapTimer);
+        snapTimer = setTimeout(() => el.classList.add("resizing"), 220);
+        return;
+      }
+      sidebar.setWidth(next);
+    };
     const up = () => {
-      el.classList.remove("dragging");
+      clearTimeout(snapTimer);
+      el.classList.remove("dragging", "resizing");
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      if (!settings.sidebarOpen()) {
+        sidebar.setWidth(startWidth > SIDEBAR_COLLAPSE_THRESHOLD ? startWidth : DEFAULT_SIDEBAR_WIDTH);
+      }
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "ArrowLeft") sidebar.setWidth(sidebar.width() - 12);
-    else if (e.key === "ArrowRight") sidebar.setWidth(sidebar.width() + 12);
-    else if (e.key === "Home") sidebar.setWidth(DEFAULT_SIDEBAR_WIDTH);
+    if (e.key === "ArrowLeft") {
+      const next = sidebar.width() - 12;
+      if (next <= SIDEBAR_COLLAPSE_THRESHOLD) collapse(sidebar.width());
+      else sidebar.setWidth(next);
+    } else if (e.key === "ArrowRight") sidebar.setWidth(sidebar.width() + 12);
+    else if (e.key === "Home") sidebar.setWidth(sidebarWidthForRowPx(settings.rowPx()));
     else return;
     e.preventDefault();
   };
@@ -613,7 +541,7 @@ function Resizer() {
       aria-valuenow={sidebar.width()}
       tabIndex={0}
       onPointerDown={onDown}
-      onDblClick={() => sidebar.setWidth(DEFAULT_SIDEBAR_WIDTH)}
+      onDblClick={() => sidebar.setWidth(sidebarWidthForRowPx(settings.rowPx()))}
       onKeyDown={onKey}
     />
   );

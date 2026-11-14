@@ -118,6 +118,11 @@ pub fn open_with(window: tauri::WebviewWindow, path: PathBuf) -> Result<(), Stri
 }
 
 #[tauri::command]
+pub async fn run_path(path: PathBuf) -> Result<(), String> {
+    crate::off_main(move || shell::run_path(&path).map_err(|e| e.to_string())).await
+}
+
+#[tauri::command]
 pub async fn run_as_admin(path: PathBuf) -> Result<(), String> {
     crate::off_main(move || shell::run_as_admin(&path).map_err(|e| e.to_string())).await
 }
@@ -131,6 +136,43 @@ pub struct ClipFilesDto {
 
 fn hwnd_of(window: &tauri::WebviewWindow) -> Result<isize, String> {
     Ok(window.hwnd().map_err(|e| e.to_string())?.0 as isize)
+}
+
+#[cfg(windows)]
+#[link(name = "dwmapi")]
+unsafe extern "system" {
+    fn DwmSetWindowAttribute(
+        hwnd: *mut core::ffi::c_void,
+        attr: u32,
+        value: *const core::ffi::c_void,
+        size: u32,
+    ) -> i32;
+}
+
+/// Sets the Windows 11 DWM corner preference for the main app window.
+#[tauri::command]
+pub fn set_window_corners(window: tauri::WebviewWindow, mode: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+        let pref: u32 = match mode.as_str() {
+            "square" => 1,  // DWMWCP_DONOTROUND
+            "rounded" => 2, // DWMWCP_ROUND
+            "small" => 3,   // DWMWCP_ROUNDSMALL
+            _ => 0,         // DWMWCP_DEFAULT
+        };
+        let hwnd = hwnd_of(&window)?;
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd as *mut core::ffi::c_void,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                (&pref as *const u32).cast(),
+                std::mem::size_of::<u32>() as u32,
+            );
+        }
+    }
+    let _ = (&window, &mode);
+    Ok(())
 }
 
 /// Puts files on the Windows clipboard; returns the clipboard's sequence

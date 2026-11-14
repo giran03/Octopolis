@@ -2,9 +2,9 @@ import { createSignal, For, onMount, Show } from "solid-js";
 import { BUILT_IN_THEMES, DENSITIES, THEME_FAMILIES, type Density, type Theme } from "../../lib/themes";
 import { copyTheme, readThemeFile } from "../../lib/themeFile";
 import { fullTokens, parseThemes, themeChoices, themeVars, uniqueThemeName } from "../../lib/themeTools";
-import { ICON_WEIGHT_MAX, ICON_WEIGHT_MIN, ROW_MAX, ROW_MIN, type IconStyle, type MotionPref, settings } from "../../state/settings";
+import { ICON_WEIGHT_MAX, ICON_WEIGHT_MIN, ROW_MAX, ROW_MIN, type IconStyle, type MotionPref, settings, type WindowControlsSide, type WindowControlsStyle } from "../../state/settings";
 import { MaterialIcon } from "../Icons";
-import { errorText, openFontsFolder } from "../../lib/ipc";
+import { errorText, openFontsFolder, type WindowCorners } from "../../lib/ipc";
 import { formatSize } from "../../lib/format";
 import { fontState, GOOGLE_FONTS, isGoogleFont, loadGoogleFont, refreshSaved, removeGoogleFont, saveGoogleFont, savedFonts } from "../../lib/fonts";
 import { sidebar } from "../../state/sidebar";
@@ -37,6 +37,13 @@ const FONTS: readonly Option<string>[] = [
 ];
 
 const SCALE_PRESETS: readonly Option<number>[] = [85, 100, 115, 130].map((v) => ({ value: v, label: `${v}%` }));
+
+const WINDOW_CORNER_OPTIONS: readonly Option<WindowCorners>[] = [
+  { value: "system", label: "Default" },
+  { value: "square", label: "Square" },
+  { value: "small", label: "Small" },
+  { value: "rounded", label: "Rounded" },
+];
 
 export function AppearanceTab() {
   const [json, setJson] = createSignal("");
@@ -114,6 +121,14 @@ export function AppearanceTab() {
       },
     });
 
+  const defaultAccent = () => {
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const chosen = settings.theme() === "System" ? (isDark ? settings.systemDark() : settings.systemLight()) : settings.theme();
+    const theme = [...BUILT_IN_THEMES, ...settings.customThemes()].find((t) => t.name === chosen);
+    if (theme?.tokens.accent) return theme.tokens.accent;
+    return isDark ? "#6d8cff" : "#3d63f0";
+  };
+
   return (
     <>
       <Section title="Theme">
@@ -130,7 +145,7 @@ export function AppearanceTab() {
         </Show>
         <SettingRow label="Accent color" hint="Selection, focus and highlights">
           <span class="inline">
-            <input type="color" class="color" aria-label="Accent color" value={settings.accent() ?? "#6d8cff"} onInput={(e) => settings.setAccent(e.currentTarget.value)} />
+            <input type="color" class="color" aria-label="Accent color" value={settings.accent() ?? defaultAccent()} onInput={(e) => settings.setAccent(e.currentTarget.value)} />
             <button class="btn small" disabled={settings.accent() === null} onClick={() => settings.setAccent(null)}>
               Theme default
             </button>
@@ -265,6 +280,33 @@ export function AppearanceTab() {
             <Segmented label="Density" value={presetNow()} options={densities()} onChange={settings.setDensity} />
           </div>
         </SettingRow>
+        <SettingRow label="Window corners" hint="Corner roundedness of the main application window">
+          <Segmented<WindowCorners> label="Window corners" value={settings.windowCorners()} options={WINDOW_CORNER_OPTIONS} onChange={(windowCorners) => settings.set({ windowCorners })} />
+        </SettingRow>
+        <SettingRow label="Window buttons" hint="Switch between macOS traffic lights and Windows titlebar buttons">
+          <Segmented<WindowControlsStyle>
+            label="Window buttons"
+            value={settings.windowControls()}
+            options={[
+              { value: "macos", label: "macOS" },
+              { value: "windows", label: "Windows" },
+            ]}
+            onChange={(windowControls) => settings.set({ windowControls })}
+          />
+        </SettingRow>
+        <Show when={settings.windowControls() === "macos"}>
+          <SettingRow label="Traffic light position" hint="Place the macOS buttons on the left or right of the titlebar">
+            <Segmented<WindowControlsSide>
+              label="Traffic light position"
+              value={settings.windowControlsSide()}
+              options={[
+                { value: "left", label: "Left" },
+                { value: "right", label: "Right" },
+              ]}
+              onChange={(windowControlsSide) => settings.set({ windowControlsSide })}
+            />
+          </SettingRow>
+        </Show>
       </Section>
 
       <Section title="Icons" note="Applies to button and menu icons. File, folder and drive icons keep their own colors.">
@@ -307,6 +349,21 @@ export function AppearanceTab() {
         </SettingRow>
         <SettingRow label="Tooltips" hint="Small labels when you hover or focus a button">
           <Toggle label="Tooltips" checked={settings.tooltips()} onChange={(tooltips) => settings.set({ tooltips })} />
+        </SettingRow>
+        <Show when={settings.tooltips()}>
+          <SettingRow label="Tooltip delay" hint="How long to hover or focus before a tooltip appears">
+            <Slider
+              label="Tooltip delay"
+              min={0}
+              max={5000}
+              step={100}
+              value={settings.tooltipDelayMs()}
+              format={(v) => (v === 0 ? "Instant" : `${(v / 1000).toFixed(1)} s`)}
+              onChange={(tooltipDelayMs) => settings.set({ tooltipDelayMs })}
+            />
+          </SettingRow>
+        </Show>
+        <SettingRow label="Shortcut hints in the status bar" hint="Show context-aware keyboard shortcuts at the bottom">
           <Toggle label="Shortcut hints in the status bar" checked={settings.showHints()} onChange={(showHints) => settings.set({ showHints })} />
         </SettingRow>
       </Section>
@@ -331,6 +388,15 @@ export function AppearanceTab() {
         </SettingRow>
         <SettingRow label="Open the shelf while dragging" hint="The shelf slides open when you start dragging files, so it is ready to catch them">
           <Toggle label="Open the shelf while dragging" checked={settings.shelfAutoOpen()} onChange={(shelfAutoOpen) => settings.set({ shelfAutoOpen })} />
+        </SettingRow>
+      </Section>
+
+      <Section title="Bento layout">
+        <SettingRow label="Hide file names" hint="Show only pictures in Bento view without file name labels at the bottom">
+          <Toggle label="Hide file names" checked={settings.bentoHideNames()} onChange={(bentoHideNames) => settings.set({ bentoHideNames })} />
+        </SettingRow>
+        <SettingRow label="Show tags" hint="Show media format badges (such as JPG, PNG, MP4) on the top right of Bento cards">
+          <Toggle label="Show tags" checked={settings.bentoShowTags()} onChange={(bentoShowTags) => settings.set({ bentoShowTags })} />
         </SettingRow>
       </Section>
     </>

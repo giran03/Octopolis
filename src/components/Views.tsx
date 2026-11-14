@@ -7,6 +7,7 @@ import { baseOf, cloudState, isDir, isHidden } from "../lib/listing";
 import { sameVolume } from "../lib/paths";
 import { cellsInRect, selectAt } from "../lib/selection";
 import { BENTO_GAP, bentoRowHeight, CONTENT_ROW, iconCell, LIST_COLUMN_W, thumbBucket, TILE } from "../lib/viewZoom";
+import { mediaTagLabel, mediaTagVar } from "../lib/themes";
 import { readDrop } from "../lib/webdrop";
 import { cancelSpring, carriesPaths, DRAG_MIME, dragRaw, dragState, isExternalDrag, onDragReset, springLoad, springTarget } from "../state/drag";
 import { ops } from "../state/ops";
@@ -694,7 +695,16 @@ export function BentoView(props: Omit<ViewProps, "onReady"> & { onReady: (column
                               {...ent.handlers(() => pos)}
                             >
                               <BentoPicture tab={props.tab} entry={entry()} px={thumbBucket(r().height * 1.6)} />
-                              <span class="bento-label">{shownName(props.tab, entry())}</span>
+                              <Show when={settings.bentoShowTags() && !isDir(l(), entry()) && mediaTagLabel(l().names[entry()])}>
+                                {(tag) => (
+                                  <span class="bento-tag" style={{ "--tag-color": mediaTagVar(l().names[entry()]) }}>
+                                    {tag()}
+                                  </span>
+                                )}
+                              </Show>
+                              <Show when={!settings.bentoHideNames()}>
+                                <span class="bento-label">{shownName(props.tab, entry())}</span>
+                              </Show>
                             </div>
                           </Show>
                         );

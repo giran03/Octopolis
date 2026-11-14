@@ -74,9 +74,21 @@ export const workspace = createRoot(() => {
   const activePane = () => paneModel(activePaneId());
   const activeTab = () => activePane().activeTab();
 
+  /** Tabs just opened via `newTab`, cleared after their reveal animation finishes. */
+  const [spawnedTabs, setSpawnedTabs] = createSignal<ReadonlyMap<string, "fg" | "bg">>(new Map());
+
   /** Opens a tab; a background tab goes right after the current one and doesn't take focus. */
   function newTab(paneId = activePaneId(), path = activeTab()?.path() ?? "C:\\", background = false) {
     const tab = createTab(path);
+    setSpawnedTabs((prev) => new Map(prev).set(tab.id, background ? "bg" : "fg"));
+    setTimeout(() => {
+      setSpawnedTabs((prev) => {
+        if (!prev.has(tab.id)) return prev;
+        const next = new Map(prev);
+        next.delete(tab.id);
+        return next;
+      });
+    }, 950);
     updatePane(paneId, (p) => {
       if (!background) return { tabs: [...p.tabs, tab], activeTabId: tab.id };
       const at = p.tabs.findIndex((t) => t.id === p.activeTabId) + 1;
@@ -361,6 +373,7 @@ export const workspace = createRoot(() => {
     snapshotLayout,
     restoreLayout,
     tabMeta: metaOf,
+    tabSpawnKind: (tabId: string) => spawnedTabs().get(tabId),
     togglePin,
     setTabColor: (tabId: string, color: string | null) => setMeta(tabId, { color }),
     closeOthers,

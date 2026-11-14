@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { RULE_PRESETS, presetFolderIds, resolvePreset } from "./rulePresets";
-import { blankRule, expandDest, groupByDestination, parseRules, parseRulesText, ruleProblem, ruleQuery, rulesToJson, ruleSummary, sinceText, uniqueRuleName, type Rule } from "./rules";
+import {
+  blankRule,
+  DEFAULT_SCHEDULE,
+  expandDest,
+  groupByDestination,
+  isRuleDue,
+  isScheduleExpired,
+  nextRuleRunAt,
+  parseRules,
+  parseRulesText,
+  ruleProblem,
+  ruleQuery,
+  rulesToJson,
+  ruleSummary,
+  scheduleSummary,
+  sinceText,
+  uniqueRuleName,
+  type Rule,
+} from "./rules";
 
 const rule = (over: Partial<Rule> = {}): Rule => ({ ...blankRule(), folder: "C:\\Users\\Me\\Downloads", dest: "D:\\Archive", ...over });
 const FOLDERS = { downloads: "C:\\Users\\Me\\Downloads", documents: "C:\\Users\\Me\\Documents", pictures: "C:\\Users\\Me\\Pictures", desktop: "C:\\Users\\Me\\Desktop" };
@@ -117,5 +135,32 @@ describe("presets", () => {
   it("round-trip through the shareable JSON", () => {
     const rules = RULE_PRESETS.map((p) => ({ ...resolvePreset(p, FOLDERS)!, id: "x" }));
     expect(parseRulesText(rulesToJson(rules))).toHaveLength(RULE_PRESETS.length);
+  });
+});
+
+describe("schedules", () => {
+  it("defaults to manual and summarizes intervals and limits", () => {
+    expect(scheduleSummary(DEFAULT_SCHEDULE)).toBe("Manual");
+    expect(scheduleSummary({ ...DEFAULT_SCHEDULE, mode: "interval", every: 15, unit: "minutes" })).toBe("Every 15 minutes");
+    expect(scheduleSummary({ ...DEFAULT_SCHEDULE, mode: "daily", time: "09:00", limitKind: "runs", limitValue: 3, runsRemaining: 2 })).toBe("Daily at 09:00 · 2 runs");
+    expect(scheduleSummary({ ...DEFAULT_SCHEDULE, mode: "interval", every: 1, unit: "hours", limitKind: "duration", limitValue: 24, limitUnit: "hours" })).toBe("Every 1 hour · for 24 hours");
+  });
+
+  it("computes next run times and due state", () => {
+    const base = new Date(2026, 10, 14, 8, 30, 0).getTime();
+    const daily = { ...DEFAULT_SCHEDULE, mode: "daily" as const, time: "09:00" };
+    expect(nextRuleRunAt(daily, base, null)).toBe(new Date(2026, 10, 14, 9, 0, 0).getTime());
+    expect(isRuleDue(rule({ schedule: daily }), new Date(2026, 10, 14, 9, 1, 0).getTime(), base)).toBe(true);
+    expect(isRuleDue(rule({ schedule: daily }), new Date(2026, 10, 14, 8, 45, 0).getTime(), base)).toBe(false);
+
+    const interval = { ...DEFAULT_SCHEDULE, mode: "interval" as const, every: 30, unit: "minutes" as const };
+    expect(isRuleDue(rule({ schedule: interval, lastRun: { at: base, count: 1 } }), base + 31 * 60_000, null)).toBe(true);
+    expect(isRuleDue(rule({ schedule: interval, lastRun: { at: base, count: 1 } }), base + 10 * 60_000, null)).toBe(false);
+  });
+
+  it("detects expired run-count and duration limits", () => {
+    expect(isScheduleExpired({ ...DEFAULT_SCHEDULE, mode: "interval", limitKind: "runs", runsRemaining: 0 }, 1000)).toBe(true);
+    expect(isScheduleExpired({ ...DEFAULT_SCHEDULE, mode: "interval", limitKind: "duration", untilAt: 1000 }, 1500)).toBe(true);
+    expect(isScheduleExpired({ ...DEFAULT_SCHEDULE, mode: "interval", limitKind: "duration", untilAt: 2000 }, 1500)).toBe(false);
   });
 });

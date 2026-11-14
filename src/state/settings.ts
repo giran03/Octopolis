@@ -1,6 +1,6 @@
 // Per-user preferences, remembered in local storage.
 import { createRoot, createSignal } from "solid-js";
-import type { SummonKey } from "../lib/ipc";
+import type { SummonKey, WindowCorners } from "../lib/ipc";
 import { DENSITIES, type Density, type Theme } from "../lib/themes";
 import { sanitizeThemes } from "../lib/themeTools";
 
@@ -85,11 +85,25 @@ interface Settings {
   columnWidths: Readonly<Record<string, number>>;
   /** Epoch ms of the last background update check. */
   lastUpdateCheck: number;
+  /** Hide file names on cards in Bento view. */
+  bentoHideNames: boolean;
+  /** Show media extension tag badges on cards in Bento view. */
+  bentoShowTags: boolean;
+  /** Delay in milliseconds before showing a tooltip on hover/focus. */
+  tooltipDelayMs: number;
+  /** Corner roundedness of the main application window. */
+  windowCorners: WindowCorners;
+  /** Style of the titlebar window buttons: macOS traffic lights or Windows controls. */
+  windowControls: WindowControlsStyle;
+  /** Side of the titlebar for macOS traffic lights. */
+  windowControlsSide: WindowControlsSide;
 }
 
 export const ROW_MIN = 18;
 export const ROW_MAX = 40;
 export type IconStyle = "outlined" | "rounded" | "sharp";
+export type WindowControlsStyle = "macos" | "windows";
+export type WindowControlsSide = "left" | "right";
 export const ICON_WEIGHT_MIN = 100;
 export const ICON_WEIGHT_MAX = 700;
 
@@ -98,7 +112,7 @@ export type TerminalShell = "powershell" | "pwsh" | "cmd";
 export type MotionPref = "system" | "reduce" | "full";
 export type UpdateMode = "off" | "notify" | "auto";
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "auto", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, tooltipDelayMs: 700, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "auto", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true, bentoHideNames: true, bentoShowTags: true, windowCorners: "system", windowControls: "macos", windowControlsSide: "right" };
 
 export const SETTING_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
@@ -175,6 +189,7 @@ export const settings = createRoot(() => {
     terminalShell: () => value().terminalShell,
     motion: () => value().motion,
     tooltips: () => value().tooltips,
+    tooltipDelayMs: () => Math.max(0, Math.min(5000, Math.round(value().tooltipDelayMs))),
     showHints: () => value().showHints,
     shelfAutoOpen: () => value().shelfAutoOpen,
     showPinned: () => value().showPinned,
@@ -201,6 +216,11 @@ export const settings = createRoot(() => {
     notifyDone: () => value().notifyDone,
     keepAwake: () => value().keepAwake,
     lastUpdateCheck: () => value().lastUpdateCheck,
+    bentoHideNames: () => value().bentoHideNames,
+    bentoShowTags: () => value().bentoShowTags,
+    windowCorners: () => value().windowCorners,
+    windowControls: () => value().windowControls,
+    windowControlsSide: () => value().windowControlsSide,
     /** Updates any settings at once; unknown keys and wrongly typed values are ignored. */
     set: (patch: Partial<Settings>) => update(sanitizeSettings(patch)),
     /** Every setting back to a fresh install's. */

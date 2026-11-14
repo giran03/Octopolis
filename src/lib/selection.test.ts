@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { entryPattern, moveFocus, selectAll, selectAt, selectEntriesWhere, typeAhead } from "./selection";
+import {
+  EMPTY_TYPE_AHEAD,
+  entryPattern,
+  moveFocus,
+  nextTypeAhead,
+  selectAll,
+  selectAt,
+  selectEntriesWhere,
+  typeAhead,
+  typeAheadMatchInfo,
+} from "./selection";
 
 const view = Uint32Array.from([10, 11, 12, 13, 14]);
 const none = { ctrl: false, shift: false };
@@ -61,11 +71,49 @@ describe("typeAhead", () => {
   it("cycles through single-letter matches", () => {
     expect(typeAhead(names, view, 1, "b")).toBe(2);
     expect(typeAhead(names, view, 2, "b")).toBe(1);
+    expect(typeAhead(names, view, -1, "b")).toBe(1);
+    expect(typeAhead(names, new Uint32Array(0), 0, "b")).toBe(-1);
   });
 
   it("extends a longer prefix from the current item", () => {
     expect(typeAhead(names, view, 0, "alpi")).toBe(4);
+    expect(typeAhead(names, view, -1, "alpi")).toBe(4);
     expect(typeAhead(names, view, 0, "zzz")).toBe(-1);
+  });
+
+  it("matches basenames in flat search results", () => {
+    const searchNames: string[] = [];
+    searchNames[10] = "src\\Games";
+    searchNames[11] = "docs\\Git";
+    searchNames[12] = "other\\Notes";
+    const subView = Uint32Array.from([10, 11, 12]);
+    expect(typeAhead(searchNames, subView, -1, "g")).toBe(0);
+    expect(typeAhead(searchNames, subView, 0, "g")).toBe(1);
+    expect(typeAhead(searchNames, subView, 1, "g")).toBe(0);
+  });
+
+  it("keeps a single-letter prefix when the same letter is pressed repeatedly", () => {
+    let s = nextTypeAhead(EMPTY_TYPE_AHEAD, "g", 100, 900, "1:C:\\")!;
+    expect(s.prefix).toBe("g");
+    s = nextTypeAhead(s, "G", 250, 900, "1:C:\\")!;
+    expect(s.prefix).toBe("G");
+    s = nextTypeAhead(s, "g", 400, 900, "1:C:\\")!;
+    expect(s.prefix).toBe("g");
+
+    // A different letter extends the prefix; timeout or folder change resets it.
+    s = nextTypeAhead(s, "i", 500, 900, "1:C:\\")!;
+    expect(s.prefix).toBe("gi");
+    s = nextTypeAhead(s, "a", 550, 900, "1:D:\\")!;
+    expect(s.prefix).toBe("a");
+    s = nextTypeAhead(s, "b", 2000, 900, "1:D:\\")!;
+    expect(s.prefix).toBe("b");
+    expect(nextTypeAhead(EMPTY_TYPE_AHEAD, " ", 100, 900, "1:D:\\")).toBeNull();
+  });
+
+  it("reports 1-based match index and total count", () => {
+    expect(typeAheadMatchInfo(names, view, 0, "a")).toEqual({ index: 1, total: 2 });
+    expect(typeAheadMatchInfo(names, view, 4, "a")).toEqual({ index: 2, total: 2 });
+    expect(typeAheadMatchInfo(names, view, -1, "zzz")).toEqual({ index: 0, total: 0 });
   });
 });
 

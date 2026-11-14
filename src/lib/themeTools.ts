@@ -5,6 +5,8 @@ import { BUILT_IN_THEMES, isColor, parseTheme, THEME_FAMILIES, type Theme, type 
 export const MIDNIGHT_TOKENS: Readonly<Record<ThemeToken, string>> = {
   bg: "#101216", surface: "#161920", "surface-2": "#1c2029", "surface-3": "#242935", border: "#262b36", "border-strong": "#343a48",
   text: "#e3e6ed", "text-muted": "#8b93a5", "text-faint": "#5d6576", accent: "#6d8cff", danger: "#f06b6b", "g-folder": "#e7b955", ok: "#5ec98a",
+  "tag-jpg": "#f59e0b", "tag-png": "#38bdf8", "tag-gif": "#c084fc", "tag-webp": "#34d399", "tag-svg": "#f472b6", "tag-avif": "#2dd4bf",
+  "tag-mp4": "#fb7185", "tag-mov": "#fb923c", "tag-webm": "#a3e635", "tag-mkv": "#818cf8", "tag-other": "#94a3b8",
 };
 
 export const TOKEN_INFO: readonly { group: string; items: readonly { token: ThemeToken; label: string; hint: string }[] }[] = [
@@ -28,6 +30,19 @@ export const TOKEN_INFO: readonly { group: string; items: readonly { token: Them
     { token: "danger", label: "Danger", hint: "Delete and errors" },
     { token: "g-folder", label: "Folders", hint: "Folder icons" },
     { token: "ok", label: "Success", hint: "Done and ticked states" },
+  ] },
+  { group: "Media tags", items: [
+    { token: "tag-jpg", label: "JPG / JPEG", hint: "JPEG photos in Bento" },
+    { token: "tag-png", label: "PNG", hint: "PNG images in Bento" },
+    { token: "tag-gif", label: "GIF", hint: "Animated GIFs in Bento" },
+    { token: "tag-webp", label: "WEBP", hint: "WebP images in Bento" },
+    { token: "tag-svg", label: "SVG", hint: "Vector graphics in Bento" },
+    { token: "tag-avif", label: "AVIF / HEIC", hint: "Modern image formats in Bento" },
+    { token: "tag-mp4", label: "MP4 / M4V", hint: "MP4 videos in Bento" },
+    { token: "tag-mov", label: "MOV", hint: "QuickTime videos in Bento" },
+    { token: "tag-webm", label: "WEBM", hint: "WebM videos in Bento" },
+    { token: "tag-mkv", label: "MKV / AVI", hint: "Container videos in Bento" },
+    { token: "tag-other", label: "Other media", hint: "Fallback for other formats" },
   ] },
 ];
 
@@ -123,6 +138,17 @@ export function derivePalette(bg: string, text: string, accent: string): Record<
     danger: dark ? "#f06b6b" : "#d64545",
     "g-folder": dark ? "#e7b955" : "#d9a128",
     ok: dark ? "#5ec98a" : "#2f9e5f",
+    "tag-jpg": dark ? "#f59e0b" : "#c97208",
+    "tag-png": dark ? "#38bdf8" : "#1d72b8",
+    "tag-gif": dark ? "#c084fc" : "#8a42c4",
+    "tag-webp": dark ? "#34d399" : "#158a5c",
+    "tag-svg": dark ? "#f472b6" : "#c4357a",
+    "tag-avif": dark ? "#2dd4bf" : "#0f857a",
+    "tag-mp4": dark ? "#fb7185" : "#c93b4b",
+    "tag-mov": dark ? "#fb923c" : "#cf5e17",
+    "tag-webm": dark ? "#a3e635" : "#5c8f12",
+    "tag-mkv": dark ? "#818cf8" : "#4b56c4",
+    "tag-other": dark ? "#94a3b8" : "#5c6675",
   };
 }
 

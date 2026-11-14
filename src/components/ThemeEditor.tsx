@@ -2,7 +2,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { copyTheme, saveThemeFile } from "../lib/themeFile";
 import { derivePalette, fullTokens, MIDNIGHT_TOKENS, randomPalette, themeSwatch, themeVars, themeWarnings, TOKEN_INFO, toHex, uniqueThemeName } from "../lib/themeTools";
-import { BUILT_IN_THEMES, isColor, type Theme, type ThemeToken } from "../lib/themes";
+import { BUILT_IN_THEMES, isColor, MEDIA_TAG_TOKENS, type Theme, type ThemeToken } from "../lib/themes";
 import { errorText } from "../lib/ipc";
 import { settings } from "../state/settings";
 import { ui } from "../state/ui";
@@ -50,7 +50,9 @@ export function ThemeEditor() {
 
   const shade = () => {
     const t = tokens();
-    setTokens({ ...t, ...derivePalette(t.bg, t.text, t.accent), danger: t.danger, "g-folder": t["g-folder"] });
+    const next = { ...t, ...derivePalette(t.bg, t.text, t.accent), danger: t.danger, "g-folder": t["g-folder"], ok: t.ok };
+    for (const k of MEDIA_TAG_TOKENS) next[k] = t[k];
+    setTokens(next);
   };
   const surprise = () => {
     const r = randomPalette(scheme() === "dark");
@@ -204,6 +206,19 @@ export function ThemeEditor() {
                     <span class="tp-input">Search…</span>
                     <span class="tp-btn">Open</span>
                     <span class="tp-btn danger">Delete</span>
+                  </div>
+                  <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap", "margin-top": "4px" }}>
+                    <For each={[["JPG", "--tag-jpg"], ["PNG", "--tag-png"], ["GIF", "--tag-gif"], ["MP4", "--tag-mp4"]] as const}>
+                      {([label, cssVar]) => (
+                        <span style={{
+                          "font-size": "10px", "font-weight": "700", "letter-spacing": "0.04em",
+                          padding: "1px 5px", "border-radius": "4px",
+                          background: `color-mix(in srgb, var(${cssVar}) 22%, var(--surface-2))`,
+                          color: `var(${cssVar})`,
+                          border: `1px solid color-mix(in srgb, var(${cssVar}) 45%, transparent)`,
+                        }}>{label}</span>
+                      )}
+                    </For>
                   </div>
                 </div>
               </div>

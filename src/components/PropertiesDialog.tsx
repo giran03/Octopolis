@@ -5,6 +5,7 @@ import { errorText, fileChecksum, filePropertiesMany, setFileAttributes, setFile
 import { baseName, parentPath, samePath } from "../lib/paths";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
+import { Checkbox } from "./Checkbox";
 
 const CHECKSUMS: readonly { kind: ChecksumKind; label: string }[] = [
   { kind: "sha256", label: "SHA-256" },
@@ -180,15 +181,14 @@ export function PropertiesDialog(props: { paths: readonly string[] }) {
             <legend>Attributes{single() ? "" : " (all selected items)"}</legend>
             <For each={ATTRS}>
               {(a) => (
-                <label class="props-check">
-                  <input
-                    type="checkbox"
-                    checked={shownAttrs()[a.key]}
-                    ref={(el) => queueMicrotask(() => (el.indeterminate = mixed(a.key)))}
-                    onChange={(e) => setAttrs({ ...shownAttrs(), [a.key]: e.currentTarget.checked })}
-                  />
+                <Checkbox
+                  class="props-check"
+                  checked={shownAttrs()[a.key]}
+                  indeterminate={mixed(a.key)}
+                  onChange={(checked) => setAttrs({ ...shownAttrs(), [a.key]: checked })}
+                >
                   {a.label}
-                </label>
+                </Checkbox>
               )}
             </For>
           </fieldset>

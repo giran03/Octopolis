@@ -6,6 +6,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { createEffect, on, onCleanup, onMount } from "solid-js";
 import { errorText, termClose, termResize, termStart, termWrite } from "../lib/ipc";
 import { psCdCommand, samePath } from "../lib/paths";
+import { Checkbox } from "./Checkbox";
 import { settings } from "../state/settings";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
@@ -91,9 +92,7 @@ export function TerminalPanel() {
     <section class="terminal" aria-label="Terminal">
       <header class="terminal-head">
         <span>Terminal</span>
-        <label class="check small">
-          <input type="checkbox" checked={settings.terminalSync()} onChange={settings.toggleTerminalSync} /> Follow folders
-        </label>
+        <Checkbox class="check small" checked={settings.terminalSync()} onChange={() => settings.toggleTerminalSync()}>Follow folders</Checkbox>
         <span class="spacer" />
         <button class="icon-btn" aria-label="Close terminal" onClick={settings.toggleTerminal}>
           <IconClose size={13} />

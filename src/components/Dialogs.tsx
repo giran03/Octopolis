@@ -5,6 +5,7 @@ import { baseOf, isDir } from "../lib/listing";
 import { planRenames, renderAll, DEFAULT_SPEC, type CaseMode, type RenameItem, type RenameRow } from "../lib/rename";
 import { ops } from "../state/ops";
 import { ui } from "../state/ui";
+import { Checkbox } from "./Checkbox";
 import { IconForward } from "./Icons";
 import { Select, type Option } from "./Select";
 
@@ -83,7 +84,7 @@ export function BatchRename() {
           <label>Case
             <Select label="Case" value={caseMode()} options={CASE_OPTIONS} onChange={(v) => (setCaseMode(v), reset())} />
           </label>
-          <label class="check"><input type="checkbox" checked={regex()} onChange={(e) => (setRegex(e.currentTarget.checked), reset())} /> Regular expression ($1, $2)</label>
+          <Checkbox class="check" checked={regex()} onChange={(checked) => (setRegex(checked), reset())}>Regular expression ($1, $2)</Checkbox>
         </div>
         <p class="muted small">Tokens: {"{name} {ext} {n} {n:3} {date} {date:YYYYMMDD} {exif:date} {exif:camera} {id3:artist} {id3:title} {id3:album} {id3:track}"}</p>
         <div class="rename-columns">

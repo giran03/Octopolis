@@ -96,6 +96,17 @@ export function AboutTab() {
       </Section>
 
       <Section title="Help">
+        <SettingRow label="Welcome wizard" hint="Re-run the first-run setup tour to pick your theme, density, and see key features">
+          <button
+            class="btn small"
+            onClick={() => {
+              ui.closeSettings();
+              ui.setWelcomeOpen(true);
+            }}
+          >
+            Run wizard
+          </button>
+        </SettingRow>
         <SettingRow label="User guide" hint="Everything Octopolis can do, with a changelog. Opens in your browser and works offline">
           <button class="btn small" onClick={() => void guide.open(null)}>
             Open guide

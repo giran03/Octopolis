@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { contrastRatio, derivePalette, fullTokens, mixColors, parseColor, parseThemes, randomPalette, sanitizeThemes, themeChoices, themeToJson, themeWarnings, toHex, uniqueThemeName } from "./themeTools";
-import { BUILT_IN_THEMES, isColor, parseTheme, THEME_FAMILIES, THEME_TOKENS } from "./themes";
+import { contrastRatio, derivePalette, fullTokens, mixColors, parseColor, parseThemes, randomPalette, sanitizeThemes, themeChoices, themeToJson, themeVars, themeWarnings, TOKEN_INFO, toHex, uniqueThemeName } from "./themeTools";
+import { BUILT_IN_THEMES, isColor, MEDIA_TAG_TOKENS, mediaTagLabel, mediaTagToken, mediaTagVar, parseTheme, THEME_FAMILIES, THEME_TOKENS } from "./themes";
 const luminanceOf = (c: string) => { const p = parseColor(c)!; const l = (v: number) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * l(p.r) + 0.7152 * l(p.g) + 0.0722 * l(p.b); };
 
 describe("colors", () => {
@@ -102,5 +102,41 @@ describe("built-in themes", () => {
     expect(list.every((c) => c.swatch.startsWith("linear-gradient"))).toBe(true);
     expect(list.at(-1)).toMatchObject({ value: "Mine", group: "Your themes" });
     expect(themeChoices([], { scheme: "light" }).every((c) => BUILT_IN_THEMES.find((t) => t.name === c.value)?.scheme === "light")).toBe(true);
+  });
+});
+
+describe("media tag tokens", () => {
+  it("maps filenames and extensions to distinct tag tokens and CSS variables", () => {
+    expect(mediaTagLabel("photo.JPG")).toBe("JPG");
+    expect(mediaTagLabel("noext")).toBe("");
+    expect(mediaTagToken("photo.JPG")).toBe("tag-jpg");
+    expect(mediaTagToken("photo.jpeg")).toBe("tag-jpg");
+    expect(mediaTagToken("shot.png")).toBe("tag-png");
+    expect(mediaTagToken("loop.gif")).toBe("tag-gif");
+    expect(mediaTagToken("hero.webp")).toBe("tag-webp");
+    expect(mediaTagToken("icon.svg")).toBe("tag-svg");
+    expect(mediaTagToken("pic.avif")).toBe("tag-avif");
+    expect(mediaTagToken("clip.mp4")).toBe("tag-mp4");
+    expect(mediaTagToken("reel.mov")).toBe("tag-mov");
+    expect(mediaTagToken("vid.webm")).toBe("tag-webm");
+    expect(mediaTagToken("movie.mkv")).toBe("tag-mkv");
+    expect(mediaTagToken("unknown.xyz")).toBe("tag-other");
+    expect(mediaTagVar("photo.JPG")).toBe("var(--tag-jpg)");
+    expect(mediaTagVar("mp4")).toBe("var(--tag-mp4)");
+  });
+
+  it("defines distinct tag colors in every built-in theme and exposes all tokens in Theme Factory", () => {
+    const exposed = TOKEN_INFO.flatMap((g) => g.items.map((i) => i.token));
+    expect(exposed.sort()).toEqual([...THEME_TOKENS].sort());
+    for (const t of BUILT_IN_THEMES) {
+      const k = fullTokens(t);
+      const vars = themeVars(t);
+      for (const tag of MEDIA_TAG_TOKENS) {
+        expect(isColor(k[tag]), `${t.name}:${tag}`).toBe(true);
+        expect(vars[`--${tag}`]).toBe(k[tag]);
+      }
+      const core = [k["tag-jpg"], k["tag-png"], k["tag-gif"], k["tag-mp4"]];
+      expect(new Set(core).size, t.name).toBe(core.length);
+    }
   });
 });

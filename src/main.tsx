@@ -29,17 +29,6 @@ const logError = (what: unknown) => {
 window.addEventListener("error", (e) => logError(e.error ?? e.message));
 window.addEventListener("unhandledrejection", (e) => logError(e.reason));
 
-if (import.meta.env.PROD) {
-  // Browser reload/print shortcuts make no sense in a file explorer.
-  document.addEventListener(
-    "keydown",
-    (e) => {
-      if ((e.ctrlKey && (e.key === "p" || e.key === "P")) || (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "i"))) e.preventDefault();
-    },
-    true,
-  );
-}
-
 render(
   () => (
     <ErrorBoundary

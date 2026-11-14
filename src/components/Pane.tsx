@@ -5,7 +5,7 @@ import * as A from "../actions";
 import { errorText, listDir, resolvePath } from "../lib/ipc";
 import { fuzzyRank } from "../lib/fuzzy";
 import { createBuilder, decodeBatch, isDir, snapshot } from "../lib/listing";
-import { baseName, breadcrumbs, joinPath, parentPath, samePath, sameVolume } from "../lib/paths";
+import { baseName, breadcrumbs, isDrivesPath, joinPath, parentPath, samePath, sameVolume } from "../lib/paths";
 import { cancelSpring, carriesPaths, dragState, isDragging, onDragReset, springLoad, springTarget, tabDrag } from "../state/drag";
 import { history } from "../state/history";
 import type { TabModel } from "../state/tab";
@@ -13,8 +13,10 @@ import { TAB_COLORS } from "../lib/session";
 import { ui } from "../state/ui";
 import { workspace, type PaneModel } from "../state/workspace";
 import { contextMenu, FileList, type ListHandle } from "./FileList";
+import { DrivesView } from "./DrivesView";
 import { MillerView } from "./Extras";
 import { BentoView, CellGrid, ContentView, ListView } from "./Views";
+import { SortMenu } from "./SortMenu";
 import { ViewMenu } from "./ViewMenu";
 import { Treemap } from "./Treemap";
 import { IconBack, MaterialIcon, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
@@ -46,7 +48,8 @@ export function Pane(props: { pane: PaneModel }) {
         {(t) => (
           <>
             <Toolbar paneId={props.pane.id} tab={t} />
-            <Show when={!t.treemap()} fallback={<Treemap tab={t} />}>
+            <Show when={!isDrivesPath(t.path())} fallback={<DrivesView tab={t} />}>
+              <Show when={!t.treemap()} fallback={<Treemap tab={t} />}>
               <Show when={t.viewMode() === "details"}>
                 <FileList tab={t} active={active()} onReady={(h) => listHandles.set(t, h)} />
               </Show>
@@ -91,6 +94,7 @@ export function Pane(props: { pane: PaneModel }) {
                   onMenu={(e, pos) => contextMenu(t, e, pos)}
                 />
               </Show>
+            </Show>
             </Show>
           </>
         )}
@@ -319,7 +323,7 @@ function TabStrip(props: { pane: PaneModel }) {
               workspace.moveTab(pane, tab, props.pane.id, props.pane.tabs().indexOf(t));
             }}
             aria-selected={props.pane.activeTabId() === t.id}
-            classList={{ spring: springTarget() === `tab:${t.id}`, current: props.pane.activeTabId() === t.id, pinned: workspace.tabMeta(t.id).pinned, colored: !!workspace.tabMeta(t.id).color }}
+            classList={{ spring: springTarget() === `tab:${t.id}`, current: props.pane.activeTabId() === t.id, pinned: workspace.tabMeta(t.id).pinned, colored: !!workspace.tabMeta(t.id).color, "tab-spawned": !!workspace.tabSpawnKind(t.id), "tab-spawned-bg": workspace.tabSpawnKind(t.id) === "bg" }}
             style={workspace.tabMeta(t.id).color ? { "--tab-color": `var(--tab-${workspace.tabMeta(t.id).color})` } : undefined}
             data-tooltip={workspace.tabMeta(t.id).pinned ? `${t.title()} — ${t.path()}` : t.path()}
             onContextMenu={(e) => tabMenu(e, props.pane.id, t.id)}
@@ -380,6 +384,7 @@ function Toolbar(props: { paneId: string; tab: TabModel }) {
       </button>
       <PathBar tab={props.tab} editing={editing()} setEditing={setEditing} />
       <ViewMenu tab={props.tab} />
+      <SortMenu tab={props.tab} />
       <SearchBox tab={props.tab} ref={(el) => (filterInput = el)} />
     </div>
   );

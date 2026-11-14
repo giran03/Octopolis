@@ -30,6 +30,12 @@ pub fn open_path(path: &Path) -> Result<()> {
     imp::open_verb(path, "open")
 }
 
+/// Runs a program or script directly (PowerShell `.ps1` scripts launch in
+/// PowerShell instead of opening in an editor).
+pub fn run_path(path: &Path) -> Result<()> {
+    imp::run_path(path)
+}
+
 /// Opens a file in an editor: `editor` if given, else the file type's Edit
 /// command, else Notepad. Never runs the file itself (scripts stay closed).
 pub fn edit_path(path: &Path, editor: Option<&Path>) -> Result<()> {
@@ -289,7 +295,7 @@ mod imp {
         }
     }
 
-    pub fn run_as_admin(path: &Path) -> Result<()> {
+    fn launch_with_verb(path: &Path, verb: PCWSTR, access_denied_msg: Option<&str>) -> Result<()> {
         let is_ps1 = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ps1"));
         let dir = path.parent().map(|p| wide(p.as_os_str()));
         // A .ps1 opens in an editor by default, so start PowerShell with the script instead.
@@ -305,7 +311,7 @@ mod imp {
         let code = unsafe {
             ShellExecuteW(
                 None,
-                w!("runas"),
+                verb,
                 PCWSTR(file.as_ptr()),
                 params.as_ref().map_or(PCWSTR::null(), |p| PCWSTR(p.as_ptr())),
                 dir.as_ref().map_or(PCWSTR::null(), |d| PCWSTR(d.as_ptr())),
@@ -315,9 +321,17 @@ mod imp {
         const SE_ERR_ACCESSDENIED: isize = 5; // also returned when the user says No
         match code.0 as isize {
             c if c > SHELL_EXECUTE_OK => Ok(()),
-            SE_ERR_ACCESSDENIED => Err(Error::io(path, std::io::Error::other("administrator rights were not granted"))),
+            SE_ERR_ACCESSDENIED if access_denied_msg.is_some() => Err(Error::io(path, std::io::Error::other(access_denied_msg.unwrap()))),
             c => Err(Error::io(path, std::io::Error::other(format!("Windows could not start it (code {c})")))),
         }
+    }
+
+    pub fn run_path(path: &Path) -> Result<()> {
+        launch_with_verb(path, w!("open"), None)
+    }
+
+    pub fn run_as_admin(path: &Path) -> Result<()> {
+        launch_with_verb(path, w!("runas"), Some("administrator rights were not granted"))
     }
 
     pub fn eject_drive(root: &Path) -> Result<()> {
@@ -504,6 +518,10 @@ mod imp {
 
     pub fn pick_folder(_: isize, _: Option<&Path>) -> Result<Option<PathBuf>> {
         Ok(None)
+    }
+
+    pub fn run_path(path: &Path) -> Result<()> {
+        open_path(path)
     }
 
     pub fn run_as_admin(path: &Path) -> Result<()> {

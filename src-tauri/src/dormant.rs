@@ -95,9 +95,10 @@ fn watch(wv: tauri::webview::PlatformWebview) {
 
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_PROCESS_FAILED_KIND, COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED, COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE, ICoreWebView2Settings3, ICoreWebView2Settings6,
     };
     use webview2_com::ProcessFailedEventHandler;
+    use windows_core::Interface;
 
     // A page that keeps failing is left alone after a few tries, so this can't loop.
     static RELOADS: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
@@ -105,6 +106,18 @@ fn watch(wv: tauri::webview::PlatformWebview) {
     // SAFETY: COM calls on the live controller, on the thread that owns it.
     unsafe {
         let Ok(core) = wv.controller().CoreWebView2() else { return };
+        if let Ok(settings) = core.Settings() {
+            // Keep native browser shortcuts (Ctrl+P print, Ctrl+F find, Ctrl+S save, etc.) and browser controls off.
+            if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
+                let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false);
+            }
+            if let Ok(s6) = settings.cast::<ICoreWebView2Settings6>() {
+                let _ = s6.SetIsSwipeNavigationEnabled(false);
+            }
+            let _ = settings.SetIsZoomControlEnabled(false);
+            let _ = settings.SetAreDefaultContextMenusEnabled(false);
+            let _ = settings.SetIsBuiltInErrorPageEnabled(false);
+        }
         let handler = ProcessFailedEventHandler::create(Box::new(|sender, args| {
             let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
             if let Some(a) = args {

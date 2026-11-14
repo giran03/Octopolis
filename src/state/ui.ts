@@ -88,6 +88,7 @@ export const ui = createRoot(() => {
   const [lockPaths, setLockPaths] = createSignal<readonly string[] | null>(null);
   const [batchRenameOpen, setBatchRenameOpen] = createSignal(false);
   const [settingsTab, setSettingsTab] = createSignal<SettingsTab | null>(null);
+  const [settingsJump, setSettingsJump] = createSignal<{ tab: SettingsTab; rowLabel?: string; nonce: number } | null>(null);
   const [shortcutFilter, setShortcutFilter] = createSignal<ShortcutFilterRequest | null>(null);
   const [prompt, setPrompt] = createSignal<PromptState | null>(null);
   const [conflictPrompt, setConflictPrompt] = createSignal<ConflictPrompt | null>(null);
@@ -107,6 +108,7 @@ export const ui = createRoot(() => {
   /** The tag whose items are listed. */
   const [taggedView, setTaggedView] = createSignal<string | null>(null);
   const [actionsEditorOpen, setActionsEditorOpen] = createSignal(false);
+  const [columnsOpen, setColumnsOpen] = createSignal(false);
   /** The folder the cleanup assistant is looking at, while it is open. */
   const [cleanupRoot, setCleanupRoot] = createSignal<string | null>(null);
   const [diskSpaceRoot, setDiskSpaceRoot] = createSignal<string | null>(null);
@@ -114,6 +116,13 @@ export const ui = createRoot(() => {
   const [emojiTarget, setEmojiTarget] = createSignal<string | null>(null);
   /** Vim visual mode: movement extends the selection. */
   const [visual, setVisual] = createSignal(false);
+  /** Transient type-ahead jump indicator in the status bar. */
+  const [typeAhead, setTypeAhead] = createSignal<{
+    readonly prefix: string;
+    readonly index: number;
+    readonly total: number;
+    readonly matched: boolean;
+  } | null>(null);
 
   const dismissToast = (key: number) => setToasts((t) => t.filter((x) => x.key !== key));
 
@@ -147,12 +156,20 @@ export const ui = createRoot(() => {
     openSettings: (tab?: SettingsTab) => setSettingsTab(tab ?? lastSettingsTab),
     closeSettings: () => {
       setShortcutFilter(null);
+      setSettingsJump(null);
       setSettingsTab(null);
     },
     setSettingsTab: (tab: SettingsTab) => {
       lastSettingsTab = tab;
       setSettingsTab(tab);
     },
+    settingsJump,
+    openSettingsAt: (tab: SettingsTab, rowLabel?: string) => {
+      lastSettingsTab = tab;
+      setSettingsTab(tab);
+      setSettingsJump({ tab, rowLabel, nonce: focusNonce++ });
+    },
+    clearSettingsJump: () => setSettingsJump(null),
     shortcutFilter,
     openShortcutsFor: (commandId: string, filter: string) => {
       setShortcutFilter({ filter, commandId, nonce: focusNonce++ });
@@ -186,6 +203,8 @@ export const ui = createRoot(() => {
     setTaggedView,
     actionsEditorOpen,
     setActionsEditorOpen,
+    columnsOpen,
+    setColumnsOpen,
     cleanupRoot,
     setCleanupRoot,
     diskSpaceRoot,
@@ -199,8 +218,10 @@ export const ui = createRoot(() => {
     closePrompt: () => setPrompt(null),
     visual,
     setVisual,
+    typeAhead,
+    setTypeAhead,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || rulesOpen() || themeEditor() !== null || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || cleanupRoot() || emojiTarget()),
+    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || rulesOpen() || themeEditor() !== null || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || columnsOpen() || cleanupRoot() || emojiTarget()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

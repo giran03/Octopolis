@@ -38,8 +38,20 @@ const NARROW_DROPS: readonly [width: number, key: ColumnKey][] = [
   [420, "attributes"],
 ];
 
+function normalizeColumns(chosen: readonly string[]): ColumnKey[] {
+  const seen = new Set<ColumnKey>();
+  const out: ColumnKey[] = [];
+  for (const k of chosen) {
+    if (OPTIONAL_COLUMNS.includes(k as ColumnKey) && !seen.has(k as ColumnKey)) {
+      seen.add(k as ColumnKey);
+      out.push(k as ColumnKey);
+    }
+  }
+  return out;
+}
+
 export function visibleColumns(chosen: readonly string[], paneWidth: number, withCommit: boolean): ColumnKey[] {
-  const valid = chosen.filter((k): k is ColumnKey => OPTIONAL_COLUMNS.includes(k as ColumnKey));
+  const valid = normalizeColumns(chosen);
   const dropped = new Set(NARROW_DROPS.filter(([w]) => paneWidth > 0 && paneWidth < w).map(([, k]) => k));
   const cols = valid.filter((k) => !dropped.has(k));
   return withCommit && paneWidth >= 640 ? [...cols, "commit"] : cols;
@@ -54,12 +66,40 @@ export function gridTemplate(cols: readonly ColumnKey[], widths: Readonly<Record
   return [`minmax(${NAME_MIN}px, 1fr)`, ...cols.map((k) => `${clampWidth(k, widths[k] ?? columnDef(k).width)}px`)].join(" ");
 }
 
-/** Shows or hides an optional column, keeping the default order. */
+/** Shows or hides an optional column while preserving the user's custom column order. */
 export function toggleColumn(chosen: readonly string[], key: ColumnKey): ColumnKey[] {
-  const on = new Set(chosen.filter((k): k is ColumnKey => OPTIONAL_COLUMNS.includes(k as ColumnKey)));
-  if (on.has(key)) on.delete(key);
-  else on.add(key);
-  return OPTIONAL_COLUMNS.filter((k) => on.has(k));
+  const list = normalizeColumns(chosen);
+  if (list.includes(key)) return list.filter((k) => k !== key);
+  return [...list, key];
+}
+
+/** Moves `fromKey` before or after `toKey` within the active columns list. */
+export function moveColumn(chosen: readonly string[], fromKey: ColumnKey, toKey: ColumnKey, place: "before" | "after" = "before"): ColumnKey[] {
+  const list = normalizeColumns(chosen);
+  if (fromKey === toKey || !list.includes(fromKey) || !list.includes(toKey)) return list;
+  const without = list.filter((k) => k !== fromKey);
+  const targetIdx = without.indexOf(toKey);
+  const insertIdx = place === "after" ? targetIdx + 1 : targetIdx;
+  without.splice(insertIdx, 0, fromKey);
+  return without;
+}
+
+/** Moves an active column one slot left/up (-1) or right/down (+1). */
+export function stepColumn(chosen: readonly string[], key: ColumnKey, delta: -1 | 1): ColumnKey[] {
+  const list = normalizeColumns(chosen);
+  const idx = list.indexOf(key);
+  const next = idx + delta;
+  if (idx < 0 || next < 0 || next >= list.length) return list;
+  const copy = [...list];
+  [copy[idx], copy[next]] = [copy[next], copy[idx]];
+  return copy;
+}
+
+/** Active columns in their current order, followed by any hidden optional columns. */
+export function allColumnsInOrder(chosen: readonly string[]): ColumnKey[] {
+  const active = normalizeColumns(chosen);
+  const on = new Set(active);
+  return [...active, ...OPTIONAL_COLUMNS.filter((k) => !on.has(k))];
 }
 
 /** "RHSA"-style letters for the attributes column. */

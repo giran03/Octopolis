@@ -44,7 +44,15 @@ export function baseName(path: string): string {
   return rest[rest.length - 1];
 }
 
+/** Virtual path for the "All drives" (Devices and drives) overview. */
+export const ALL_DRIVES_PATH = "octopolis://drives";
+
+export function isDrivesPath(path: string): boolean {
+  return path.trim().toLowerCase() === ALL_DRIVES_PATH;
+}
+
 export function breadcrumbs(path: string): Crumb[] {
+  if (isDrivesPath(path)) return [{ label: "All drives", path: ALL_DRIVES_PATH }];
   const { root, rest } = splitRoot(path);
   const crumbs: Crumb[] = root ? [{ label: root.replace(/\\$/, ""), path: root }] : [];
   let acc = root;

@@ -4,7 +4,7 @@ import { createEffect, createMemo, createRoot, createSignal, For, Index, Match, 
 import * as A from "../actions";
 import { formatDate, formatSize, typeLabel, withoutExtension } from "../lib/format";
 import { ATTR_REPARSE, baseOf, cloudState, dirOf, isDir, isHidden } from "../lib/listing";
-import { attributeLetters, clampWidth, columnDef, DEFAULT_COLUMNS, gridTemplate, OPTIONAL_COLUMNS, toggleColumn, visibleColumns, type ColumnKey } from "../lib/columns";
+import { allColumnsInOrder, attributeLetters, clampWidth, columnDef, DEFAULT_COLUMNS, gridTemplate, moveColumn, OPTIONAL_COLUMNS, stepColumn, toggleColumn, visibleColumns, type ColumnKey } from "../lib/columns";
 import { baseName, extensionOf, parentPath, sameVolume, samePath, stemLength } from "../lib/paths";
 import { rowsInBand, selectAt } from "../lib/selection";
 import { createMarquee } from "./marquee";
@@ -35,7 +35,7 @@ let dragging: readonly string[] = [];
 let draggingArchive: string | null = null;
 
 /** A sortable column header. */
-function HeadButton(props: { label: string; sortKey: SortKey; tab: TabModel; end?: boolean }) {
+function HeadButton(props: { label: string; sortKey: SortKey; tab: TabModel; end?: boolean; canSort?: () => boolean }) {
   const sorted = () => props.tab.sort().key === props.sortKey;
   return (
     <button
@@ -43,7 +43,10 @@ function HeadButton(props: { label: string; sortKey: SortKey; tab: TabModel; end
       role="columnheader"
       aria-sort={sorted() ? (props.tab.sort().dir === 1 ? "ascending" : "descending") : "none"}
       classList={{ end: props.end, sorted: sorted() }}
-      onClick={() => props.tab.sortBy(props.sortKey)}
+      onClick={() => {
+        if (props.canSort && !props.canSort()) return;
+        props.tab.sortBy(props.sortKey);
+      }}
     >
       <span>{props.label}</span>
       <Show when={sorted()}>
@@ -108,6 +111,10 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
   const [paneWidth, setPaneWidth] = createSignal(0);
   /** Widths while a resize drag is under way; saved to settings when it ends. */
   const [dragWidths, setDragWidths] = createSignal<Readonly<Record<string, number>> | null>(null);
+  const [dragCol, setDragCol] = createSignal<ColumnKey | null>(null);
+  const [dropCol, setDropCol] = createSignal<{ key: ColumnKey; place: "before" | "after" } | null>(null);
+  let headEl!: HTMLDivElement;
+  let suppressHeadClick = false;
   const widths = () => dragWidths() ?? settings.columnWidths();
   const columns = createMemo(() => visibleColumns(settings.fileColumns(), paneWidth(), showCommitColumn()));
   const startResize = (e: PointerEvent, key: ColumnKey) => {
@@ -130,19 +137,116 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
   };
+  const startReorder = (e: PointerEvent, key: ColumnKey) => {
+    if (e.button !== 0 || key === "commit") return;
+    if (e.target instanceof Element && e.target.closest(".col-resizer")) return;
+    const startX = e.clientX;
+    let dragging = false;
+    let currentDrop: { key: ColumnKey; place: "before" | "after" } | null = null;
+
+    const resolveDrop = (clientX: number) => {
+      const nodes = Array.from(headEl.querySelectorAll<HTMLElement>(".col-head-wrap[data-col]"));
+      for (const node of nodes) {
+        const k = node.dataset.col as ColumnKey;
+        if (k === "commit") continue;
+        const r = node.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right) {
+          return { key: k, place: clientX < r.left + r.width / 2 ? ("before" as const) : ("after" as const) };
+        }
+      }
+      return null;
+    };
+
+    const move = (m: PointerEvent) => {
+      if (!dragging && Math.abs(m.clientX - startX) < 5) return;
+      dragging = true;
+      setDragCol(key);
+      currentDrop = resolveDrop(m.clientX);
+      setDropCol(currentDrop);
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      if (dragging) {
+        suppressHeadClick = true;
+        window.setTimeout(() => {
+          suppressHeadClick = false;
+        }, 0);
+        if (currentDrop && currentDrop.key !== key) {
+          settings.set({ fileColumns: moveColumn(settings.fileColumns(), key, currentDrop.key, currentDrop.place) });
+        }
+      }
+      setDragCol(null);
+      setDropCol(null);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
   const resetWidth = (key: ColumnKey) => {
     const { [key]: _gone, ...rest } = settings.columnWidths();
     settings.set({ columnWidths: rest });
   };
+  const measureFitWidth = (key: ColumnKey): number => {
+    const def = columnDef(key);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return def.width;
+    const scale = Math.max(0.1, settings.uiScale() / 100);
+    const bodyStyle = getComputedStyle(scroller);
+    ctx.font = `${bodyStyle.fontWeight} ${bodyStyle.fontSize} ${bodyStyle.fontFamily}`;
+    let maxW = ctx.measureText(def.label).width + 32;
+    const cells = scroller.querySelectorAll<HTMLElement>(`.cell.col-${key}`);
+    for (const cell of cells) {
+      const text = cell.textContent?.trim();
+      if (!text) continue;
+      const w = ctx.measureText(text).width + 20;
+      if (w > maxW) maxW = w;
+    }
+    return clampWidth(key, maxW / scale);
+  };
+  const fitColumnWidth = (key: ColumnKey) => {
+    settings.set({ columnWidths: { ...settings.columnWidths(), [key]: measureFitWidth(key) } });
+  };
+  const fitAllColumns = () => {
+    const next = { ...settings.columnWidths() };
+    for (const key of columns()) next[key] = measureFitWidth(key);
+    settings.set({ columnWidths: next });
+  };
   const headerMenu = (e: MouseEvent) => {
     e.preventDefault();
-    const shown = new Set(settings.fileColumns());
+    const clicked = e.target instanceof Element ? (e.target.closest<HTMLElement>("[data-col]")?.dataset.col as ColumnKey | undefined) : undefined;
+    const active = settings.fileColumns();
+    const shown = new Set(active);
+    const clickedIdx = clicked && OPTIONAL_COLUMNS.includes(clicked) ? active.indexOf(clicked) : -1;
+    const clickedLabel = clicked && OPTIONAL_COLUMNS.includes(clicked) ? columnDef(clicked).label : "";
     ui.openMenu(e.clientX, e.clientY, [
-      ...OPTIONAL_COLUMNS.map((key) => ({
+      ...allColumnsInOrder(active).map((key) => ({
         label: `${shown.has(key) ? "✓ " : "    "}${columnDef(key).label}`,
         run: () => settings.set({ fileColumns: toggleColumn(settings.fileColumns(), key) }),
       })),
+      ...(clicked && clickedIdx >= 0
+        ? [
+            "separator" as const,
+            {
+              label: `Move "${clickedLabel}" left`,
+              disabled: clickedIdx <= 0,
+              run: () => settings.set({ fileColumns: stepColumn(settings.fileColumns(), clicked, -1) }),
+            },
+            {
+              label: `Move "${clickedLabel}" right`,
+              disabled: clickedIdx >= active.length - 1,
+              run: () => settings.set({ fileColumns: stepColumn(settings.fileColumns(), clicked, 1) }),
+            },
+            { label: `Size "${clickedLabel}" to fit`, run: () => fitColumnWidth(clicked) },
+          ]
+        : []),
       "separator" as const,
+      { label: "Size all columns to fit", run: fitAllColumns },
+      { label: "Customize columns…", run: () => ui.setColumnsOpen(true) },
       { label: "Reset columns", run: () => settings.set({ fileColumns: [...DEFAULT_COLUMNS], columnWidths: {} }) },
     ]);
   };
@@ -272,16 +376,36 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
       aria-rowcount={view().length + 1}
       aria-activedescendant={view().length ? rowId(tab().focus()) : undefined}
     >
-      <div class="filelist-head" role="row" onContextMenu={headerMenu}>
+      <div
+        ref={headEl}
+        class="filelist-head"
+        role="row"
+        onContextMenu={headerMenu}
+        onClick={(e) => {
+          if (suppressHeadClick) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+      >
         <HeadButton label="Name" sortKey="name" tab={tab()} />
         <For each={columns()}>
           {(key) => {
             const def = columnDef(key);
             return (
-              <div class={`col-head-wrap col-${key}`}>
+              <div
+                class={`col-head-wrap col-${key}`}
+                data-col={key}
+                classList={{
+                  dragging: dragCol() === key,
+                  "drop-before": dropCol()?.key === key && dropCol()?.place === "before" && dragCol() !== key,
+                  "drop-after": dropCol()?.key === key && dropCol()?.place === "after" && dragCol() !== key,
+                }}
+                onPointerDown={(e) => startReorder(e, key)}
+              >
                 <span class="col-resizer" title="Drag to resize. Double-click to reset" onPointerDown={(e) => startResize(e, key)} onDblClick={() => resetWidth(key)} />
                 <Show when={def.sort} fallback={<div class="col-head" role="columnheader" classList={{ end: def.align === "end" }}>{def.label}</div>}>
-                  <HeadButton label={def.label} sortKey={def.sort!} tab={tab()} end={def.align === "end"} />
+                  <HeadButton label={def.label} sortKey={def.sort!} tab={tab()} end={def.align === "end"} canSort={() => !suppressHeadClick} />
                 </Show>
               </div>
             );
@@ -617,15 +741,17 @@ function openInTabEntry(tab: TabModel): MenuEntry[] {
   return [{ label: "Open in new tab", shortcut: "Middle-click", run: () => A.openEntryInTab(tab, picked[0], false) }];
 }
 
-/** "Open with…" and "Run as administrator" for a single file outside archives. */
+/** "Run", "Install", "Run as administrator", "Open with…" and "Open in editor" for a single file outside archives. */
 function fileOpenEntries(tab: TabModel): MenuEntry[] {
   const picked = [...tab.selection()];
   if (picked.length !== 1 || tab.archive() || isDir(tab.listing(), picked[0])) return [];
   const name = tab.listing().names[picked[0]];
   return [
+    ...(A.RUNNABLE.test(name) ? [{ label: "Run", run: () => A.runSelected(tab) }] : []),
+    ...(A.INSTALLABLE.test(name) ? [{ label: "Install", run: () => A.installSelected(tab) }] : []),
+    ...(A.ADMIN_RUNNABLE.test(name) ? [{ label: "Run as administrator", run: () => A.runSelectedAsAdmin(tab) }] : []),
     { label: "Open with…", run: () => A.openWithDialog(tab) },
     { label: "Open in editor", shortcut: "Ctrl+Shift+O", run: () => A.editSelection(tab) },
-    ...(A.ADMIN_RUNNABLE.test(name) ? [{ label: "Run as administrator", run: () => A.runSelectedAsAdmin(tab) }] : []),
   ];
 }
 

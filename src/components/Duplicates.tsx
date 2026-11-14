@@ -7,6 +7,7 @@ import { extrasToRemove } from "../lib/summary";
 import { ops } from "../state/ops";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
+import { Checkbox } from "./Checkbox";
 
 const SCAN_ID = "duplicates";
 const MIN_SIZES: readonly { bytes: number; label: string }[] = [
@@ -147,7 +148,7 @@ export function Duplicates(props: { root: string }) {
                       <For each={g.files}>
                         {([path, modified]) => (
                           <label class="dupe-file" onDblClick={() => reveal(path)} title="Double-click to show it in its folder">
-                            <input type="checkbox" checked={picked().has(path)} onChange={() => toggle(path)} />
+                            <Checkbox checked={picked().has(path)} onChange={() => toggle(path)} />
                             <span class="bin-names">
                               <span class="bin-name">{baseName(path)}</span>
                               <span class="muted small bin-from">{parentPath(path)}</span>
