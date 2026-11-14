@@ -266,7 +266,7 @@ pub async fn explorer_mode_status() -> Result<ExplorerModeDto, String> {
 
 /// Turns "Use Octopolis instead of File Explorer" on or off (per-user, reversible).
 #[tauri::command]
-pub async fn explorer_mode_set(on: bool) -> Result<ExplorerModeDto, String> {
+pub async fn explorer_mode_set(app: tauri::AppHandle, on: bool) -> Result<ExplorerModeDto, String> {
     crate::off_main(move || {
         if on {
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -274,6 +274,8 @@ pub async fn explorer_mode_set(on: bool) -> Result<ExplorerModeDto, String> {
         } else {
             octo_core::explorer_mode::disable().map_err(|e| e.to_string())?;
         }
+        // "Show in folder" follows the same switch.
+        crate::shellwin_cmd::apply(&app);
         Ok(explorer_mode_dto())
     })
     .await

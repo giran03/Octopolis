@@ -83,7 +83,10 @@ function ExplorerModeSection() {
             This changes settings for your Windows account only, and needs no administrator rights. Turn it off here at any time, or uninstall Octopolis, to give folders back to File Explorer. If Octopolis can't open,
             run <code>Octopolis.exe --restore-explorer</code>.
           </p>
-          <p class="muted small">Open and Save dialogs in other apps stay the Windows ones, and Control Panel, Network and similar places still open in File Explorer.</p>
+          <p class="muted small">
+            Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer. Open and Save dialogs in other apps stay the Windows ones, and Control
+            Panel, Network and similar places still open in File Explorer.
+          </p>
           <div class="dialog-actions">
             <button class="btn" onClick={() => setConfirming(false)}>Cancel</button>
             <button class="btn primary" onClick={() => void apply(true)}>Turn on</button>

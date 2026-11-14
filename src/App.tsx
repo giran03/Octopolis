@@ -12,6 +12,7 @@ import { isGoogleFont, loadGoogleFont } from "./lib/fonts";
 import { sidebarWidthForRowPx } from "./lib/sidebar";
 import { detectEditors, errorText, explorerFailsafeTripped, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
 import { classifyTarget } from "./lib/launch";
+import { startShellWindows } from "./state/shellWindows";
 import { samePath } from "./lib/paths";
 import { parsePreset } from "./lib/session";
 import { currentIconColors, renderAppIcon } from "./lib/appIcon";
@@ -235,6 +236,7 @@ export function App() {
       workspace.init(startFolder);
     } else startFolder = home || "C:\\";
     await openLaunchTargets(await startupPaths().catch(() => []));
+    startShellWindows();
     if (await explorerFailsafeTripped().catch(() => false)) {
       ui.toast("Octopolis didn't start properly twice, so folders open in File Explorer again. Turn it back on in Settings > General", undefined, 15000);
     }

@@ -28,6 +28,7 @@ pub mod preview;
 pub mod props;
 pub mod search;
 pub mod shell;
+pub mod shell_windows;
 pub mod size_index;
 pub mod sizes;
 pub mod tags;

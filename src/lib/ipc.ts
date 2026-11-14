@@ -488,6 +488,16 @@ export const explorerModeSet = (on: boolean) => invoke<ExplorerMode>("explorer_m
 export const explorerMenuSet = (on: boolean) => invoke<ExplorerMode>("explorer_menu_set", { on });
 /** True once after Octopolis failed to start twice and gave folders back to File Explorer. */
 export const explorerFailsafeTripped = () => invoke<boolean>("explorer_failsafe_tripped");
+/** Files another app asked to be shown ("Show in folder"), all in one folder a tab is showing. */
+export interface ShowItems {
+  readonly folder: string;
+  /** Full paths. */
+  readonly items: readonly string[];
+}
+/** Event sent when another app asks for files to be shown in a folder that is open here. */
+export const SHOW_ITEMS_EVENT = "octopolis://show-items";
+/** Tells Windows which folders the tabs are showing, so "Show in folder" in other apps can land here. */
+export const shellWindowsSync = (paths: readonly string[]) => invoke<void>("shell_windows_sync", { paths });
 /** Event sent when another launch asks this window to open paths. */
 export const OPEN_PATHS_EVENT = "octopolis://open-paths";
 

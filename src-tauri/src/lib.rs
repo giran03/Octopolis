@@ -8,6 +8,7 @@ mod launch;
 mod listing;
 mod ops_cmd;
 mod search_cmd;
+mod shellwin_cmd;
 mod system;
 mod term_cmd;
 mod tools_cmd;
@@ -49,6 +50,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(launch::on_second_instance))
         .plugin(tauri_plugin_notification::init())
         .manage(launch::LaunchState::default())
+        .manage(shellwin_cmd::ShellWinState::default())
         .manage(tools_cmd::ScanState::default())
         .manage(tools_cmd::TagsState::default())
         .manage(ops_cmd::OpsState::default())
@@ -188,6 +190,7 @@ pub fn run() {
             system::explorer_mode_set,
             system::explorer_menu_set,
             failsafe::explorer_failsafe_tripped,
+            shellwin_cmd::shell_windows_sync,
             system::clipboard_write_files,
             system::clipboard_read_files,
             system::clipboard_clear,

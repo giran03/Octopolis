@@ -45,6 +45,7 @@ zip = { version = "9.5.1", default-features = false, features = ["deflate", "def
 
 [target.'cfg(windows)'.dependencies]
 junction = "2"
+windows-core = "0.62.2"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
@@ -63,6 +64,8 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_Power",
+    "Win32_System_Variant",
+    "Win32_UI_Controls",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",

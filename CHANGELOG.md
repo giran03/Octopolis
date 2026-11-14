@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Show in folder lands in Octopolis**: With **Use Octopolis instead of File Explorer** on, **Show in folder** / **Reveal in Explorer** in browsers, editors and chat apps selects the file in Octopolis when a tab already has that folder open, instead of opening File Explorer.
 - **Start-up failsafe for the default file manager**: If **Use Octopolis instead of File Explorer** is on and Octopolis fails to start twice in a row, folders are handed back to File Explorer automatically and the folder you were opening opens there.
 
 ### Changed
