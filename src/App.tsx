@@ -10,7 +10,7 @@ import { TooltipLayer } from "./components/Tooltip";
 import { trackDrags } from "./state/drag";
 import { isGoogleFont, loadGoogleFont } from "./lib/fonts";
 import { sidebarWidthForRowPx } from "./lib/sidebar";
-import { detectEditors, errorText, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
+import { detectEditors, errorText, explorerFailsafeTripped, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
 import { classifyTarget } from "./lib/launch";
 import { samePath } from "./lib/paths";
 import { parsePreset } from "./lib/session";
@@ -235,6 +235,9 @@ export function App() {
       workspace.init(startFolder);
     } else startFolder = home || "C:\\";
     await openLaunchTargets(await startupPaths().catch(() => []));
+    if (await explorerFailsafeTripped().catch(() => false)) {
+      ui.toast("Octopolis didn't start properly twice, so folders open in File Explorer again. Turn it back on in Settings > General", undefined, 15000);
+    }
     updater.start();
     rules.startScheduler();
   });

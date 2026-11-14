@@ -2,6 +2,7 @@
 
 mod diag;
 mod dormant;
+mod failsafe;
 mod icon_cmd;
 mod launch;
 mod listing;
@@ -38,6 +39,7 @@ pub fn run() {
         let code = i32::from(octo_core::explorer_mode::disable().is_err() || menu.is_err());
         std::process::exit(code);
     }
+    failsafe::check();
     diag::mark_start();
     octo_core::shell::suppress_drive_error_dialogs();
     // Grammar setup takes a moment; do it now so the first preview is instant.
@@ -185,6 +187,7 @@ pub fn run() {
             system::explorer_mode_status,
             system::explorer_mode_set,
             system::explorer_menu_set,
+            failsafe::explorer_failsafe_tripped,
             system::clipboard_write_files,
             system::clipboard_read_files,
             system::clipboard_clear,
