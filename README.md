@@ -14,7 +14,7 @@
 
 <br />
 
-[**Download**](https://github.com/giran03/Octopolis/releases/latest) &nbsp;·&nbsp; [**Feature Tour**](https://giran03.github.io/Octopolis/) &nbsp;·&nbsp; [**Shortcuts**](#-keyboard-shortcuts) &nbsp;·&nbsp; [**Changelog**](CHANGELOG.md)
+[**Download**](https://github.com/giran03/Octopolis/releases/latest) &nbsp;·&nbsp; [**Feature Tour**](https://octopolis.cafetako.com/) &nbsp;·&nbsp; [**Shortcuts**](#-keyboard-shortcuts) &nbsp;·&nbsp; [**Changelog**](CHANGELOG.md)
 
 <br />
 
