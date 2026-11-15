@@ -19,6 +19,7 @@ const PropertiesDialog = lazy(() => import("./PropertiesDialog").then((m) => ({ 
 const RecycleBin = lazy(() => import("./RecycleBin").then((m) => ({ default: m.RecycleBin })));
 const SystemCleanup = lazy(() => import("./SystemCleanup").then((m) => ({ default: m.SystemCleanup })));
 const OpsHistory = lazy(() => import("./OpsHistory").then((m) => ({ default: m.OpsHistory })));
+const WhatsNew = lazy(() => import("./WhatsNew").then((m) => ({ default: m.WhatsNew })));
 const Welcome = lazy(() => import("./Welcome").then((m) => ({ default: m.Welcome })));
 const Rules = lazy(() => import("./Rules").then((m) => ({ default: m.Rules })));
 const ThemeEditor = lazy(() => import("./ThemeEditor").then((m) => ({ default: m.ThemeEditor })));
@@ -91,6 +92,9 @@ export function Overlays() {
       </Show>
       <Show when={ui.settingsOpen()}>
         <SettingsModal />
+      </Show>
+      <Show when={ui.whatsNewText()} keyed>
+        {(text) => <WhatsNew text={text} />}
       </Show>
       <Show when={ui.prompt()} keyed>
         {(p) => <PromptDialog title={p.title} label={p.label} initial={p.initial} submitLabel={p.submitLabel} onSubmit={p.onSubmit} />}

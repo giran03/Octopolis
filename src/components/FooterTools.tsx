@@ -8,6 +8,7 @@ import { shelf } from "../state/shelf";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
 import { Glyph, IconBolt, IconDiskSpace, IconMop, IconTrash, MaterialIcon } from "./Icons";
+import { keybindings } from "../state/keybindings";
 
 export function FooterTools(props: { size: number }) {
   const [binDrag, setBinDrag] = createSignal(false);
@@ -177,7 +178,7 @@ export function FooterTools(props: { size: number }) {
       >
         <MaterialIcon name="rule" size={props.size} />
       </button>
-      <button class="icon-btn foot-btn" aria-label="Settings" data-tooltip="Settings · Ctrl+," onClick={() => ui.openSettings()}>
+      <button class="icon-btn foot-btn" aria-label="Settings" data-tooltip={`Settings${keybindings.keyOf("app.settings") ? ` · ${keybindings.keyOf("app.settings")}` : ""}`} onClick={() => ui.openSettings()}>
         <Glyph code="E713" size={props.size} />
       </button>
     </>

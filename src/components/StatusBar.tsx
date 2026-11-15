@@ -12,6 +12,7 @@ import { workspace } from "../state/workspace";
 import { FooterTools } from "./FooterTools";
 import { StatusHints } from "./StatusHints";
 import { IconBranch, IconEye, IconGitCommit, IconGitIgnore, IconSidebar, IconSidebarClose, IconSplitCol, IconSplitRow, MaterialIcon } from "./Icons";
+import { keybindings } from "../state/keybindings";
 
 export function StatusBar() {
   const tab = () => workspace.activeTab();
@@ -52,7 +53,7 @@ export function StatusBar() {
                 </button>
                 <button
                   class="status-chip"
-                  data-tooltip="Invert selection (Ctrl+Shift+I)"
+                  data-tooltip={`Invert selection${keybindings.keyParen("file.invertSelection")}`}
                   onClick={() => invertSelected(t())}
                 >
                   Invert
@@ -82,7 +83,7 @@ export function StatusBar() {
             <Show when={ops.clip()}>
               {(c) => (
                 <span class="muted">
-                  {c().paths.length.toLocaleString()} {c().mode === "cut" ? "cut" : "copied"} — Ctrl+V to paste
+                  {c().paths.length.toLocaleString()} {c().mode === "cut" ? "cut" : "copied"} — {keybindings.keyOf("file.paste") || "Paste"} to paste
                 </span>
               )}
             </Show>
@@ -117,7 +118,7 @@ export function StatusBar() {
         </button>
         <span class="status-sep" aria-hidden="true" />
       </Show>
-      <button class="icon-btn" classList={{ on: settings.showHidden() }} data-tooltip="Show hidden items (Ctrl+H)" onClick={settings.toggleHidden}>
+      <button class="icon-btn" classList={{ on: settings.showHidden() }} data-tooltip={`Show hidden items${keybindings.keyParen("view.hidden")}`} onClick={settings.toggleHidden}>
         <IconEye size={14} />
       </button>
       <button
@@ -125,17 +126,17 @@ export function StatusBar() {
         classList={{ on: settings.sidebarOpen() }}
         aria-label={settings.sidebarOpen() ? "Collapse sidebar" : "Expand sidebar"}
         aria-pressed={settings.sidebarOpen()}
-        data-tooltip={settings.sidebarOpen() ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"}
+        data-tooltip={`${settings.sidebarOpen() ? "Collapse" : "Expand"} sidebar${keybindings.keyParen("view.sidebar")}`}
         onClick={settings.toggleSidebar}
       >
         <Show when={settings.sidebarOpen()} fallback={<IconSidebar size={14} />}>
           <IconSidebarClose size={14} />
         </Show>
       </button>
-      <button class="icon-btn" data-tooltip="Split right (Ctrl+\)" onClick={() => workspace.split("row")}>
+      <button class="icon-btn" data-tooltip={`Split right${keybindings.keyParen("pane.splitRight")}`} onClick={() => workspace.split("row")}>
         <IconSplitRow size={14} />
       </button>
-      <button class="icon-btn" data-tooltip="Split down (Ctrl+Shift+\)" onClick={() => workspace.split("column")}>
+      <button class="icon-btn" data-tooltip={`Split down${keybindings.keyParen("pane.splitDown")}`} onClick={() => workspace.split("column")}>
         <IconSplitCol size={14} />
       </button>
       <Show when={workspace.paneCount() > 1}>

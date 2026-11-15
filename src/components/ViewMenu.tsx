@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { ViewMode } from "../lib/folderViews";
 import { ICON_PRESETS, viewAt, viewLabel, ZOOM_MAX, zoomOf } from "../lib/viewZoom";
+import { keybindings } from "../state/keybindings";
 import { settings } from "../state/settings";
 import type { TabModel } from "../state/tab";
 import { MaterialIcon } from "./Icons";
@@ -14,19 +15,20 @@ interface Entry {
   readonly mode: ViewMode;
   /** Icon size, for the icon entries. */
   readonly size?: number;
-  readonly keys: string;
+  /** Command whose current shortcut is shown beside the entry. */
+  readonly cmd: string;
 }
 
 const ICONS_FOR_PRESET = ["crop_landscape", "crop_square", "grid_view", "apps"] as const;
 
 export const VIEW_ENTRIES: readonly Entry[] = [
-  ...ICON_PRESETS.map((p, i) => ({ id: `icons-${p.size}`, label: p.label, icon: ICONS_FOR_PRESET[i], mode: "grid" as const, size: p.size, keys: `Ctrl+Shift+${i + 1}` })),
-  { id: "list", label: "List", icon: "view_list", mode: "list", keys: "Ctrl+Shift+5" },
-  { id: "details", label: "Details", icon: "table_rows", mode: "details", keys: "Ctrl+Shift+6" },
-  { id: "tiles", label: "Tiles", icon: "view_module", mode: "tiles", keys: "Ctrl+Shift+7" },
-  { id: "content", label: "Content", icon: "view_agenda", mode: "content", keys: "Ctrl+Shift+8" },
-  { id: "bento", label: "Bento", icon: "dashboard", mode: "bento", keys: "Ctrl+Shift+9" },
-  { id: "columns", label: "Columns", icon: "view_column", mode: "columns", keys: "Ctrl+3" },
+  ...ICON_PRESETS.map((p, i) => ({ id: `icons-${p.size}`, label: p.label, icon: ICONS_FOR_PRESET[i], mode: "grid" as const, size: p.size, cmd: ["view.xl", "view.large", "view.medium", "view.small"][i] })),
+  { id: "list", label: "List", icon: "view_list", mode: "list", cmd: "view.list" },
+  { id: "details", label: "Details", icon: "table_rows", mode: "details", cmd: "view.detailsAlt" },
+  { id: "tiles", label: "Tiles", icon: "view_module", mode: "tiles", cmd: "view.tiles" },
+  { id: "content", label: "Content", icon: "view_agenda", mode: "content", cmd: "view.content" },
+  { id: "bento", label: "Bento", icon: "dashboard", mode: "bento", cmd: "view.bento" },
+  { id: "columns", label: "Columns", icon: "view_column", mode: "columns", cmd: "view.columns" },
 ];
 
 /** The entry that matches how the tab is showing its folder now. */
@@ -114,7 +116,7 @@ export function ViewMenu(props: { tab: TabModel }) {
               <span class="view-dot" aria-hidden="true">{autoActive() ? "•" : ""}</span>
               <MaterialIcon name="auto_awesome" size={18} />
               <span class="view-label">Auto</span>
-              <span class="view-keys muted small">Ctrl+Shift+0</span>
+              <span class="view-keys muted small">{keybindings.keyOf("view.auto")}</span>
             </button>
             <Show when={autoActive() && props.tab.autoNote()}>{(n) => <div class="view-note muted small">{n()}</div>}</Show>
             <div class="view-sep" />
@@ -124,7 +126,7 @@ export function ViewMenu(props: { tab: TabModel }) {
                   <span class="view-dot" aria-hidden="true">{currentEntry(props.tab).id === e.id ? "•" : ""}</span>
                   <MaterialIcon name={e.icon} size={18} />
                   <span class="view-label">{e.label}</span>
-                  <span class="view-keys muted small">{e.keys}</span>
+                  <span class="view-keys muted small">{keybindings.keyOf(e.cmd)}</span>
                 </button>
               )}
             </For>

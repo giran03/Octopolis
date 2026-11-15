@@ -3,7 +3,7 @@ import { batch, createRoot, createSignal, type Accessor } from "solid-js";
 import { edgeSplit, leaf, leaves, removePane, resizeSplit, splitPane, type Direction, type Edge, type LayoutNode } from "../lib/layout";
 import type { Preset, PresetPane } from "../lib/session";
 import { isDir, indexOfName } from "../lib/listing";
-import { baseName, parentPath, samePath } from "../lib/paths";
+import { ALL_DRIVES_PATH, baseName, isDrivesPath, parentPath, samePath } from "../lib/paths";
 import { createTab, setNavigationListener, type TabModel } from "./tab";
 
 export interface PaneModel {
@@ -110,7 +110,19 @@ export const workspace = createRoot(() => {
   function closeTab(paneId: string, tabId: string) {
     const p = state(paneId);
     if (!p) return;
-    if (p.tabs.length === 1) return closePane(paneId);
+    if (p.tabs.length === 1) {
+      if (leaves(layout()).length > 1) return closePane(paneId);
+      // Last tab of the last pane: swap it for the All drives overview instead of leaving no tab.
+      const last = p.tabs[0];
+      if (isDrivesPath(last.path())) return;
+      closedPaths.push(last.path());
+      if (closedPaths.length > MAX_CLOSED) closedPaths.shift();
+      const drives = createTab(ALL_DRIVES_PATH);
+      updatePane(paneId, () => ({ tabs: [drives], activeTabId: drives.id }));
+      drives.navigate(ALL_DRIVES_PATH);
+      last.close();
+      return;
+    }
     const at = p.tabs.findIndex((t) => t.id === tabId);
     const tab = p.tabs[at];
     if (tab) closedPaths.push(tab.path());

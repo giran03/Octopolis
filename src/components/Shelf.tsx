@@ -7,6 +7,7 @@ import { carriesPaths, dragRaw, onDragReset } from "../state/drag";
 import { shelf } from "../state/shelf";
 import { workspace } from "../state/workspace";
 import { Glyph, TypeIcon } from "./Icons";
+import { keybindings } from "../state/keybindings";
 
 
 /** Names without an extension are almost always folders; good enough for an icon. */
@@ -77,7 +78,7 @@ export function Shelf() {
         shelf.add(JSON.parse(raw) as string[]);
       }}
     >
-      <button class="shelf-head" aria-label="Hide shelf" data-tooltip="Hide shelf · Ctrl+Shift+D adds the selection" disabled={shelf.dragging()} onClick={() => shelf.setOpen(false)}>
+      <button class="shelf-head" aria-label="Hide shelf" data-tooltip={`Hide shelf${keybindings.keyOf("shelf.add") ? ` · ${keybindings.keyOf("shelf.add")} adds the selection` : ""}`} disabled={shelf.dragging()} onClick={() => shelf.setOpen(false)}>
         <Glyph code="E7B8" size={15} />
         <span class="shelf-title">Shelf</span>
         <span class="shelf-count" classList={{ empty: count() === 0 }}>{count()}</span>

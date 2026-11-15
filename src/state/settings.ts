@@ -80,6 +80,8 @@ interface Settings {
   googleFonts: boolean;
   /** The first-run welcome has been shown. */
   welcomeSeen: boolean;
+  /** Last app version whose changelog was shown (or skipped on first install); "" if none yet. */
+  lastSeenVersion: string;
   /** Solid icons instead of outlines. */
   iconFill: boolean;
   /** Shape family of the button icons. */
@@ -119,7 +121,7 @@ export type TerminalShell = "powershell" | "pwsh" | "cmd";
 export type MotionPref = "system" | "reduce" | "full";
 export type UpdateMode = "off" | "notify" | "auto";
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, tooltipDelayMs: 700, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "auto", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", dialogAssist: false, dialogAssistExclude: "", catchExplorer: false, fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true, bentoHideNames: true, bentoShowTags: true, windowCorners: "system", windowControls: "macos", windowControlsSide: "right" };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, tooltipDelayMs: 700, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "auto", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", dialogAssist: false, dialogAssistExclude: "", catchExplorer: false, fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, lastSeenVersion: "", iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true, bentoHideNames: true, bentoShowTags: true, windowCorners: "system", windowControls: "macos", windowControlsSide: "right" };
 
 export const SETTING_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
@@ -220,6 +222,7 @@ export const settings = createRoot(() => {
     uiFont: () => value().uiFont,
     googleFonts: () => value().googleFonts,
     welcomeSeen: () => value().welcomeSeen,
+    lastSeenVersion: () => value().lastSeenVersion,
     iconWeight: () => Math.min(ICON_WEIGHT_MAX, Math.max(ICON_WEIGHT_MIN, value().iconWeight)),
     iconFill: () => value().iconFill,
     iconStyle: (): IconStyle => (["outlined", "rounded", "sharp"].includes(value().iconStyle) ? value().iconStyle : "outlined"),

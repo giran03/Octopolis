@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.2] - 2026-11-15
 
 ### Added
 
@@ -8,9 +8,14 @@
 - **Catch File Explorer windows other apps open**: New opt-in setting, shown while **Use Octopolis instead of File Explorer** is on. New File Explorer folder windows opened by other apps (including **Show in folder** for a folder that isn't open in a tab) are closed and opened in Octopolis with the same file selected. Control Panel, This PC and windows you already had open are left alone.
 - **Help in Open and Save dialogs**: New opt-in setting under **Settings > General > File Explorer**. While another app's Open or Save dialog is in front, `Ctrl+G` sends it to the folder Octopolis is showing and `Ctrl+Shift+G` brings Octopolis forward to pick the file there (**Use selected file**, **Use this folder**). Save dialogs keep their file name, and an exclusion list leaves chosen programs alone.
 - **Start-up failsafe for the default file manager**: If **Use Octopolis instead of File Explorer** is on and Octopolis fails to start twice in a row, folders are handed back to File Explorer automatically and the folder you were opening opens there.
+- **Folder icons from your own pictures**: Pick a picture, GIF or short video as a folder's icon from the icon picker. Static images are scaled down; animated GIFs, WebP and short videos keep playing.
+- **What's new after an update**: Octopolis shows the notes for the version you just installed the first time you open it, and **Settings > Updates > View changelogs** opens them any time.
+- **Last tab opens All drives**: Closing the last tab no longer does nothing; it is replaced by the **All drives** overview. The **+** button in the tab bar also opens **All drives**.
 
 ### Changed
 
+- **Shortcut hints follow your shortcuts**: Tooltips, menus and Settings hints that mention a shortcut now show the key you actually assigned, and drop it when the command has none.
+- **Changelog text can't be selected**: The changelog in **Settings > Updates** and the What's new window no longer start a text selection, and the What's new window scrolls by dragging.
 - **Summon shortcut without a keyboard hook**: `Ctrl+E` on the desktop and the anywhere shortcut are now registered Windows hotkeys, so Octopolis no longer watches the keyboard to catch them.
 - **Summon anywhere is now `Ctrl+Shift+Alt+E`**: `Ctrl+Alt+E` also caught `AltGr+E`, which types € on many keyboard layouts. If you used it, your setting moves to the new shortcut.
 

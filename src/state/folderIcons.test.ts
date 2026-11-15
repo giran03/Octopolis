@@ -81,4 +81,41 @@ describe("menu hints", () => {
     folderIcons.set("C:\H", null);
     expect(folderIcons.describe("C:\H")).toBeUndefined();
   });
+  it("keeps uploaded pictures and applies them to folders", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    const added = folderIcons.addImage(png)!;
+    expect(added.value).toMatch(/^img:[0-9a-f]{16}$/);
+    expect(folderIcons.addImage(png)!.value).toBe(added.value);
+    expect(folderIcons.images()).toHaveLength(1);
+    folderIcons.set("C:\P", added.value);
+    expect(folderIcons.get("C:\P")).toBe(added.value);
+    expect(folderIcons.imageUrl(added.value)).toBe(png);
+    expect(folderIcons.describe("C:\P")).toBe("Custom image");
+    folderIcons.removeImage(added.value);
+    expect(folderIcons.has("C:\P")).toBe(false);
+    expect(folderIcons.images()).toHaveLength(0);
+  });
+
+  it("keeps animated images and short video data URLs", () => {
+    const gif = "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+    const webp = "data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=";
+    const webm = "data:video/webm;base64,GkXfo0AgQoaBAUL3gQFC8oEEQvOBCEKCQAR3ZWJtQoeBAkKFgQIYU4BnQI0VSalmQCgq17FAAw9C";
+    const g = folderIcons.addImage(gif)!;
+    const w = folderIcons.addImage(webp)!;
+    const v = folderIcons.addImage(webm)!;
+    expect(g).not.toBeNull();
+    expect(w).not.toBeNull();
+    expect(v).not.toBeNull();
+    folderIcons.set("C:\\Anim", g.value);
+    folderIcons.set("C:\\Vid", v.value);
+    expect(folderIcons.imageUrl(g.value)).toBe(gif);
+    expect(folderIcons.describe("C:\\Anim")).toBe("Custom image");
+    expect(folderIcons.describe("C:\\Vid")).toBe("Custom video");
+  });
+
+  it("rejects unknown images and unsafe data URLs", () => {
+    folderIcons.set("C:\Q", "img:0123456789abcdef");
+    expect(folderIcons.has("C:\Q")).toBe(false);
+    expect(folderIcons.addImage("data:text/html;base64,PHNjcmlwdD4=")).toBeNull();
+  });
 });

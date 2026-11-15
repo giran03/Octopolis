@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
-import { IconUp } from "./Icons";
+import { FolderEmoji, IconClose, IconPlus, IconUp, MaterialIcon } from "./Icons";
+import { fileToIconDataUrl, isImageFile } from "../lib/iconImage";
 import { createSupportCheck, loadEmojiFonts } from "../lib/emojiSupport";
 import { baseName } from "../lib/paths";
 import { iconFor } from "../state/icons";
@@ -29,6 +30,8 @@ const SEARCH_LIMIT = 240;
 const RECENT = -1;
 /** The Windows folder icons (Documents, Downloads, 3D Objects...) the PC has. */
 const SYSTEM = -2;
+/** Pictures the user uploaded. */
+const UPLOADS = -3;
 
 /** Hair styles and skin tones: building blocks, not useful as icons on their own. */
 const HIDDEN_GROUPS = new Set<string>(["Component"]);
@@ -106,10 +109,10 @@ export function EmojiPicker(props: { path: string }) {
   const [data] = createResource(getEmoji);
   const [query, setQuery] = createSignal("");
   const hasRecent = () => folderIcons.recent().length > 0;
+  const current = () => folderIcons.get(props.path);
   const styles = () => folderIcons.styles();
   // Opens on the Windows icons when the folder wears one, else on the recent emoji, else on the first group.
-  const [group, setGroup] = createSignal<number>(folderIcons.systemValueOf(props.path) ? SYSTEM : hasRecent() ? RECENT : 0);
-  const current = () => folderIcons.get(props.path);
+  const [group, setGroup] = createSignal<number>(folderIcons.systemValueOf(props.path) ? SYSTEM : current()?.startsWith("img:") ? UPLOADS : hasRecent() ? RECENT : 0);
   const currentSystem = () => folderIcons.systemValueOf(props.path);
 
   onMount(() => search.focus());
@@ -135,7 +138,7 @@ export function EmojiPicker(props: { path: string }) {
       }
       return [...named, ...tagged].slice(0, SEARCH_LIMIT);
     }
-    if (group() === SYSTEM) return [];
+    if (group() === SYSTEM || group() === UPLOADS) return [];
     if (group() === RECENT) return folderIcons.recent().map((e) => [e, ""] as const);
     return (all[group()] ?? []).map(([e, l]) => [e, l] as const);
   });
@@ -147,6 +150,20 @@ export function EmojiPicker(props: { path: string }) {
   }, { defer: true }));
 
   const close = () => ui.setEmojiTarget(null);
+  let fileInput!: HTMLInputElement;
+  const [dragOver, setDragOver] = createSignal(false);
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const added = folderIcons.addImage(await fileToIconDataUrl(file));
+      if (!added) return void ui.toast("Couldn't keep that picture: the library is full or the picture is too detailed");
+      if (!added.saved) ui.toast("The picture can't be saved on this PC (storage is full), so it only lasts until you close Octopolis");
+      folderIcons.set(props.path, added.value);
+      close();
+    } catch (e) {
+      ui.toast(e instanceof Error ? e.message : "Couldn't use that picture");
+    }
+  };
   const choose = (emoji: string | null) => {
     folderIcons.set(props.path, emoji);
     close();
@@ -158,6 +175,22 @@ export function EmojiPicker(props: { path: string }) {
         class="dialog emoji-picker"
         role="dialog"
         aria-label="Choose a folder icon"
+        classList={{ "drop-target": dragOver() }}
+        onDragOver={(e) => {
+          if (e.dataTransfer?.types.includes("Files")) {
+            e.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={(e) => e.currentTarget.contains(e.relatedTarget as Node | null) || setDragOver(false)}
+        onDrop={(e) => {
+          setDragOver(false);
+          const f = [...(e.dataTransfer?.files ?? [])].find(isImageFile);
+          if (f) {
+            e.preventDefault();
+            void upload(f);
+          }
+        }}
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === "Escape") close();
@@ -200,6 +233,16 @@ export function EmojiPicker(props: { path: string }) {
               <SystemPicture path={styles()[0].path} label={styles()[0].label} size={22} />
             </button>
           </Show>
+          <button
+            class="emoji-tab"
+            classList={{ active: !query() && group() === UPLOADS }}
+            role="tab"
+            aria-selected={!query() && group() === UPLOADS}
+            data-tooltip="Your pictures"
+            onClick={() => (setQuery(""), setGroup(UPLOADS))}
+          >
+            <MaterialIcon name="upload_file" size={20} />
+          </button>
           <For each={EMOJI_GROUPS}>
             {(g, i) => (
               <Show when={!isHidden(i())}>
@@ -217,12 +260,33 @@ export function EmojiPicker(props: { path: string }) {
             )}
           </For>
         </div>
-        <div class="emoji-heading">{query() ? `Results for “${query().trim()}”` : group() === RECENT ? "Recent" : group() === SYSTEM ? "Windows folder icons" : EMOJI_GROUPS[group()].name}</div>
+        <div class="emoji-heading">{query() ? `Results for “${query().trim()}”` : group() === RECENT ? "Recent" : group() === SYSTEM ? "Windows folder icons" : group() === UPLOADS ? "Your pictures" : EMOJI_GROUPS[group()].name}</div>
         <div ref={grid} class="emoji-grid" role="listbox" aria-label="Emoji" onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 160)}>
           <Show when={group() === SYSTEM || query().trim() !== ""}>
             <WindowsIcons query={query()} current={currentSystem()} onPick={chooseSystem} />
           </Show>
-          <Show when={group() !== SYSTEM}>
+          <Show when={!query().trim() && group() === UPLOADS}>
+            <input ref={fileInput} type="file" accept="image/*,video/webm,video/mp4,video/ogg,.apng,.avif,.mov,.m4v" hidden onChange={(e) => { void upload(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
+            <button class="emoji-cell upload-cell" title="Upload an image, animated GIF/WebP/APNG, or short video (WebM, MP4) — or drop one here" aria-label="Upload a picture or animated icon" onClick={() => fileInput.click()}>
+              <IconPlus size={22} />
+            </button>
+            <For each={folderIcons.images()}>
+              {(img) => (
+                <div class="image-cell">
+                  <button class="emoji-cell" classList={{ chosen: img.value === current() }} role="option" aria-selected={img.value === current()} title="Use this picture" onClick={() => choose(img.value)}>
+                    <FolderEmoji emoji={img.value} size={28} />
+                  </button>
+                  <button class="image-remove" title="Delete this picture" aria-label="Delete this picture" onClick={() => folderIcons.removeImage(img.value)}>
+                    <IconClose size={10} />
+                  </button>
+                </div>
+              )}
+            </For>
+            <Show when={folderIcons.images().length === 0}>
+              <div class="emoji-empty">Upload an image, animated GIF/WebP/APNG, or short looping video (WebM, MP4), or drop one anywhere on this window.</div>
+            </Show>
+          </Show>
+          <Show when={group() !== SYSTEM && !(group() === UPLOADS && !query().trim())}>
             <Show when={!data.loading} fallback={<div class="emoji-empty">Loading…</div>}>
               <For each={results()} fallback={<Show when={!query().trim() || styles().length === 0}><div class="emoji-empty">No emoji match that</div></Show>}>
                 {([emoji, label]) => (

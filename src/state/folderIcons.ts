@@ -1,4 +1,4 @@
-// Custom folder icons: an emoji, or the Windows icon of a special folder (Documents, 3D Objects...), per folder,
+// Custom folder icons: an emoji, an uploaded picture, or the Windows icon of a special folder (Documents, 3D Objects...), per folder,
 // kept on this computer (local storage).
 import { createRoot, createSignal } from "solid-js";
 import { folderIconStyles, type KnownFolder } from "../lib/ipc";
@@ -7,7 +7,10 @@ import { loadJson, saveJson } from "./settings";
 const KEY = "octopolis.folderIcons.v1";
 const RECENT_KEY = "octopolis.folderIcons.recent.v1";
 const MAX_RECENT = 24;
+const IMAGES_KEY = "octopolis.folderIcons.images.v1";
 const MAX_ICONS = 5000;
+const MAX_IMAGES = 200;
+const MAX_IMAGE_CHARS = 2_000_000;
 
 /** Case-insensitive key for a folder path, without a trailing separator. */
 export const iconKey = (path: string) => path.replace(/[\\/]+$/, "").replace(/\//g, "\\").toLowerCase();
@@ -27,12 +30,49 @@ export const systemValue = (id: string) => `sys:${id}`;
 export const appValue = (id: string) => `app:${id}`;
 export const resourceValue = (dll: string, index: number) => `res:${dll}:${index}`;
 
+/** An uploaded picture is stored as "img:<id>"; the picture itself lives in a separate library. */
+export const isImageValue = (value: string) => /^img:[0-9a-f]{16}$/.test(value);
+const DATA_URL = /^data:(?:image\/(?:png|gif|webp|apng|avif|jpeg|svg\+xml|x-icon|bmp)|video\/(?:webm|mp4|quicktime|ogg));base64,[A-Za-z0-9+/=]+$/i;
+
+/** A short content hash, so uploading the same picture twice stores it once. */
+function imageId(data: string): string {
+  let a = 0xdeadbeef;
+  let b = 0x41c6ce57;
+  for (let i = 0; i < data.length; i++) {
+    const c = data.charCodeAt(i);
+    a = Math.imul(a ^ c, 2654435761);
+    b = Math.imul(b ^ c, 1597334677);
+  }
+  a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
+  b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
+  return (b >>> 0).toString(16).padStart(8, "0") + (a >>> 0).toString(16).padStart(8, "0");
+}
+
 export const folderIcons = createRoot(() => {
+  const cleanImages = (raw: unknown): Record<string, string> => {
+    const out: Record<string, string> = {};
+    if (typeof raw !== "object" || raw === null) return out;
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (isImageValue(k) && typeof v === "string" && v.length <= MAX_IMAGE_CHARS && DATA_URL.test(v)) out[k] = v;
+    }
+    return out;
+  };
+  const [images, setImages] = createSignal<Readonly<Record<string, string>>>(cleanImages(loadJson<unknown>(IMAGES_KEY, {})));
+  /** Stores the image library; false when storage is full or blocked (the pictures then last this session only). */
+  const saveImages = (next: Record<string, string>): boolean => {
+    setImages(next);
+    try {
+      localStorage.setItem(IMAGES_KEY, JSON.stringify(next));
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const clean = (raw: unknown): Record<string, string> => {
     const out: Record<string, string> = {};
     if (typeof raw !== "object" || raw === null) return out;
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === "string" && (isEmoji(v) || isSystemValue(v))) out[k] = v;
+      if (typeof v === "string" && (isEmoji(v) || isSystemValue(v) || (isImageValue(v) && v in images()))) out[k] = v;
     }
     return out;
   };
@@ -57,17 +97,44 @@ export const folderIcons = createRoot(() => {
   if (Object.values(icons()).some(isSystemValue)) loadStyles();
 
   return {
-    /** The emoji chosen for `path`, if any. Reactive. */
+    /** The emoji (or "img:<id>" uploaded picture, see `imageUrl`) chosen for `path`, if any. Reactive. */
     get: (path: string): string | undefined => {
       const v = icons()[iconKey(path)];
-      return v !== undefined && !isSystemValue(v) ? v : undefined;
+      return v !== undefined && !isSystemValue(v) && (!isImageValue(v) || v in images()) ? v : undefined;
     },
-    /** Whether `path` has any custom icon (an emoji or a borrowed Windows icon). */
+    /** The picture behind an "img:<id>" value, as a data URL. Reactive. */
+    imageUrl: (value: string): string | undefined => (isImageValue(value) ? images()[value] : undefined),
+    /** Every uploaded picture, newest first. Reactive. */
+    images: (): readonly { value: string; url: string }[] =>
+      Object.entries(images())
+        .map(([value, url]) => ({ value, url }))
+        .reverse(),
+    /** Adds a picture or short looping video data URL to the library and returns its value, or null when it can't be kept. */
+    addImage(dataUrl: string): { value: string; saved: boolean } | null {
+      if (!DATA_URL.test(dataUrl) || dataUrl.length > MAX_IMAGE_CHARS) return null;
+      const value = `img:${imageId(dataUrl)}`;
+      const cur = images();
+      if (value in cur) return { value, saved: true };
+      if (Object.keys(cur).length >= MAX_IMAGES) return null;
+      return { value, saved: saveImages({ ...cur, [value]: dataUrl }) };
+    },
+    /** Deletes an uploaded picture; folders that wore it go back to their normal icon. */
+    removeImage(value: string) {
+      if (!(value in images())) return;
+      const rest = { ...images() };
+      delete rest[value];
+      saveImages(rest);
+      const entries = Object.entries(icons());
+      const kept = entries.filter(([, v]) => v !== value);
+      if (kept.length !== entries.length) save(Object.fromEntries(kept));
+    },
+    /** Whether `path` has any custom icon (an emoji, an uploaded picture or a borrowed Windows icon). */
     has: (path: string) => iconKey(path) in icons(),
     /** A short note on the custom icon `path` has, for menus: the emoji itself, or what kind of Windows icon it wears. */
     describe: (path: string): string | undefined => {
       const v = icons()[iconKey(path)];
       if (v === undefined) return undefined;
+      if (isImageValue(v)) return images()[v]?.startsWith("data:video/") ? "Custom video" : "Custom image";
       if (!isSystemValue(v)) return v;
       return v.startsWith("app:") ? "App icon" : v.startsWith("res:") ? "Windows icon" : "Folder icon";
     },
@@ -106,11 +173,13 @@ export const folderIcons = createRoot(() => {
       if (emoji === null) {
         delete next[key];
       } else {
+        const image = isImageValue(emoji);
+        if (image && !(emoji in images())) return;
         const system = isSystemValue(emoji);
-        if (!system && !isEmoji(emoji)) return;
+        if (!image && !system && !isEmoji(emoji)) return;
         if (!(key in next) && Object.keys(next).length >= MAX_ICONS) return;
         next[key] = emoji;
-        if (!system) {
+        if (!system && !image) {
           const r = [emoji, ...recent().filter((e) => e !== emoji)].slice(0, MAX_RECENT);
           setRecent(r);
           saveJson(RECENT_KEY, r);

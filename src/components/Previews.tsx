@@ -4,6 +4,7 @@ import { editFiles } from "../actions";
 import { errorText, installFont } from "../lib/ipc";
 import { MAX_TABLE_ROWS, sortRows, toTable } from "../lib/table";
 import { ui } from "../state/ui";
+import { keybindings } from "../state/keybindings";
 
 /** "UTF-8 · Windows (CRLF) · 120 lines" and an Open in editor button. */
 export function TextDetails(props: { path: string; details: readonly [string, string][] }) {
@@ -14,7 +15,7 @@ export function TextDetails(props: { path: string; details: readonly [string, st
       <span class="muted">{summary()}</span>
       {/* Office documents show extracted text, so opening them as text in an editor makes no sense. */}
       <Show when={!get("Type")}>
-        <button class="link-btn" title="Open in editor (Ctrl+Shift+O)" onClick={() => void editFiles([props.path])}>
+        <button class="link-btn" title={`Open in editor${keybindings.keyParen("file.edit")}`} onClick={() => void editFiles([props.path])}>
           Open in editor
         </button>
       </Show>

@@ -1,9 +1,12 @@
-import { For, Show, type JSX } from "solid-js";
+import { Show } from "solid-js";
 import { VERSION } from "../../lib/app";
 import { describeStatus, type LatestRelease } from "../../lib/update";
+import { splitReleases } from "../../lib/whatsNew";
 import { type UpdateMode, settings } from "../../state/settings";
+import { ui } from "../../state/ui";
 import { updater } from "../../state/updater";
 import changelog from "../../../CHANGELOG.md?raw";
+import { ChangelogText } from "../Changelog";
 import { Glyph } from "../Icons";
 import { Section, Segmented, SettingRow, type Option } from "./controls";
 
@@ -27,6 +30,10 @@ export function UpdatesTab() {
     const s = updater.status();
     return "release" in s ? s.release : undefined;
   };
+  const latestChangelog = () =>
+    splitReleases(changelog).find((r) => r.version === VERSION)?.text ??
+    splitReleases(changelog)[0]?.text ??
+    changelog;
   return (
     <>
       <section class="sset">
@@ -67,56 +74,16 @@ export function UpdatesTab() {
       </Section>
 
       <section class="sset">
-        <h3 class="sset-title">What's new</h3>
+        <div class="sset-head">
+          <h3 class="sset-title">What's new</h3>
+          <button class="btn small" onClick={() => ui.setWhatsNewText(changelog)}>
+            View changelogs
+          </button>
+        </div>
         <div class="sset-card padded">
-          <ChangelogText text={changelog} />
+          <ChangelogText text={latestChangelog()} />
         </div>
       </section>
     </>
-  );
-}
-
-const INLINE_MD = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
-
-/** Renders inline Markdown (`**bold**`, `*italic*`, `` `code` ``, `[text](url)`) as safe JSX. */
-function renderInlineMarkdown(text: string): JSX.Element[] {
-  const parts: JSX.Element[] = [];
-  let last = 0;
-  for (const m of text.matchAll(INLINE_MD)) {
-    const idx = m.index ?? 0;
-    if (idx > last) parts.push(text.slice(last, idx));
-    const tok = m[0];
-    if (tok.startsWith("**") && tok.endsWith("**")) {
-      parts.push(<strong>{renderInlineMarkdown(tok.slice(2, -2))}</strong>);
-    } else if (tok.startsWith("*") && tok.endsWith("*")) {
-      parts.push(<em>{renderInlineMarkdown(tok.slice(1, -1))}</em>);
-    } else if (tok.startsWith("`") && tok.endsWith("`")) {
-      parts.push(<code>{tok.slice(1, -1)}</code>);
-    } else if (tok.startsWith("[")) {
-      const sep = tok.indexOf("](");
-      const label = tok.slice(1, sep);
-      const href = tok.slice(sep + 2, -1);
-      parts.push(<a href={href} target="_blank" rel="noreferrer">{label}</a>);
-    }
-    last = idx + tok.length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
-}
-
-/** Renders the changelog Markdown: version headings, group headings, bullets, and inline formatting. */
-function ChangelogText(props: { text: string }) {
-  const lines = () => props.text.split(/[\r\n]+/).filter((l) => l.trim() && !/^# /.test(l));
-  return (
-    <div class="changelog">
-      <For each={lines()}>
-        {(l) => {
-          if (l.startsWith("## ")) return <h4 class="cl-version">{renderInlineMarkdown(l.slice(3))}</h4>;
-          if (l.startsWith("### ")) return <h5 class="cl-group">{renderInlineMarkdown(l.slice(4))}</h5>;
-          if (/^[-*] /.test(l)) return <p class="cl-item">{renderInlineMarkdown(l.slice(2))}</p>;
-          return <p class="cl-text">{renderInlineMarkdown(l)}</p>;
-        }}
-      </For>
-    </div>
   );
 }

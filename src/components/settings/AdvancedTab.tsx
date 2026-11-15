@@ -11,6 +11,7 @@ import { clearSessionSizes, sessionSizeCount } from "../../state/tab";
 import { clearThumbCache, thumbCacheBytes, thumbCacheCount } from "../../state/thumbs";
 import { ui } from "../../state/ui";
 import { ActionButton, Section, SettingRow } from "./controls";
+import { keybindings } from "../../state/keybindings";
 
 const failed = (what: string) => (e: unknown) => ui.toast(`Couldn't ${what}: ${typeof e === "string" ? e : e instanceof Error ? e.message : "unknown error"}`);
 
@@ -287,10 +288,10 @@ export function AdvancedTab() {
         <SettingRow label="Free up space" hint="Find caches, Windows Update leftovers, browser caches and the Recycle Bin that are safe to delete. Nothing is removed until you confirm">
           <button class="btn" onClick={() => (ui.closeSettings(), ui.setSystemCleanupOpen(true))}>Open…</button>
         </SettingRow>
-        <SettingRow label="Recent folders" hint="Clears the Recent list and what Ctrl+P learned about the folders you visit">
+        <SettingRow label="Recent folders" hint={`Clears the Recent list and what ${keybindings.keyOf("palette.go") || "the folder palette"} learned about the folders you visit`}>
           <ActionButton label="Clear" confirm="Press again to clear" onClick={() => (history.clear(), ui.toast("Recent folders cleared"))} />
         </SettingRow>
-        <SettingRow label="Folder icons" hint={folderIcons.count() === 0 ? "No folders have a custom emoji icon. Right-click a folder and choose Change icon" : `${folderIcons.count()} folder${folderIcons.count() === 1 ? "" : "s"} with a custom emoji icon`}>
+        <SettingRow label="Folder icons" hint={folderIcons.count() === 0 ? "No folders have a custom icon. Right-click a folder and choose Change icon" : `${folderIcons.count()} folder${folderIcons.count() === 1 ? "" : "s"} with a custom icon`}>
           <ActionButton label="Reset all" confirm="Press again to reset" disabled={folderIcons.count() === 0} onClick={() => (folderIcons.clear(), ui.toast("Folder icons reset"))} />
         </SettingRow>
         <SettingRow label="Shelf" hint={shelf.items().length === 0 ? "The shelf is empty" : `${shelf.items().length} item${shelf.items().length === 1 ? "" : "s"} waiting on the shelf`}>

@@ -171,6 +171,17 @@
   letter-spacing: 0.03em;
 }
 
+.sset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.sset-head .sset-title {
+  margin: 0;
+}
+
 .sset-note {
   margin: -2px 0 10px;
   max-width: 62ch;
@@ -573,8 +584,10 @@
   font-weight: 600;
 }
 
-.changelog {
-  user-select: text;
+.changelog,
+.changelog * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .cl-version {

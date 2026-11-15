@@ -22,6 +22,7 @@ import { shelf } from "./state/shelf";
 import type { TabModel } from "./state/tab";
 import { ui } from "./state/ui";
 import { workspace } from "./state/workspace";
+import { keybindings } from "./state/keybindings";
 
 export const ARCHIVE_NAME = /\.(zip|jar|nupkg|vsix|apk|7z|tar|tgz|tbz2?|tar\.gz|tar\.bz2)$/i;
 
@@ -327,7 +328,7 @@ export function selectDifferences(tab: TabModel) {
 export function sendToOtherPane(tab: TabModel, kind: "copy" | "move") {
   if (kind === "move" && blockedInArchive(tab)) return;
   const there = otherPaneTab();
-  if (!there) return ui.toast("Open a second pane first (Ctrl+\)");
+  if (!there) return ui.toast(`Open a second pane first${keybindings.keyParen("pane.splitRight")}`);
   if (there.archive()) return ui.toast("Archives are read-only here.");
   const paths = targets(tab);
   if (paths.length === 0) return;
@@ -650,7 +651,7 @@ export function editTags(tab: TabModel) {
 /** Saves the tab's current search to the sidebar. */
 export function saveSearch(tab: TabModel) {
   const s = tab.search();
-  if (!s) return ui.toast("Search a folder first (Ctrl+Shift+F), then save the search");
+  if (!s) return ui.toast(`Search a folder first${keybindings.keyParen("search.tree")}, then save the search`);
   ui.askText({
     title: "Save this search",
     label: "Name",

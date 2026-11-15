@@ -5,7 +5,7 @@ import * as A from "../actions";
 import { errorText, listDir, resolvePath } from "../lib/ipc";
 import { fuzzyRank } from "../lib/fuzzy";
 import { createBuilder, decodeBatch, isDir, snapshot } from "../lib/listing";
-import { baseName, breadcrumbs, isDrivesPath, joinPath, parentPath, samePath, sameVolume } from "../lib/paths";
+import { ALL_DRIVES_PATH, baseName, breadcrumbs, isDrivesPath, joinPath, parentPath, samePath, sameVolume } from "../lib/paths";
 import { cancelSpring, carriesPaths, dragState, isDragging, onDragReset, springLoad, springTarget, tabDrag } from "../state/drag";
 import { history } from "../state/history";
 import type { TabModel } from "../state/tab";
@@ -20,6 +20,7 @@ import { SortMenu } from "./SortMenu";
 import { ViewMenu } from "./ViewMenu";
 import { Treemap } from "./Treemap";
 import { IconBack, MaterialIcon, IconChevron, IconClose, IconForward, IconLayers, IconPlus, IconRefresh, IconSearch, IconUp } from "./Icons";
+import { keybindings } from "../state/keybindings";
 
 const TAB_MIME = "application/x-octopolis-tab";
 const SUGGEST_DEBOUNCE_MS = 90;
@@ -227,7 +228,7 @@ function tabMenu(e: MouseEvent, paneId: string, tabId: string) {
     "separator",
     { label: "Close other tabs", run: () => workspace.closeOthers(paneId, tabId) },
     { label: "Close tabs to the right", disabled: !hasToRight, run: () => workspace.closeToRight(paneId, tabId) },
-    { label: "Close tab", shortcut: "Ctrl+W", run: () => workspace.closeTab(paneId, tabId) },
+    { label: "Close tab", shortcut: keybindings.keyOf("tab.close") || undefined, run: () => workspace.closeTab(paneId, tabId) },
   ]);
 }
 
@@ -351,7 +352,7 @@ function TabStrip(props: { pane: PaneModel }) {
       <Show when={slot() === props.pane.tabs().length}>
         <TabSkeleton label={skeletonLabel()} onOver={(e) => overFolders(e, props.pane.tabs().length)} onDrop={(e) => dropFolders(e, props.pane.tabs().length)} />
       </Show>
-      <button class="icon-btn tab-new" title="New tab (Ctrl+T)" onClick={() => workspace.newTab(props.pane.id)}>
+      <button class="icon-btn tab-new" title="New tab" onClick={() => workspace.newTab(props.pane.id, ALL_DRIVES_PATH)}>
         <IconPlus size={14} />
       </button>
     </div>
@@ -423,7 +424,7 @@ function SearchBox(props: { tab: TabModel; ref: (el: HTMLInputElement) => void }
     <div class="search" classList={{ deep: deep(), invalid: !!props.tab.search()?.error }}>
       <button
         class="scope-btn"
-        title={deep() ? "Searching subfolders — click to filter this folder only" : "Filtering this folder — click to search subfolders (Ctrl+Shift+F)"}
+        title={deep() ? "Searching subfolders — click to filter this folder only" : "Filtering this folder — click to search subfolders" + keybindings.keyParen("search.tree")}
         onClick={toggleScope}
       >
         {deep() ? <IconLayers size={14} /> : <IconSearch size={14} />}

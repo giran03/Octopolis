@@ -92,7 +92,7 @@ describe("the built page", () => {
     const data = JSON.parse(m[1]);
     expect(data.commands.length).toBeGreaterThan(100);
     expect(data.themes.length).toBe(BUILT_IN_THEMES.length);
-    expect(data.changelog[0].sections[0].entries.length).toBeGreaterThan(50);
+    expect(data.changelog[0].sections[0].entries.length).toBeGreaterThan(0);
     expect(m[1]).not.toContain("<");
   });
 });

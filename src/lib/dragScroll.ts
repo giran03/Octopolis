@@ -126,8 +126,10 @@ export function installDragScroll(root?: HTMLElement): () => void {
     if (!isDragStartAllowed(event)) return;
     const found = scrollableAncestor(event.target as Element, root);
     if (!found) return;
-    const modal = document.querySelector('[aria-modal="true"]');
-    if (modal && !modal.contains(found)) return;
+    if (!root) {
+      const modal = document.querySelector('[aria-modal="true"]');
+      if (modal && !modal.contains(found)) return;
+    }
     if (found.scrollHeight <= found.clientHeight + 1) return;
     container = found;
     pressed = true;

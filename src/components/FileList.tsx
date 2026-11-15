@@ -23,6 +23,7 @@ import { readDrop } from "../lib/webdrop";
 import { fileIconSpec } from "../lib/fileicons";
 import { FileGlyph, FileIcon, FolderEmoji, Glyph, MaterialIcon } from "./Icons";
 import { folderIcons } from "../state/folderIcons";
+import { keybindings } from "../state/keybindings";
 
 /** Row height in pixels, from the density setting. */
 const rowHeight = () => settings.rowPx();
@@ -651,7 +652,7 @@ export function ListState(props: { tab: TabModel }) {
                     <>
                       <MaterialIcon name="folder_open" size={44} class="empty-icon" />
                       <strong>This folder is empty</strong>
-                      <span class="muted small">Drop files here, or press Ctrl+Shift+N for a new folder</span>
+                      <span class="muted small">{keybindings.keyOf("file.newFolder") ? `Drop files here, or press ${keybindings.keyOf("file.newFolder")} for a new folder` : "Drop files here to add them"}</span>
                     </>
                   }
                 >
@@ -660,7 +661,7 @@ export function ListState(props: { tab: TabModel }) {
                   <span class="muted small">Clear the filter with Esc, or search in subfolders</span>
                   <span class="empty-actions">
                     <button class="btn" onClick={() => props.tab.setFilter("")}>Clear filter</button>
-                    <button class="btn" onClick={searchSubfolders}>Search in subfolders (Ctrl+Shift+F)</button>
+                    <button class="btn" onClick={searchSubfolders}>Search in subfolders{keybindings.keyParen("search.tree")}</button>
                   </span>
                 </Show>
               }
@@ -751,7 +752,7 @@ function fileOpenEntries(tab: TabModel): MenuEntry[] {
     ...(A.INSTALLABLE.test(name) ? [{ label: "Install", run: () => A.installSelected(tab) }] : []),
     ...(A.ADMIN_RUNNABLE.test(name) ? [{ label: "Run as administrator", run: () => A.runSelectedAsAdmin(tab) }] : []),
     { label: "Open with…", run: () => A.openWithDialog(tab) },
-    { label: "Open in editor", shortcut: "Ctrl+Shift+O", run: () => A.editSelection(tab) },
+    { label: "Open in editor", shortcut: keybindings.keyOf("file.edit") || undefined, run: () => A.editSelection(tab) },
   ];
 }
 
@@ -802,26 +803,26 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         ...folderToolEntries(tab),
         "separator",
         // Clipboard
-        { label: "Cut", shortcut: "Ctrl+X", run: () => A.copySelection(tab, "cut") },
-        { label: "Copy", shortcut: "Ctrl+C", run: () => A.copySelection(tab, "copy") },
-        { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => A.pasteInto(tab) },
+        { label: "Cut", shortcut: keybindings.keyOf("file.cut") || undefined, run: () => A.copySelection(tab, "cut") },
+        { label: "Copy", shortcut: keybindings.keyOf("file.copy") || undefined, run: () => A.copySelection(tab, "copy") },
+        { label: "Paste", shortcut: keybindings.keyOf("file.paste") || undefined, disabled: !hasClip, run: () => A.pasteInto(tab) },
         "separator",
         // Rename & paths
         { label: "Rename", shortcut: "F2", disabled: !single, run: () => A.startRename(tab) },
         { label: "Batch rename…", disabled: tab.selection().size < 2, run: () => A.openBatchRename(tab) },
-        { label: "Copy path", shortcut: "Ctrl+Shift+C", run: () => void A.copyPaths(tab) },
+        { label: "Copy path", shortcut: keybindings.keyOf("file.copyPath") || undefined, run: () => void A.copyPaths(tab) },
         { label: "Copy as…", run: () => A.openCopyAsMenu(tab, menuX, menuY) },
         "separator",
         // Transfer & archive
-        { label: "Add to shelf", shortcut: "Ctrl+Shift+D", run: () => A.addToShelf(tab) },
-        ...(A.otherPaneTab() ? [{ label: "Copy to the other pane", shortcut: "Ctrl+Shift+→", run: () => A.sendToOtherPane(tab, "copy") }, { label: "Move to the other pane", run: () => A.sendToOtherPane(tab, "move") }] : []),
+        { label: "Add to shelf", shortcut: keybindings.keyOf("shelf.add") || undefined, run: () => A.addToShelf(tab) },
+        ...(A.otherPaneTab() ? [{ label: "Copy to the other pane", shortcut: keybindings.keyOf("pane.copyToOther") || undefined, run: () => A.sendToOtherPane(tab, "copy") }, { label: "Move to the other pane", run: () => A.sendToOtherPane(tab, "move") }] : []),
         { label: "Copy to…", run: () => void A.transferToPicked(tab, "copy") },
         ...(tab.archive() ? [] : [{ label: "Move to…", run: () => void A.transferToPicked(tab, "move") }]),
         ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : [{ label: "Compress to…", run: () => A.openCompressMenu(tab, menuX, menuY) }]),
         "separator",
         // Organize & customize
         ...imageToolEntries(tab),
-        ...(tab.archive() ? [] : [{ label: "Tags…", shortcut: "Ctrl+Shift+G", run: () => A.editTags(tab) }]),
+        ...(tab.archive() ? [] : [{ label: "Tags…", shortcut: keybindings.keyOf("file.tags") || undefined, run: () => A.editTags(tab) }]),
         ...pinEntry(tab),
         ...folderIconEntries(tab),
         ...(tab.archive() ? [] : [{ label: "Actions…", run: () => A.openActionsMenu(tab, menuX, menuY) }]),
@@ -842,18 +843,18 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
       ]
     : [
         // Clipboard
-        { label: "Paste", shortcut: "Ctrl+V", disabled: !hasClip, run: () => A.pasteInto(tab) },
+        { label: "Paste", shortcut: keybindings.keyOf("file.paste") || undefined, disabled: !hasClip, run: () => A.pasteInto(tab) },
         { label: "Paste as link…", disabled: !(ops.clip()?.paths.length && !ops.clip()?.archive), run: () => A.openPasteAsLinkMenu(tab, menuX, menuY) },
         "separator",
         // Create
-        { label: "New folder", shortcut: "Ctrl+Shift+N", run: () => void A.newFolder(tab) },
-        { label: "New text file", shortcut: "Ctrl+Alt+N", run: () => void A.newFile(tab) },
+        { label: "New folder", shortcut: keybindings.keyOf("file.newFolder") || undefined, run: () => void A.newFolder(tab) },
+        { label: "New text file", shortcut: keybindings.keyOf("file.newFile") || undefined, run: () => void A.newFile(tab) },
         { label: "New file from template…", run: () => void A.openNewFileMenu(tab, menuX, menuY) },
         "separator",
         // View & compare
         { label: "Refresh", shortcut: "F5", run: () => void tab.refresh() },
         { label: tab.groupBy() === "none" ? "Group by…" : `Grouped by ${tab.groupBy()}…`, run: () => A.openGroupMenu(tab, menuX, menuY) },
-        { label: tab.sizesLive() ? "Hide folder sizes" : "Calculate folder sizes", shortcut: "Ctrl+Shift+S", run: () => (tab.sizesLive() ? tab.clearSizes() : tab.computeSizes()) },
+        { label: tab.sizesLive() ? "Hide folder sizes" : "Calculate folder sizes", shortcut: keybindings.keyOf("view.sizes") || undefined, run: () => (tab.sizesLive() ? tab.clearSizes() : tab.computeSizes()) },
         ...(A.otherPaneTab() ? [{ label: compare.active() ? "Stop comparing" : "Compare with the other pane", run: A.toggleCompare }, ...(compare.statusOf(tab) ? [{ label: "Select differences", run: () => A.selectDifferences(tab) }] : [])] : []),
         "separator",
         // Tools

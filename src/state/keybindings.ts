@@ -1,6 +1,6 @@
 // User overrides of command shortcuts, layered over the defaults.
 import { createMemo, createRoot, createSignal } from "solid-js";
-import { ChordMatcher } from "../lib/keymap";
+import { ChordMatcher, formatKeys } from "../lib/keymap";
 import { loadJson, saveJson, settings } from "./settings";
 
 const KEY = "octopolis.keys.v1";
@@ -42,6 +42,18 @@ export const keybindings = createRoot(() => {
     keysForId: (id: string): readonly string[] => {
       const cmd = commands().find((c) => c.id === id);
       return cmd ? keysFor(cmd) : [];
+    },
+    /** The command's current first shortcut for display ("Ctrl+B"), or "" when it has none. */
+    keyOf: (id: string): string => {
+      const cmd = commands().find((c) => c.id === id);
+      const first = cmd ? keysFor(cmd)[0] : undefined;
+      return first ? formatKeys(first) : "";
+    },
+    /** `keyOf` as a parenthesised suffix (" (Ctrl+B)"), or "". */
+    keyParen: (id: string): string => {
+      const cmd = commands().find((c) => c.id === id);
+      const first = cmd ? keysFor(cmd)[0] : undefined;
+      return first ? ` (${formatKeys(first)})` : "";
     },
     isCustom: (id: string) => id in overrides(),
     /** Matcher for keys typed while a text field has focus. */

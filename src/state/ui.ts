@@ -97,6 +97,8 @@ export const ui = createRoot(() => {
   const [systemCleanupOpen, setSystemCleanupOpen] = createSignal(false);
   const [opsHistoryOpen, setOpsHistoryOpen] = createSignal(false);
   const [welcomeOpen, setWelcomeOpen] = createSignal(false);
+  /** Changelog text of the "What's new" popup after an update; null when closed. */
+  const [whatsNewText, setWhatsNewText] = createSignal<string | null>(null);
   const [rulesOpen, setRulesOpen] = createSignal(false);
   /** The custom theme being made or edited: its name, "" for a new one; null when the editor is closed. */
   const [themeEditor, setThemeEditor] = createSignal<string | null>(null);
@@ -185,6 +187,8 @@ export const ui = createRoot(() => {
     systemCleanupOpen,
     opsHistoryOpen,
     welcomeOpen,
+    whatsNewText,
+    setWhatsNewText,
     rulesOpen,
     themeEditor,
     setThemeEditor,
@@ -221,7 +225,7 @@ export const ui = createRoot(() => {
     typeAhead,
     setTypeAhead,
     /** True while a modal surface owns the keyboard. */
-    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || rulesOpen() || themeEditor() !== null || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || columnsOpen() || cleanupRoot() || emojiTarget()),
+    modalOpen: () => !!(menu() || confirm() || palette() || lockPaths() || batchRenameOpen() || settingsTab() !== null || prompt() || conflictPrompt() || propertiesPaths() || recycleBinOpen() || systemCleanupOpen() || opsHistoryOpen() || welcomeOpen() || whatsNewText() !== null || rulesOpen() || themeEditor() !== null || imageToolsPaths() || diskSpaceRoot() || duplicatesRoot() || tagPaths() || taggedView() || actionsEditorOpen() || columnsOpen() || cleanupRoot() || emojiTarget()),
     focusRequest,
     requestFocus: (paneId: string, target: FocusRequest["target"]) => setFocusRequest({ paneId, target, nonce: focusNonce++ }),
   };

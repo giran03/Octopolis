@@ -21,6 +21,7 @@ import { IconClose, IconCopy, IconInfo, MaterialIcon } from "./Icons";
 import { FontView, TableView, TextDetails } from "./Previews";
 import { ImageViewer } from "./ImageViewer";
 import { Segmented, type Option } from "./settings/controls";
+import { keybindings } from "../state/keybindings";
 
 type VideoMode = "thumb" | "play";
 const VIDEO_MODES: readonly Option<VideoMode>[] = [
@@ -323,7 +324,7 @@ export function Inspector() {
             </div>
           )}
         </Show>
-        <button class="icon-btn" aria-label={quick() ? "Close quick look" : "Close inspector"} title={quick() ? "Close (Esc)" : "Close (Ctrl+I)"} onClick={close}>
+        <button class="icon-btn" aria-label={quick() ? "Close quick look" : "Close inspector"} title={quick() ? "Close (Esc)" : `Close${keybindings.keyParen("view.inspector")}`} onClick={close}>
           <IconClose size={13} />
         </button>
       </header>
@@ -563,7 +564,7 @@ function MultiInspector(props: { tab: TabModel }) {
     <aside class="inspector" aria-label="Inspector">
       <header class="inspector-head">
         <span class="inspector-title">{formatCount(summary().count, "item")} selected</span>
-        <button class="icon-btn" aria-label="Close inspector" title="Close (Ctrl+I)" onClick={settings.toggleInspector}>
+        <button class="icon-btn" aria-label="Close inspector" title={`Close${keybindings.keyParen("view.inspector")}`} onClick={settings.toggleInspector}>
           <IconClose size={13} />
         </button>
       </header>

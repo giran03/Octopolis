@@ -33,6 +33,7 @@ import { rules } from "../state/rules";
 import { ui } from "../state/ui";
 import { MaterialIcon } from "./Icons";
 import { Segmented, Toggle, type Option } from "./settings/controls";
+import { keybindings } from "../state/keybindings";
 
 type View = "list" | "edit" | "presets" | "preview";
 
@@ -168,7 +169,7 @@ export function Rules() {
       rules.recordRun(rule.id, matches.length);
       count += matches.length;
     }
-    ui.toast(`${run.length > 1 ? `${run.length} rules` : `"${run[0].rule.name || "Rule"}"`} ran on ${files(count)}. Undo with Ctrl+Z`);
+    ui.toast(`${run.length > 1 ? `${run.length} rules` : `"${run[0].rule.name || "Rule"}"`} ran on ${files(count)}. Undo with ${keybindings.keyOf("file.undo") || "Undo"}`);
   };
 
   const save = () => {
@@ -460,7 +461,7 @@ export function Rules() {
                 <div class="rx-row">
                   <span class="rx-label" />
                   <div class="rx-ctrl">
-                    <p class="muted small rx-note">Files go to the Recycle Bin, so they can be restored from there or with Ctrl+Z.</p>
+                    <p class="muted small rx-note">Files go to the Recycle Bin, so they can be restored from there or with {keybindings.keyOf("file.undo") || "Undo"}.</p>
                   </div>
                 </div>
               </Show>

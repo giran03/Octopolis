@@ -3,6 +3,7 @@ import { detectEditors, errorText, explorerMenuSet, explorerModeSet, explorerMod
 import { ui } from "../../state/ui";
 import { type StartFolder, settings, type TerminalShell } from "../../state/settings";
 import { Section, Segmented, Select, SettingRow, Toggle, type Option } from "./controls";
+import { keybindings } from "../../state/keybindings";
 
 const START: readonly Option<StartFolder>[] = [
   { value: "home", label: "Home" },
@@ -149,7 +150,7 @@ function EditorRows() {
   };
   return (
     <>
-      <SettingRow label="Editor" hint="Program used by Open in editor (Ctrl+Shift+O) and the Open in editor buttons. Installed editors are detected automatically">
+      <SettingRow label="Editor" hint={`Program used by Open in editor${keybindings.keyParen("file.edit")} and the Open in editor buttons. Installed editors are detected automatically`}>
         <Select label="Editor" value={selected()} options={options()} onChange={choose} />
       </SettingRow>
       <Show when={path()}>
@@ -186,7 +187,7 @@ export function GeneralTab() {
             <input class="text-input wide" spellcheck={false} placeholder="Folder path" value={settings.startPath()} onChange={(e) => settings.set({ startPath: e.currentTarget.value.trim() })} />
           </SettingRow>
         </Show>
-        <SettingRow label="Keep running in the notification area" hint="Closing the window hides Octopolis next to the clock so it opens again instantly. Quit from its icon there, or with Ctrl+Q">
+        <SettingRow label="Keep running in the notification area" hint={`Closing the window hides Octopolis next to the clock so it opens again instantly. Quit from its icon there${keybindings.keyOf("app.quit") ? `, or with ${keybindings.keyOf("app.quit")}` : ""}`}>
           <Toggle label="Keep running in the notification area" checked={settings.keepInTray()} onChange={(keepInTray) => settings.set({ keepInTray })} />
         </SettingRow>
       </Section>
@@ -194,7 +195,7 @@ export function GeneralTab() {
       <ExplorerModeSection />
 
       <Section title="Files and folders">
-        <SettingRow label="Show hidden files" hint="Items marked hidden or system. Also Ctrl+H">
+        <SettingRow label="Show hidden files" hint={`Items marked hidden or system.${keybindings.keyOf("view.hidden") ? ` Also ${keybindings.keyOf("view.hidden")}` : ""}`}>
           <Toggle label="Show hidden files" checked={settings.showHidden()} onChange={(showHidden) => settings.set({ showHidden })} />
         </SettingRow>
         <SettingRow label="Show file extensions" hint="Off hides the last extension (.txt, .png) in names. Renaming still shows the full name">

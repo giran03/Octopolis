@@ -5,6 +5,7 @@ import { settings } from "../state/settings";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
 import { AppMark, Glyph, IconSearch } from "./Icons";
+import { keybindings } from "../state/keybindings";
 
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -69,7 +70,7 @@ export function TitleBar() {
         <span class="tb-name" data-tauri-drag-region>Octopolis</span>
       </div>
 
-      <button class="tb-pill" data-tooltip="Go to folder · Ctrl+P" onClick={() => ui.openPalette("go")}>
+      <button class="tb-pill" data-tooltip={`Go to folder${keybindings.keyOf("palette.go") ? ` · ${keybindings.keyOf("palette.go")}` : ""}`} onClick={() => ui.openPalette("go")}>
         <IconSearch size={14} />
         <span class="tb-pill-text">
           <Show when={place()} fallback="Go to folder or run a command">

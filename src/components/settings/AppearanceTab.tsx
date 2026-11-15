@@ -10,6 +10,7 @@ import { fontState, GOOGLE_FONTS, isGoogleFont, loadGoogleFont, refreshSaved, re
 import { sidebar } from "../../state/sidebar";
 import { ui } from "../../state/ui";
 import { Section, Segmented, Select, SettingRow, Slider, Toggle, type Option } from "./controls";
+import { keybindings } from "../../state/keybindings";
 
 const MOTION: readonly Option<MotionPref>[] = [
   { value: "system", label: "Follow Windows" },
@@ -369,7 +370,7 @@ export function AppearanceTab() {
       </Section>
 
       <Section title="Sidebar and shelf">
-        <SettingRow label="Show sidebar" hint="Also Ctrl+B">
+        <SettingRow label="Show sidebar" hint={keybindings.keyOf("view.sidebar") ? `Also ${keybindings.keyOf("view.sidebar")}` : undefined}>
           <Toggle label="Show sidebar" checked={settings.sidebarOpen()} onChange={(sidebarOpen) => settings.set({ sidebarOpen })} />
         </SettingRow>
         <SettingRow label="Pinned section" hint="Your bookmarked folders">

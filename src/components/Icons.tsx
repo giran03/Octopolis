@@ -198,16 +198,43 @@ export function PlaceGlyph(p: { id: string; size?: number }) {
   return <SegoeGlyph code={place().code} size={p.size ?? 18} class={`place place-${place().tone}`} />;
 }
 
-/** A folder's chosen emoji, drawn in place of its normal icon. */
-export const FolderEmoji = (p: { emoji: string; size?: number; class?: string }) => (
-  <span
-    class={`emoji folder-emoji${p.class ? ` ${p.class}` : ""}`}
-    style={{ "font-size": `${Math.round((p.size ?? 16) * 0.9)}px`, width: `${p.size ?? 16}px`, height: `${p.size ?? 16}px` }}
-    aria-hidden="true"
-  >
-    {p.emoji}
-  </span>
-);
+/** A folder's chosen emoji (or uploaded picture/media, stored as "img:<id>"), drawn in place of its normal icon. */
+export const FolderEmoji = (p: { emoji: string; size?: number; class?: string }) => {
+  const url = () => (p.emoji.startsWith("img:") ? folderIcons.imageUrl(p.emoji) : undefined);
+  const cls = () => `folder-img${p.class ? ` ${p.class}` : ""}`;
+  return (
+    <Show
+      when={!p.emoji.startsWith("img:")}
+      fallback={
+        <Show
+          when={url()?.startsWith("data:video/")}
+          fallback={<img class={cls()} src={url()} alt="" width={p.size ?? 16} height={p.size ?? 16} draggable={false} />}
+        >
+          <video
+            class={cls()}
+            src={url()}
+            width={p.size ?? 16}
+            height={p.size ?? 16}
+            autoplay
+            loop
+            muted
+            playsinline
+            disablepictureinpicture
+            aria-hidden="true"
+          />
+        </Show>
+      }
+    >
+      <span
+        class={`emoji folder-emoji${p.class ? ` ${p.class}` : ""}`}
+        style={{ "font-size": `${Math.round((p.size ?? 16) * 0.9)}px`, width: `${p.size ?? 16}px`, height: `${p.size ?? 16}px` }}
+        aria-hidden="true"
+      >
+        {p.emoji}
+      </span>
+    </Show>
+  );
+};
 
 /**
  * The Windows icon for a path, shown at `size`, with `fallback` until it arrives (or when Windows icons are off).

@@ -24,6 +24,9 @@ import { onKeyDown, onMouseNav } from "./keys";
 import { loadJson, saveJson, settings } from "./state/settings";
 import { rules } from "./state/rules";
 import { ops } from "./state/ops";
+import changelog from "../CHANGELOG.md?raw";
+import { VERSION } from "./lib/app";
+import { whatsNewText } from "./lib/whatsNew";
 import { sidebar } from "./state/sidebar";
 import { startVideoThumbPrefetch } from "./state/thumbs";
 import { ui } from "./state/ui";
@@ -183,7 +186,15 @@ export function App() {
   onMount(async () => {
     trackDrags();
     // First run: a short welcome once the window has settled.
-    if (!settings.welcomeSeen()) setTimeout(() => ui.setWelcomeOpen(true), 1500);
+    if (!settings.welcomeSeen()) {
+      setTimeout(() => ui.setWelcomeOpen(true), 1500);
+      settings.set({ lastSeenVersion: VERSION }); // a fresh install has nothing "new" to announce
+    } else {
+      // After an update: list what changed since the last version the user saw.
+      const text = whatsNewText(changelog, settings.lastSeenVersion(), VERSION);
+      if (text) setTimeout(() => ui.setWhatsNewText(text), 1500);
+      else if (settings.lastSeenVersion() !== VERSION) settings.set({ lastSeenVersion: VERSION });
+    }
     window.addEventListener("keydown", onKeyDown);
     const preventBrowserShortcuts = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
