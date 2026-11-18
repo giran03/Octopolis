@@ -5,6 +5,7 @@ import * as A from "../actions";
 import { errorText, listDir, resolvePath } from "../lib/ipc";
 import { fuzzyRank } from "../lib/fuzzy";
 import { createBuilder, decodeBatch, isDir, snapshot } from "../lib/listing";
+import { showViewTip } from "../state/viewTips";
 import { ALL_DRIVES_PATH, baseName, breadcrumbs, isDrivesPath, joinPath, parentPath, samePath, sameVolume } from "../lib/paths";
 import { cancelSpring, carriesPaths, dragState, isDragging, onDragReset, springLoad, springTarget, tabDrag } from "../state/drag";
 import { history } from "../state/history";
@@ -41,6 +42,8 @@ export function Pane(props: { pane: PaneModel }) {
   const active = () => workspace.activePaneId() === props.pane.id;
   const tab = () => props.pane.activeTab();
   let host!: HTMLElement;
+  // The first time the active tab shows an unusual view, say what it does.
+  createEffect(on(() => tab()?.viewMode(), (mode) => mode && showViewTip(mode), { defer: true }));
   return (
     <section ref={host} class="pane" classList={{ active: active() }} onMouseDown={() => workspace.focusPane(props.pane.id)}>
       <TabStrip pane={props.pane} />

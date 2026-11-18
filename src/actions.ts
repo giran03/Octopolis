@@ -1,8 +1,8 @@
 // File actions shared by keyboard shortcuts, the context menu and the toolbar.
 import type { ArchiveFormat, GitChange, LinkKind } from "./lib/ipc";
 import { GROUP_KEYS, GROUP_TITLES } from "./lib/group";
-import { openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, installFont, openInEditor, openInEditorMany, openPaths, runCustomAction, writeTempList, saveDroppedFile, downloadDroppedUrl, startNativeDrag, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, runPath, templatesFolder } from "./lib/ipc";
-import { baseOf, isDir } from "./lib/listing";
+import { listDir, openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, installFont, openInEditor, openInEditorMany, openPaths, runCustomAction, writeTempList, saveDroppedFile, downloadDroppedUrl, startNativeDrag, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, runPath, templatesFolder } from "./lib/ipc";
+import { baseOf, createBuilder, decodeBatch, isDir, snapshot } from "./lib/listing";
 import { baseName, joinPath, parentPath, samePath, sameVolume } from "./lib/paths";
 import { entryPattern, extensionOf, invertSelection, selectEntriesWhere } from "./lib/selection";
 import { formatPaths, PATH_FORMATS, type PathFormat } from "./lib/pathFormats";
@@ -24,7 +24,7 @@ import { ui } from "./state/ui";
 import { workspace } from "./state/workspace";
 import { keybindings } from "./state/keybindings";
 
-export const ARCHIVE_NAME = /\.(zip|jar|nupkg|vsix|apk|7z|tar|tgz|tbz2?|tar\.gz|tar\.bz2)$/i;
+export const ARCHIVE_NAME = /\.(zip|jar|nupkg|vsix|apk|7z|tar|tgz|tbz2?|tar\.gz|tar\.bz2|gz|bz2)$/i;
 
 /** Archives are read-only; returns true (and explains) when `tab` is inside one. */
 function blockedInArchive(tab: TabModel): boolean {
@@ -208,11 +208,41 @@ export async function commitRename(tab: TabModel, entry: number, newName: string
     const from = joinPath(l.path, old);
     const to = await renameItem(from, name);
     ops.record({ kind: "move", label: `Rename to "${name}"`, pairs: [[from, to]] });
+    ops.undoToast(`Renamed to "${name}"`);
     if (tab.search()) await tab.refresh();
     else await tab.navigate(tab.path(), [name]);
   } catch (e) {
     ui.toast(errorText(e));
   }
+}
+
+/** Renames `entry`, then starts renaming the item next to it (`dir` 1 = below, -1 = above): Tab and Shift+Tab in the name field. */
+export async function commitRenameAndMove(tab: TabModel, entry: number, newName: string, dir: 1 | -1) {
+  const view = tab.view();
+  const neighbour = view[view.indexOf(entry) + dir];
+  const nextName = neighbour === undefined ? null : tab.listing().names[neighbour];
+  await commitRename(tab, entry, newName);
+  if (nextName === null) return;
+  const l = tab.listing();
+  const idx = tab.view().find((i) => l.names[i] === nextName);
+  if (idx === undefined) return;
+  tab.setSelection(new Set([idx]));
+  tab.setFocus(tab.view().indexOf(idx));
+  tab.setRenaming(idx);
+}
+
+let slowRenameTimer = 0;
+/** Stops a pending slow-click rename (a double-click, a drag or another click means it was not one). */
+export function cancelSlowRename() {
+  window.clearTimeout(slowRenameTimer);
+}
+/** Clicking the name of the only selected item, then waiting, starts renaming it, like Explorer. */
+export function slowClickRename(tab: TabModel, entry: number) {
+  cancelSlowRename();
+  if (tab.archive()) return;
+  slowRenameTimer = window.setTimeout(() => {
+    if (tab.renaming() === null && tab.selection().size === 1 && tab.selection().has(entry)) tab.setRenaming(entry);
+  }, 600);
 }
 
 export function nativeContextMenu(tab: TabModel) {
@@ -672,6 +702,39 @@ export function showProperties(tab: TabModel) {
 export function whoLocks(tab: TabModel) {
   const paths = targets(tab);
   if (paths.length) ui.setLockPaths(paths);
+}
+
+/** The selected archive files outside any archive. */
+export function selectedArchives(tab: TabModel): string[] {
+  if (tab.archive()) return [];
+  const l = tab.listing();
+  return [...tab.selection()].filter((i) => !isDir(l, i) && ARCHIVE_NAME.test(l.names[i])).map((i) => tab.pathOf(i));
+}
+
+/** An archive's file name without its archive extension, for the folder it extracts into. */
+export const archiveStem = (path: string) => baseName(path).replace(ARCHIVE_NAME, "") || baseName(path);
+
+/** Extracts whole archives: next to each one (`here`), or into a folder named after it. Names already taken get a number, so nothing is replaced. */
+export async function extractArchives(archives: readonly string[], mode: "here" | "folder") {
+  for (const archive of archives) {
+    const parent = parentPath(archive);
+    if (!parent) continue;
+    const b = createBuilder(archive);
+    try {
+      await listDir(archive, (buf) => decodeBatch(buf, b));
+    } catch (e) {
+      ui.toast(`Couldn't read ${baseName(archive)}: ${errorText(e)}`);
+      continue;
+    }
+    const names = [...snapshot(b).names];
+    if (names.length === 0) {
+      ui.toast(`${baseName(archive)} is empty`);
+      continue;
+    }
+    const dest = mode === "folder" ? joinPath(parent, archiveStem(archive)) : parent;
+    const label = mode === "folder" ? `Extracting ${baseName(archive)} to ${archiveStem(archive)}` : `Extracting ${baseName(archive)}`;
+    void ops.run({ kind: "extract", archive, items: names, dest }, label);
+  }
 }
 
 /** Extracts an archive (or selected items inside one) next to the archive. */

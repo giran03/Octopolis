@@ -107,7 +107,7 @@ export function ViewMenu(props: { tab: TabModel }) {
   return (
     <>
       <button ref={button} class="icon-btn view-btn" classList={{ on: open(), auto: settings.autoView() && props.tab.viewIsAuto() }} aria-haspopup="dialog" aria-expanded={open()} aria-label="View" data-tooltip={settings.autoView() && props.tab.viewIsAuto() ? `View · Auto chose ${props.tab.autoNote() ?? "this view"}` : "View · Ctrl+wheel zooms"} onClick={toggle}>
-        <MaterialIcon name={currentEntry(props.tab).icon} size={16} />
+        <MaterialIcon name={currentEntry(props.tab).icon} size={18} />
       </button>
       <Show when={open()}>
         <Portal>

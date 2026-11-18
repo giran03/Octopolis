@@ -1,6 +1,6 @@
 //! Archives as read-only virtual folders: `C:\x\photos.zip\2024\a.jpg`.
 //!
-//! Supports zip, 7z and tar (plain, .gz, .bz2). Listings are cached per
+//! Supports zip, 7z, tar (plain, .gz, .bz2) and single files compressed with gzip or bzip2. Listings are cached per
 //! archive (keyed by size and modified time). Extraction refuses entries whose
 //! paths would escape the destination ("zip slip").
 
@@ -37,6 +37,9 @@ enum Format {
     Tar,
     TarGz,
     TarBz2,
+    /// One file compressed on its own (`notes.txt.gz`).
+    Gz,
+    Bz2,
 }
 
 fn format_of(name: &str) -> Option<Format> {
@@ -51,6 +54,10 @@ fn format_of(name: &str) -> Option<Format> {
         Some(Format::Zip)
     } else if n.ends_with(".7z") {
         Some(Format::SevenZ)
+    } else if n.ends_with(".gz") {
+        Some(Format::Gz)
+    } else if n.ends_with(".bz2") {
+        Some(Format::Bz2)
     } else {
         None
     }
@@ -133,6 +140,20 @@ fn for_each(archive: &Path, mut f: impl FnMut(&ArchiveEntry, &mut dyn Read) -> b
                 })
                 .map_err(|e| arch_err(archive, e))?;
         }
+        Format::Gz | Format::Bz2 => {
+            let name = archive.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let inner = name.rsplit_once('.').map_or(name.clone(), |(stem, _)| stem.to_string());
+            let modified_ms = std::fs::metadata(archive).and_then(|m| m.modified()).map(ms).unwrap_or(0);
+            // A gzip file ends with its unpacked size (modulo 4 GiB); bzip2 does not record it.
+            let size = if format == Format::Gz { gz_size(archive).unwrap_or(0) } else { 0 };
+            let meta = ArchiveEntry { path: norm(&inner), is_dir: false, size, modified_ms };
+            let mut reader: Box<dyn Read> = if format == Format::Gz {
+                Box::new(flate2::read::MultiGzDecoder::new(BufReader::new(file)))
+            } else {
+                Box::new(bzip2::read::MultiBzDecoder::new(BufReader::new(file)))
+            };
+            f(&meta, &mut reader);
+        }
         Format::Tar | Format::TarGz | Format::TarBz2 => {
             let reader: Box<dyn Read> = match format {
                 Format::TarGz => Box::new(flate2::read::GzDecoder::new(BufReader::new(file))),
@@ -157,6 +178,16 @@ fn for_each(archive: &Path, mut f: impl FnMut(&ArchiveEntry, &mut dyn Read) -> b
         }
     }
     Ok(())
+}
+
+/// The unpacked size a gzip file records in its last four bytes.
+fn gz_size(path: &Path) -> Option<u64> {
+    use std::io::{Seek, SeekFrom};
+    let mut f = File::open(path).ok()?;
+    f.seek(SeekFrom::End(-4)).ok()?;
+    let mut b = [0u8; 4];
+    f.read_exact(&mut b).ok()?;
+    Some(u32::from_le_bytes(b) as u64)
 }
 
 type Cache = Mutex<HashMap<PathBuf, (u64, i64, Arc<Vec<ArchiveEntry>>)>>;
@@ -398,6 +429,25 @@ mod tests {
         assert!(docs[0].is_dir);
         assert_eq!(read(&z, r"docs\readme.md", 1024).unwrap(), b"# hi");
         assert!(children(&z, "missing").is_err());
+    }
+
+    #[test]
+    fn opens_a_single_gzip_file_as_one_entry() {
+        use std::io::Write;
+        let tmp = tempfile::tempdir().unwrap();
+        let gz = tmp.path().join("notes.txt.gz");
+        let mut enc = flate2::write::GzEncoder::new(File::create(&gz).unwrap(), flate2::Compression::fast());
+        enc.write_all(b"hello gzip").unwrap();
+        enc.finish().unwrap();
+        let root = children(&gz, "").unwrap();
+        assert_eq!(root.len(), 1);
+        assert_eq!(root[0].path, "notes.txt");
+        assert_eq!(root[0].size, 10);
+        assert_eq!(read(&gz, "notes.txt", 1024).unwrap(), b"hello gzip");
+        let out = tmp.path().join("out");
+        fs_dir(&out);
+        extract(&gz, &["notes.txt".to_string()], &out, &CancelToken::default(), |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(out.join("notes.txt")).unwrap(), b"hello gzip");
     }
 
     #[test]

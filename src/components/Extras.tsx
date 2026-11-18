@@ -12,6 +12,7 @@ import { folderIcons } from "../state/folderIcons";
 import { FileIcon, FolderEmoji } from "./Icons";
 import { thumbBucket } from "../lib/viewZoom";
 import { ui } from "../state/ui";
+import { RenameInput } from "./RenameInput";
 
 export function PromptDialog(props: { title: string; label: string; initial?: string; submitLabel?: string; onSubmit: (value: string) => void }) {
   let input!: HTMLInputElement;
@@ -67,6 +68,9 @@ export function clearGridThumbs() {
   thumbBytes.clear();
   pendingThumbs.clear();
 }
+
+/** A thumbnail that is already loaded, so a tile can show it on its first frame. */
+export const peekThumb = (key: string): string | null => thumbs.get(key) ?? null;
 
 export function loadThumb(key: string, path: string, px: number, iconOnly = false): Promise<string | null> {
   if (!settings.showThumbnails()) return Promise.resolve(null);
@@ -172,6 +176,9 @@ function MillerRows(props: {
   onDown: (k: number, e: MouseEvent) => void;
   onOpen: (k: number, e: MouseEvent) => void;
   onMenu?: (k: number | null, e: MouseEvent) => void;
+  /** The row being renamed, and what to do when its editor finishes (null = cancelled). */
+  renaming?: (k: number) => boolean;
+  onRename?: (k: number, value: string | null) => void;
   onReady?: (pageRows: () => number, ensureVisible: (k: number) => void) => void;
 }) {
   let el!: HTMLDivElement;
@@ -220,7 +227,9 @@ function MillerRows(props: {
                   data-tooltip={r().name}
                   data-tooltip-truncated=".miller-name"
                 >
-                  <span class="miller-name">{r().name}</span>
+                  <Show when={props.renaming?.(k())} fallback={<span class="miller-name">{r().name}</span>}>
+                    <RenameInput name={r().name} isDir={r().dir} onDone={(v) => props.onRename?.(k(), v)} />
+                  </Show>
                   <Show when={r().dir} fallback={<span class="muted small">{formatSize(r().size)}</span>}>
                     <span class="muted">›</span>
                   </Show>
@@ -312,6 +321,8 @@ export function MillerView(props: {
         onDown={click}
         onOpen={(pos, e) => (e.ctrlKey ? A.openEntryInTab(props.tab, view()[pos], !e.shiftKey) : A.openEntry(props.tab, view()[pos]))}
         onMenu={(pos, e) => props.onMenu(e, pos)}
+        renaming={(pos) => view()[pos] !== undefined && props.tab.renaming() === view()[pos]}
+        onRename={(pos, v) => (v === null ? props.tab.setRenaming(null) : void A.commitRename(props.tab, view()[pos], v))}
         onReady={props.onReady}
       />
     </div>

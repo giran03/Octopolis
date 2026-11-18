@@ -13,10 +13,11 @@ import { cancelSpring, carriesPaths, DRAG_MIME, dragRaw, dragState, isExternalDr
 import { ops } from "../state/ops";
 import { settings } from "../state/settings";
 import type { TabModel } from "../state/tab";
-import { GridThumb, loadThumb } from "./Extras";
+import { GridThumb, loadThumb, peekThumb } from "./Extras";
 import { ListState } from "./FileList";
 import { FileIcon, PathIcon } from "./Icons";
 import { createMarquee } from "./marquee";
+import { RenameInput } from "./RenameInput";
 
 type Menu = (e: MouseEvent, pos: number | null) => void;
 type Ready = (columns: () => number, ensureVisible: (pos: number) => void, pageRows: () => number) => void;
@@ -60,6 +61,15 @@ function useEntries(props: Omit<ViewProps, "onReady">) {
   onDragReset(() => setHot(null));
 
   const entryAt = (pos: number) => tab().view()[pos];
+  const isRenaming = (pos: number) => {
+    const e = entryAt(pos);
+    return e !== undefined && tab().renaming() === e;
+  };
+  /** The name editor for the item at `pos`, shown in place of its name while it is being renamed. */
+  const renameField = (pos: number) => {
+    const e = entryAt(pos);
+    return <RenameInput name={baseOf(tab().listing().names[e])} isDir={isDir(tab().listing(), e)} onDone={(v, move) => (v === null ? tab().setRenaming(null) : move ? void A.commitRenameAndMove(tab(), e, v, move) : void A.commitRename(tab(), e, v))} />;
+  };
   const destAt = (pos: number | null) => {
     if (pos === null) return tab().path();
     const e = entryAt(pos);
@@ -115,20 +125,35 @@ function useEntries(props: Omit<ViewProps, "onReady">) {
 
   /** Event handlers for the element showing the item at `pos()`. */
   const handlers = (pos: () => number) => ({
-    draggable: true,
+    get draggable() {
+      return !isRenaming(pos());
+    },
+    role: "option" as const,
+    get "aria-selected"() {
+      const e = entryAt(pos());
+      return e !== undefined && tab().selection().has(e);
+    },
     onMouseDown: (e: MouseEvent) => {
       if (e.button === 1) {
         e.preventDefault();
         return A.openEntryInTab(tab(), entryAt(pos()), !e.shiftKey);
       }
-      if (e.button === 0) select(e, pos());
+      if (e.button === 0) {
+        const t = tab();
+        const entry = entryAt(pos());
+        const onName = !!(e.target as HTMLElement).closest(".grid-name, .list-name, .content-name");
+        const slow = onName && !e.ctrlKey && !e.shiftKey && t.selection().size === 1 && t.selection().has(entry);
+        select(e, pos());
+        if (slow) A.slowClickRename(t, entry);
+        else A.cancelSlowRename();
+      }
     },
-    onDblClick: (e: MouseEvent) => (e.ctrlKey ? A.openEntryInTab(tab(), entryAt(pos()), !e.shiftKey) : A.openEntry(tab(), entryAt(pos()))),
+    onDblClick: (e: MouseEvent) => (A.cancelSlowRename(), e.ctrlKey ? A.openEntryInTab(tab(), entryAt(pos()), !e.shiftKey) : A.openEntry(tab(), entryAt(pos()))),
     onContextMenu: (e: MouseEvent) => {
       e.stopPropagation();
       props.onMenu(e, pos());
     },
-    onDragStart: (e: DragEvent) => itemDragStart(e, tab(), pos()),
+    onDragStart: (e: DragEvent) => (A.cancelSlowRename(), isRenaming(pos()) ? e.preventDefault() : itemDragStart(e, tab(), pos())),
     onDragOver: (e: DragEvent) => over(e, pos()),
     onDrop: drop,
   });
@@ -158,7 +183,7 @@ function useEntries(props: Omit<ViewProps, "onReady">) {
     };
   };
   const listDrop = () => hot() === tab().path();
-  return { entryAt, select, handlers, background, classes, listDrop };
+  return { entryAt, select, handlers, background, classes, listDrop, isRenaming, renameField };
 }
 
 /** The picture of an item at `size` pixels: its thumbnail, or its icon. */
@@ -228,6 +253,9 @@ export function CellGrid(props: ViewProps & { variant: "icons" | "tiles" }) {
     <div
       ref={scroller}
       class="grid-view"
+      role="listbox"
+      aria-multiselectable="true"
+      aria-label="Files and folders"
       classList={{ "drop-list": ent.listDrop(), tiles: props.variant === "tiles" }}
       onScroll={() => setScrollTop(scroller.scrollTop)}
       onContextMenu={(e) => props.onMenu(e, null)}
@@ -267,9 +295,9 @@ export function CellGrid(props: ViewProps & { variant: "icons" | "tiles" }) {
                   {...ent.handlers(pos)}
                 >
                   <ItemPicture tab={props.tab} entry={entry()} size={cell().thumb} />
-                  <Show when={props.variant === "tiles"} fallback={<span class="grid-name">{shownName(props.tab, entry())}</span>}>
+                  <Show when={props.variant === "tiles"} fallback={<Show when={ent.isRenaming(pos())} fallback={<span class="grid-name">{shownName(props.tab, entry())}</span>}>{ent.renameField(pos())}</Show>}>
                     <span class="tile-text">
-                      <span class="grid-name">{shownName(props.tab, entry())}</span>
+                      <Show when={ent.isRenaming(pos())} fallback={<span class="grid-name">{shownName(props.tab, entry())}</span>}>{ent.renameField(pos())}</Show>
                       <span class="tile-sub muted">{typeLabel(baseOf(props.tab.listing().names[entry()]), isDir(props.tab.listing(), entry()))}</span>
                       <span class="tile-sub muted">{sizeText(props.tab, entry())}</span>
                     </span>
@@ -323,6 +351,9 @@ export function ListView(props: ViewProps) {
     <div
       ref={scroller}
       class="list-view"
+      role="listbox"
+      aria-multiselectable="true"
+      aria-label="Files and folders"
       classList={{ "drop-list": ent.listDrop() }}
       onScroll={() => setScrollLeft(scroller.scrollLeft)}
       onContextMenu={(e) => props.onMenu(e, null)}
@@ -364,7 +395,7 @@ export function ListView(props: ViewProps) {
                       <PathIcon path={props.tab.pathOf(entry())} name={l().names[entry()]} isDir size={icon()} fallback={<FileIcon name={l().names[entry()]} isDir size={icon()} />} />
                     </Show>
                   </span>
-                  <span class="list-name">{shownName(props.tab, entry())}</span>
+                  <Show when={ent.isRenaming(pos())} fallback={<span class="list-name">{shownName(props.tab, entry())}</span>}>{ent.renameField(pos())}</Show>
                 </div>
               </Show>
             );
@@ -410,6 +441,9 @@ export function ContentView(props: ViewProps) {
     <div
       ref={scroller}
       class="content-view"
+      role="listbox"
+      aria-multiselectable="true"
+      aria-label="Files and folders"
       classList={{ "drop-list": ent.listDrop() }}
       onScroll={() => setScrollTop(scroller.scrollTop)}
       onContextMenu={(e) => props.onMenu(e, null)}
@@ -447,7 +481,7 @@ export function ContentView(props: ViewProps) {
                 >
                   <ItemPicture tab={props.tab} entry={entry()} size={CONTENT_ROW.thumb} />
                   <span class="content-text">
-                    <span class="content-name">{shownName(props.tab, entry())}</span>
+                    <Show when={ent.isRenaming(pos())} fallback={<span class="content-name">{shownName(props.tab, entry())}</span>}>{ent.renameField(pos())}</Show>
                     <span class="content-sub muted">
                       {[typeLabel(baseOf(l().names[entry()]), isDir(l(), entry())), sizeText(props.tab, entry()), formatDate(l().mtimes[entry()])].filter(Boolean).join("  ·  ")}
                     </span>
@@ -468,7 +502,7 @@ export function ContentView(props: ViewProps) {
 /** Picture shapes (width / height) found as thumbnails load, so rows can be laid out to fit them. */
 const shapes = new Map<string, number>();
 const [shapeVersion, setShapeVersion] = createSignal(0);
-let shapeFrame = 0;
+let shapeTimer = 0;
 const MAX_SHAPES = 20_000;
 function noteShape(key: string, ratio: number) {
   if (!Number.isFinite(ratio) || ratio <= 0) return;
@@ -476,8 +510,8 @@ function noteShape(key: string, ratio: number) {
   if (shapes.get(key) === clamped) return;
   if (shapes.size >= MAX_SHAPES) shapes.delete(shapes.keys().next().value as string);
   shapes.set(key, clamped);
-  // Many thumbnails arrive together: re-lay out once per frame.
-  if (!shapeFrame) shapeFrame = requestAnimationFrame(() => ((shapeFrame = 0), setShapeVersion((v) => v + 1)));
+  // Thumbnails keep arriving, and each new shape reflows the rows: re-lay out a few times a second, not every frame.
+  if (!shapeTimer) shapeTimer = window.setTimeout(() => ((shapeTimer = 0), setShapeVersion((v) => v + 1)), 300);
 }
 
 const DEFAULT_SHAPE = 1.33;
@@ -498,14 +532,18 @@ function BentoPicture(props: { tab: TabModel; entry: number; px: number }) {
   const path = () => props.tab.pathOf(props.entry);
   const key = () => `${path()}|${l().mtimes[props.entry]}`;
   const dir = () => isDir(l(), props.entry);
-  const [url, setUrl] = createSignal<string | null>(null);
+  const [url, setUrl] = createSignal<string | null>(peekThumb(`${key()}|${props.px}|t`));
   createEffect(
-    on(key, (k) => {
-      setUrl(null);
+    on([key, () => props.px] as const, ([k, px], prev) => {
+      const id = `${k}|${px}|t`;
+      const cached = peekThumb(id);
+      if (cached) return setUrl(cached);
+      // The same picture at another size keeps showing until the new one arrives; a different picture clears.
+      if (!prev || prev[0] !== k) setUrl(null);
       if (props.tab.archive() || !settings.showThumbnails()) return;
       if (cloudState(l().attrs[props.entry]) === "online") return;
-      void loadThumb(`${k}|${props.px}|t`, path(), props.px, false).then((u) => {
-        if (key() === k) setUrl(u);
+      void loadThumb(id, path(), px, false).then((u) => {
+        if (key() === k && props.px === px && u) setUrl(u);
       });
     }),
   );
@@ -653,6 +691,9 @@ export function BentoView(props: Omit<ViewProps, "onReady"> & { onReady: (column
     <div
       ref={scroller}
       class="bento-view"
+      role="listbox"
+      aria-multiselectable="true"
+      aria-label="Files and folders"
       classList={{ "drop-list": ent.listDrop() }}
       onScroll={() => setScrollTop(scroller.scrollTop)}
       onContextMenu={(e) => props.onMenu(e, null)}
@@ -702,8 +743,8 @@ export function BentoView(props: Omit<ViewProps, "onReady"> & { onReady: (column
                                   </span>
                                 )}
                               </Show>
-                              <Show when={!settings.bentoHideNames()}>
-                                <span class="bento-label">{shownName(props.tab, entry())}</span>
+                              <Show when={!settings.bentoHideNames() || ent.isRenaming(pos)}>
+                                <Show when={ent.isRenaming(pos)} fallback={<span class="bento-label">{shownName(props.tab, entry())}</span>}>{ent.renameField(pos)}</Show>
                               </Show>
                             </div>
                           </Show>

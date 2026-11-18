@@ -5,7 +5,7 @@ import * as A from "../actions";
 import { formatDate, formatSize, typeLabel, withoutExtension } from "../lib/format";
 import { ATTR_REPARSE, baseOf, cloudState, dirOf, isDir, isHidden } from "../lib/listing";
 import { allColumnsInOrder, attributeLetters, clampWidth, columnDef, DEFAULT_COLUMNS, gridTemplate, moveColumn, OPTIONAL_COLUMNS, stepColumn, toggleColumn, visibleColumns, type ColumnKey } from "../lib/columns";
-import { baseName, extensionOf, parentPath, sameVolume, samePath, stemLength } from "../lib/paths";
+import { baseName, extensionOf, parentPath, sameVolume, samePath } from "../lib/paths";
 import { rowsInBand, selectAt } from "../lib/selection";
 import { createMarquee } from "./marquee";
 import { createDirTags, TagMarks } from "./Tags";
@@ -21,6 +21,7 @@ import { iconFor } from "../state/icons";
 import { cancelSpring, carriesPaths, DRAG_MIME, dragRaw, dragState, isExternalDrag, onDragReset, springLoad, springTarget } from "../state/drag";
 import { readDrop } from "../lib/webdrop";
 import { fileIconSpec } from "../lib/fileicons";
+import { RenameInput } from "./RenameInput";
 import { FileGlyph, FileIcon, FolderEmoji, Glyph, MaterialIcon } from "./Icons";
 import { folderIcons } from "../state/folderIcons";
 import { keybindings } from "../state/keybindings";
@@ -475,7 +476,13 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                         e.preventDefault();
                         return A.openEntryInTab(tab(), entry(), !e.shiftKey);
                       }
-                      clickRow(e, pos());
+                      {
+                        const onNameText = !!(e.target as HTMLElement).closest(".cell.name .label");
+                        const slow = e.button === 0 && onNameText && !e.ctrlKey && !e.shiftKey && tab().selection().size === 1 && tab().selection().has(entry());
+                        clickRow(e, pos());
+                        if (slow) A.slowClickRename(tab(), entry());
+                        else A.cancelSlowRename();
+                      }
                       // Dragging from the name moves files; from anywhere else it draws a selection box.
                       const onName = (e.target as HTMLElement).closest(".cell.name, input");
                       if (e.button === 0 && !onName && !e.shiftKey) {
@@ -483,7 +490,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                         marquee.start(e);
                       }
                     }}
-                    onDblClick={(e) => (e.ctrlKey ? A.openEntryInTab(tab(), entry(), !e.shiftKey) : A.openEntry(tab(), entry()))}
+                    onDblClick={(e) => (A.cancelSlowRename(), e.ctrlKey ? A.openEntryInTab(tab(), entry(), !e.shiftKey) : A.openEntry(tab(), entry()))}
                     onContextMenu={(e) => {
                       e.stopPropagation();
                       contextRow(e, pos());
@@ -500,7 +507,7 @@ export function FileList(props: { tab: TabModel; active: boolean; onReady: (h: L
                     <div role="gridcell" class="cell name">
                       <RowIcon path={tab().pathOf(entry())} name={baseOf(name())} isDir={dir()} virtual={!!tab().archive()} link={(l().attrs[entry()] & ATTR_REPARSE) !== 0} />
                       <Show when={tab().renaming() === entry()} fallback={<><NameLabel name={name()} dir={isDir(l(), entry())} /><GitBadge tab={tab()} name={name()} /><CloudBadge attrs={l().attrs[entry()]} /><TagMarks tags={dirTags()?.get(baseOf(name()).toLowerCase())} /><Show when={tab().groupStarts().get(pos())}>{(g) => <span class="group-chip" title={`${g().count} in this group`}>{g().label} · {g().count.toLocaleString()}</span>}</Show></>}>
-                        <RenameInput name={baseOf(name())} isDir={dir()} onDone={(v) => (v === null ? tab().setRenaming(null) : void A.commitRename(tab(), entry(), v))} />
+                        <RenameInput name={baseOf(name())} isDir={dir()} onDone={(v, move) => (v === null ? tab().setRenaming(null) : move ? void A.commitRenameAndMove(tab(), entry(), v, move) : void A.commitRename(tab(), entry(), v))} />
                       </Show>
                     </div>
                     <For each={columns()}>
@@ -704,33 +711,15 @@ export function ListState(props: { tab: TabModel }) {
   );
 }
 
-function RenameInput(props: { name: string; isDir: boolean; onDone: (value: string | null) => void }) {
-  let input!: HTMLInputElement;
-  let finished = false;
-  const finish = (v: string | null) => {
-    if (finished) return;
-    finished = true;
-    props.onDone(v);
-  };
-  onMount(() => {
-    input.focus();
-    input.setSelectionRange(0, stemLength(props.name, props.isDir));
-  });
-  return (
-    <input
-      ref={input}
-      class="rename"
-      value={props.name}
-      spellcheck={false}
-      onMouseDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") finish(input.value);
-        if (e.key === "Escape") finish(null);
-      }}
-      onBlur={() => finish(input.value)}
-    />
-  );
+/** "Extract here" and "Extract to <name>\\" when archive files are selected. */
+function archiveEntries(tab: TabModel): MenuEntry[] {
+  const archives = A.selectedArchives(tab);
+  if (archives.length === 0 || archives.length !== tab.selection().size) return [];
+  const folder = archives.length === 1 ? `Extract to "${A.archiveStem(archives[0])}\\"` : "Extract each to its own folder";
+  return [
+    { label: "Extract here", run: () => void A.extractArchives(archives, "here") },
+    { label: folder, run: () => void A.extractArchives(archives, "folder") },
+  ];
 }
 
 /** "Open in new tab" when exactly one folder (or archive) is selected. */
@@ -818,7 +807,7 @@ function menuFor(tab: TabModel, onItems: boolean): MenuEntry[] {
         ...(A.otherPaneTab() ? [{ label: "Copy to the other pane", shortcut: keybindings.keyOf("pane.copyToOther") || undefined, run: () => A.sendToOtherPane(tab, "copy") }, { label: "Move to the other pane", run: () => A.sendToOtherPane(tab, "move") }] : []),
         { label: "Copy to…", run: () => void A.transferToPicked(tab, "copy") },
         ...(tab.archive() ? [] : [{ label: "Move to…", run: () => void A.transferToPicked(tab, "move") }]),
-        ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : [{ label: "Compress to…", run: () => A.openCompressMenu(tab, menuX, menuY) }]),
+        ...(tab.archive() ? [{ label: "Extract next to the archive", run: () => A.extractHere(tab) }] : [...archiveEntries(tab), { label: "Compress to…", run: () => A.openCompressMenu(tab, menuX, menuY) }]),
         "separator",
         // Organize & customize
         ...imageToolEntries(tab),

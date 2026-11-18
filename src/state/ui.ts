@@ -75,6 +75,8 @@ export interface ShortcutFilterRequest {
 }
 
 const TOAST_MS = 4000;
+/** Most toasts shown at once; a new one pushes the oldest out. */
+const MAX_TOASTS = 4;
 let focusNonce = 1;
 let toastKey = 1;
 let lastSettingsTab: SettingsTab = "general";
@@ -130,7 +132,8 @@ export const ui = createRoot(() => {
 
   const toast = (text: string, action?: ToastAction, durationMs = TOAST_MS) => {
     const key = toastKey++;
-    setToasts((t) => [...t, { key, text, action }]);
+    // The same message again replaces the one showing, and only the newest few stay.
+    setToasts((t) => [...t.filter((x) => x.action || x.text !== text), { key, text, action }].slice(-MAX_TOASTS));
     setTimeout(() => dismissToast(key), durationMs);
     return key;
   };

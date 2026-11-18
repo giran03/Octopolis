@@ -7,7 +7,7 @@ import { ui } from "../../state/ui";
 import { updater } from "../../state/updater";
 import changelog from "../../../CHANGELOG.md?raw";
 import { ChangelogText } from "../Changelog";
-import { Glyph } from "../Icons";
+import { Glyph, MaterialIcon } from "../Icons";
 import { Section, Segmented, SettingRow, type Option } from "./controls";
 
 const MODES: readonly Option<UpdateMode>[] = [
@@ -39,8 +39,10 @@ export function UpdatesTab() {
       <section class="sset">
         <h3 class="sset-title">Updates</h3>
         <div class="update-card" classList={{ good: view().tone === "good", bad: view().tone === "bad" }}>
-          <span class="update-glyph" classList={{ spin: view().busy }}>
-            <Glyph code={TONE_GLYPH[view().tone]} size={20} />
+          <span class="update-glyph">
+            <Show when={view().busy} fallback={<Glyph code={TONE_GLYPH[view().tone]} size={20} />}>
+              <MaterialIcon name="schedule" size={20} />
+            </Show>
           </span>
           <div class="update-text" role="status" aria-live="polite">
             <div class="update-title">{view().title}</div>

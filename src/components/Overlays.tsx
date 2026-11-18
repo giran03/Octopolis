@@ -1,5 +1,5 @@
 // Floating UI: operations tray, context menu, confirmation dialog, toasts.
-import { createMemo, createSignal, For, Index, lazy, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, lazy, onCleanup, onMount, Show } from "solid-js";
 import { formatSize } from "../lib/format";
 import { baseName } from "../lib/paths";
 import { ops, type OpView } from "../state/ops";
@@ -143,7 +143,8 @@ export function Overlays() {
 function OpsTray() {
   return (
     <div class="ops-tray" role="region" aria-label="File operations">
-      <For each={ops.list()}>{(o) => <OpCard op={o} />}</For>
+      {/* Index, not For: progress patches replace the op object, and For would rebuild the whole card on every tick. */}
+      <Index each={ops.list()}>{(o) => <OpCard op={o()} />}</Index>
       {/* Screen readers hear when a job starts and ends, not every progress tick. */}
       <div class="sr-only" role="status" aria-live="polite">
         <Index each={ops.list()}>{(o) => <p>{`${o().label}: ${spokenState(o())}`}</p>}</Index>
@@ -168,6 +169,30 @@ function OpCard(props: { op: OpView }) {
     if (p.totalBytes > 0) return p.doneBytes / p.totalBytes;
     return p.totalItems > 0 ? p.doneItems / p.totalItems : 0;
   };
+  // Transfer speed, smoothed, and the time it leaves.
+  const [rate, setRate] = createSignal(0);
+  let last = { t: 0, b: 0 };
+  createEffect(() => {
+    const p = o();
+    if (p.state !== "running") {
+      last = { t: 0, b: 0 };
+      return setRate(0);
+    }
+    const now = performance.now();
+    if (last.t === 0) return void (last = { t: now, b: p.doneBytes });
+    const dt = now - last.t;
+    if (dt < 500) return;
+    const inst = Math.max(0, (p.doneBytes - last.b) / (dt / 1000));
+    setRate((r) => (r === 0 ? inst : r * 0.7 + inst * 0.3));
+    last = { t: now, b: p.doneBytes };
+  });
+  const pace = () => {
+    const p = o();
+    if (p.state !== "running" || p.totalBytes <= 0 || rate() < 1) return "";
+    const secs = Math.max(0, (p.totalBytes - p.doneBytes) / rate());
+    const left = secs < 60 ? `${Math.max(1, Math.round(secs))} s` : secs < 3600 ? `${Math.round(secs / 60)} min` : `${(secs / 3600).toFixed(1)} h`;
+    return ` · ${formatSize(rate())}/s · ${left} left`;
+  };
   const summary = () => {
     const p = o();
     if (p.state === "queued") return "Waiting in queue";
@@ -176,7 +201,7 @@ function OpCard(props: { op: OpView }) {
       if (p.cancelled) return "Cancelled";
       return p.errors.length ? `Finished with ${p.errors.length} problem${p.errors.length === 1 ? "" : "s"}` : "Done";
     }
-    return p.totalBytes > 0 ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}` : `${p.doneItems} of ${p.totalItems} items`;
+    return p.totalBytes > 0 ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}${pace()}` : `${p.doneItems} of ${p.totalItems} items`;
   };
   return (
     <div class="op-card" classList={{ failed: finished() && o().errors.length > 0 }}>
@@ -213,6 +238,11 @@ function OpCard(props: { op: OpView }) {
         <ul class="op-errors">
           <For each={o().errors.slice(0, 50)}>{(e) => <li title={e.path}>{e.message}</li>}</For>
         </ul>
+        <Show when={ops.retryable(o())}>
+          <button class="btn small op-hunt" onClick={() => ops.retry(o())}>
+            Retry failed items
+          </button>
+        </Show>
         <Show when={o().errors.some((e) => e.path && /used by another|being used|access.denied|sharing/i.test(e.message))}>
           <button class="btn small op-hunt" onClick={() => ui.setLockPaths(o().errors.map((e) => e.path).filter(Boolean))}>
             What is locking these?

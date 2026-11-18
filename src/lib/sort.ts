@@ -1,6 +1,7 @@
 import { groupOf, type GroupKey } from "./group";
 import { baseOf, isDir, isHidden, type Listing } from "./listing";
 import { extensionOf } from "./paths";
+import { hasOperators, matchesFilter, parseFilter } from "./filterQuery";
 
 /** "relevance" keeps the order the listing arrived in (search ranking). */
 export type SortKey = "name" | "modified" | "type" | "size" | "relevance";
@@ -36,10 +37,16 @@ function folderSize(l: Listing, i: number, opts: ViewOptions): number {
 
 export function buildView(l: Listing, opts: ViewOptions): Uint32Array {
   const needle = opts.filter?.trim().toLowerCase() ?? "";
+  const query = needle ? parseFilter(needle) : null;
   const picked: number[] = [];
   for (let i = 0; i < l.count; i++) {
     if (!opts.showHidden && isHidden(l, i)) continue;
-    if (needle && !l.names[i].toLowerCase().includes(needle)) continue;
+    if (query) {
+      if (hasOperators(query)) {
+        const dir = isDir(l, i);
+        if (!matchesFilter(query, { name: l.names[i], dir, size: l.sizes[i], mtime: l.mtimes[i], ext: dir ? "" : extensionOf(baseOf(l.names[i])) })) continue;
+      } else if (needle && !l.names[i].toLowerCase().includes(needle)) continue;
+    }
     picked.push(i);
   }
 

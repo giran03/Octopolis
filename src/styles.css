@@ -5872,3 +5872,13 @@ button.table-cell {
   outline: none;
   border-color: var(--accent);
 }
+
+/* Renaming in the icon, list, content, bento and columns views */
+.grid-cell .rename { width: 100%; flex: none; margin-left: 0; text-align: center; font-size: 12px; height: 20px; padding: 0 2px; }
+.tile-text .rename, .content-text .rename { width: 100%; flex: none; margin-left: 0; }
+.list-cell .rename, .miller-row .rename { margin-left: 0; flex: 1; }
+.bento-item .rename { position: absolute; left: 6px; right: 6px; bottom: 6px; width: auto; margin-left: 0; flex: none; }
+
+/* The view button's icon sits in the exact middle of the button. */
+.toolbar > .view-btn.icon-btn, .view-btn.icon-btn { padding: 0; display: grid; place-items: center; }
+.view-btn .ms { width: 1em; height: 1em; display: grid; place-items: center; text-align: center; overflow: visible; }

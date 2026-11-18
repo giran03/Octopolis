@@ -36,6 +36,10 @@ export interface Command {
 }
 
 const tab = () => workspace.activeTab();
+const archivesSelected = () => {
+  const t = tab();
+  return !!t && A.selectedArchives(t).length > 0;
+};
 const withTab = (fn: (t: TabModel) => void) => () => {
   const t = tab();
   if (t) fn(t);
@@ -100,6 +104,8 @@ export const COMMANDS: readonly Command[] = [
   { id: "file.compress", title: "Compress to zip…", category: "File", run: withTab((t) => A.compressSelection(t, "zip")) },
   { id: "file.compressAs", title: "Compress to…", category: "File", run: withTab((t) => A.openCompressMenu(t)) },
   { id: "file.extract", title: "Extract selected items from the archive", category: "File", run: withTab(A.extractHere) },
+  { id: "file.extractHereArchive", title: "Extract archive here", category: "File", run: withTab((t) => void A.extractArchives(A.selectedArchives(t), "here")), when: () => archivesSelected() },
+  { id: "file.extractToFolder", title: "Extract archive to its own folder", category: "File", run: withTab((t) => void A.extractArchives(A.selectedArchives(t), "folder")), when: () => archivesSelected() },
   { id: "file.reveal", title: "Show in Windows Explorer", category: "File", run: withTab((t) => A.reveal(t)) },
   { id: "file.edit", title: "Open in editor", category: "File", keys: ["ctrl+shift+o"], run: withTab(A.editSelection) },
   { id: "file.openWith", title: "Open with…", category: "File", run: withTab(A.openWithDialog) },

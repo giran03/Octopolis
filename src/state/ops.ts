@@ -211,6 +211,26 @@ export const ops = createRoot(() => {
     }
   }
 
+  /** What each operation in the list was asked to do, so a failed one can be retried. */
+  const requests = new Map<number, OpRequest>();
+  const under = (path: string, root: string) => samePath(path, root) || path.toLowerCase().startsWith(root.toLowerCase().replace(/\\+$/, "") + "\\");
+  /** The same operation limited to the items that failed, or null when there is nothing to retry. */
+  function retryRequest(o: OpView): OpRequest | null {
+    const request = requests.get(o.key);
+    if (!request || o.state !== "finished" || o.cancelled || o.errors.length === 0) return null;
+    const paths = o.errors.map((e) => e.path).filter(Boolean);
+    const failed = (items: readonly string[]) => (paths.length === 0 ? [...items] : items.filter((it) => paths.some((p) => under(p, it))));
+    if (request.kind === "copy" || request.kind === "move") {
+      const sources = failed(request.sources);
+      return sources.length ? { ...request, sources } : null;
+    }
+    if (request.kind === "delete") {
+      const list = failed(request.paths);
+      return list.length ? { ...request, paths: list } : null;
+    }
+    return null;
+  }
+
   /** Runs an operation; resolves with its problems once it has finished. */
   function run(request: OpRequest, label: string, remember = true, conflict: ConflictChoice = "keepBoth"): Promise<OpOutcome> {
     return new Promise((finish) => void startRun(request, label, remember, conflict, finish));
@@ -274,6 +294,7 @@ export const ops = createRoot(() => {
 
   async function startRun(request: OpRequest, label: string, remember: boolean, conflict: ConflictChoice, finish: (o: OpOutcome) => void) {
     const key = nextKey++;
+    requests.set(key, request);
     setList((l) => [
       ...l,
       { key, id: null, label, state: "queued", totalBytes: 0, doneBytes: 0, totalItems: 0, doneItems: 0, current: null, cancelled: false, errors: [] },
@@ -296,6 +317,17 @@ export const ops = createRoot(() => {
       if (notice) void ipc.notify(notice.title, notice.body).catch(() => undefined);
       refreshAffected(request, e.created);
       if (e.errors.length === 0) setTimeout(() => dismiss(key), DONE_LINGER_MS);
+      if (request.kind === "extract" && !e.cancelled && e.errors.length === 0 && e.created[0]) {
+        const first = e.created[0];
+        ui.toast(`Extracted ${describe(e.created)}`, {
+          label: "Show",
+          onClick: () => {
+            const tab = workspace.activeTab();
+            const dir = parentPath(first);
+            if (tab && dir) void tab.navigate(dir, [baseName(first)]);
+          },
+        });
+      }
       finish({ errors: e.errors, cancelled: e.cancelled });
     };
     const transfer = request.kind === "copy" || request.kind === "move";
@@ -431,6 +463,13 @@ export const ops = createRoot(() => {
     undoToast,
     undo,
     redo: () => travel(popRedo(stacks()), redoStep, "Redo"),
+    retryable: (o: OpView) => retryRequest(o) !== null,
+    retry: (o: OpView) => {
+      const request = retryRequest(o);
+      if (!request) return;
+      dismiss(o.key);
+      void run(request, `Retrying ${o.label.charAt(0).toLowerCase()}${o.label.slice(1)}`);
+    },
     cancel: (o: OpView) => o.id !== null && void cancelOp(o.id),
     togglePause: (o: OpView) => {
       if (o.id === null) return;
