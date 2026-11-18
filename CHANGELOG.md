@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.3] - 2026-11-18
+
+### Added
+
+- **Rename in every view**: Renaming (`F2`, **New folder**, **New file**, **Paste as new file**) now edits the name in place in Icons, Tiles, List, Content, Bento and Columns views, not only Details.
+- **Extract archives from the context menu**: Right-click an archive file and choose **Extract here** or **Extract to "name\"**. With several archives selected, **Extract each to its own folder** extracts each one into its own folder.
+- **Slow-click rename**: Click the name of the only selected item and wait, and it starts renaming, like File Explorer. Double-clicking, dragging or clicking elsewhere cancels it.
+- **Tab through renames**: In the name field, `Tab` saves and starts renaming the next item; `Shift+Tab` goes to the previous one.
+- **Extract from the Command Palette**: **Extract archive here** and **Extract archive to its own folder** run on the selected archives. When extraction finishes, a **Show** button selects the result. Names that are already taken get a number, so nothing is replaced.
+- **Single-file `.gz` and `.bz2`**: A `notes.txt.gz` or `.bz2` file opens as an archive holding one file, so it can be previewed and extracted like any other archive.
+- **Filter operators**: The folder filter understands `ext:png,jpg`, `size:>10mb` / `size:<1kb`, `modified:today|yesterday|week|month|year` and `type:file|folder`, alongside plain name text.
+- **Speed and time left**: Copy, move and extract cards show the transfer speed and an estimated time remaining.
+- **Retry failed items**: Copy, move and delete cards that finished with problems have a **Retry failed items** button that repeats the operation for just the items that failed.
+- **Hints for other views**: The first time Bento, Columns, Content, Tiles or List is shown, a short toast explains how it works.
+
+### Changed
+
+- **Undo after renaming**: Renaming an item shows an Undo toast, like moves and deletes.
+- **Screen-reader labels**: The rename field is labelled, and the icon, list, content and Bento views are exposed as selectable lists.
+- **Clicking away ends a rename**: Clicking anywhere outside the name field, including empty space that starts a selection box, saves the name and closes the editor.
+- **Update check icon**: **Settings > Updates** shows a clock instead of a spinning icon while checking for updates.
+
+### Fixed
+
+- **Toasts no longer pile up**: At most four toasts show at once, the oldest is removed when a new one arrives, and repeating the same message refreshes the one already showing instead of stacking another.
+- **File operation cards no longer flicker**: The progress card for copies, moves and extractions now updates in place instead of being rebuilt on every progress tick.
+
 ## [0.1.2] - 2026-11-15
 
 ### Added
