@@ -56,6 +56,8 @@ interface Settings {
   dialogAssistExclude: string;
   /** Hand new File Explorer folder windows that other apps open to Octopolis. */
   catchExplorer: boolean;
+  /** Octopolis catches Win+E itself (a keyboard hook), for Windows builds that ignore the registry entry. */
+  catchWinE: boolean;
   /** Optional details-list columns that are shown, in order. */
   fileColumns: readonly string[];
   /** Leave files Git ignores out of the list in Git folders. */
@@ -121,7 +123,7 @@ export type TerminalShell = "powershell" | "pwsh" | "cmd";
 export type MotionPref = "system" | "reduce" | "full";
 export type UpdateMode = "off" | "notify" | "auto";
 
-const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, tooltipDelayMs: 700, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "auto", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", dialogAssist: false, dialogAssistExclude: "", catchExplorer: false, fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, lastSeenVersion: "", iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true, bentoHideNames: true, bentoShowTags: true, windowCorners: "system", windowControls: "macos", windowControlsSide: "right" };
+const DEFAULTS: Settings = { showHidden: false, sidebarOpen: true, vimMode: false, inspectorOpen: false, verifyCopies: false, speedLimit: null, terminalOpen: false, terminalSync: true, showCommits: false, theme: "Midnight", customThemes: [], systemLight: "", systemDark: "", accent: null, uiScale: 100, density: "normal", densityRow: 0, pinnedActions: [], startFolder: "home", startPath: "", confirmRecycle: true, autoFolderSizes: true, showThumbnails: true, shellIcons: true, terminalShell: "powershell", motion: "system", tooltips: true, tooltipDelayMs: 700, showHints: true, shelfAutoOpen: true, showPinned: true, showRecent: true, sidebarNamesOnly: false, updateMode: "auto", lastUpdateCheck: 0, keepInTray: false, summonKey: "off", dialogAssist: false, dialogAssistExclude: "", catchExplorer: false, catchWinE: true, fileColumns: ["modified", "type", "size"], columnWidths: {}, hideGitIgnored: false, editorPath: "", editorOpensText: false, iconWeight: 200, showExtensions: true, autoView: true, confirmMoveFolders: false, iconScale: 100, uiFont: "", googleFonts: false, welcomeSeen: false, lastSeenVersion: "", iconFill: false, iconStyle: "outlined", notifyDone: true, keepAwake: true, bentoHideNames: true, bentoShowTags: true, windowCorners: "system", windowControls: "macos", windowControlsSide: "right" };
 
 export const SETTING_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
@@ -210,6 +212,7 @@ export const settings = createRoot(() => {
     dialogAssist: () => value().dialogAssist,
     dialogAssistExclude: () => value().dialogAssistExclude,
     catchExplorer: () => value().catchExplorer,
+    catchWinE: () => value().catchWinE,
     fileColumns: () => value().fileColumns,
     columnWidths: () => value().columnWidths,
     hideGitIgnored: () => value().hideGitIgnored,

@@ -1,7 +1,7 @@
 // "Show in folder" from other apps. Tells Windows which folders the tabs are
 // showing, and selects the files other apps ask for in the tab that has them.
 import { createEffect, createRoot } from "solid-js";
-import { explorerCatchSet, SHOW_ITEMS_EVENT, shellWindowsSync, type ShowItems } from "../lib/ipc";
+import { explorerCatchSet, winECatchSet, SHOW_ITEMS_EVENT, shellWindowsSync, type ShowItems } from "../lib/ipc";
 import { baseName, samePath } from "../lib/paths";
 import { settings } from "./settings";
 import { workspace } from "./workspace";
@@ -46,6 +46,7 @@ export function startShellWindows(): void {
   createRoot(() => {
     createEffect(() => void shellWindowsSync(listedFolders(workspace.allTabs())).catch(() => undefined));
     createEffect(() => void explorerCatchSet(settings.catchExplorer()).catch(() => undefined));
+    createEffect(() => void winECatchSet(settings.catchWinE()).catch(() => undefined));
   });
   void import("@tauri-apps/api/event").then(({ listen }) => listen<ShowItems>(SHOW_ITEMS_EVENT, (e) => showItems(e.payload))).catch(() => undefined);
 }

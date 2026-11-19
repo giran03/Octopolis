@@ -37,6 +37,7 @@ pub mod sizes;
 pub mod tags;
 pub mod thumbs;
 pub mod webdrop;
+pub mod winkey;
 
 pub use entry::{Entry, EntryKind, RawEntry};
 pub use enumerate::{enumerate_dir, list_dir};

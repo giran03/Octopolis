@@ -191,6 +191,8 @@ pub fn run() {
             system::wsl_distros,
             system::explorer_mode_status,
             system::explorer_mode_set,
+            system::explorer_mode_repair,
+            system::win_e_catch_set,
             system::explorer_menu_set,
             failsafe::explorer_failsafe_tripped,
             shellwin_cmd::shell_windows_sync,

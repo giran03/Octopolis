@@ -483,6 +483,7 @@ export interface ExplorerMode {
 }
 export const explorerModeStatus = () => invoke<ExplorerMode>("explorer_mode_status");
 /** Turns "Use Octopolis instead of File Explorer" on or off for this Windows account. */
+export const explorerModeRepair = () => invoke<ExplorerMode>("explorer_mode_repair");
 export const explorerModeSet = (on: boolean) => invoke<ExplorerMode>("explorer_mode_set", { on });
 /** Adds or removes "Open in Octopolis" in File Explorer's folder right-click menu. */
 export const explorerMenuSet = (on: boolean) => invoke<ExplorerMode>("explorer_menu_set", { on });
@@ -499,6 +500,7 @@ export const SHOW_ITEMS_EVENT = "octopolis://show-items";
 /** Tells Windows which folders the tabs are showing, so "Show in folder" in other apps can land here. */
 export const shellWindowsSync = (paths: readonly string[]) => invoke<void>("shell_windows_sync", { paths });
 /** Turns handing new File Explorer folder windows to Octopolis on or off (only applies while Octopolis is the default). */
+export const winECatchSet = (enabled: boolean) => invoke<void>("win_e_catch_set", { enabled });
 export const explorerCatchSet = (enabled: boolean) => invoke<void>("explorer_catch_set", { enabled });
 /** Another app's Open or Save dialog waiting for a file picked here. */
 export interface DialogPick {

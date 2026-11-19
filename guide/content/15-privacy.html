@@ -19,6 +19,13 @@
     <li><b>This guide</b> remembers only the theme you pick in it, in your browser, and reads the theme the app shares with it.</li>
   </ul>
 
+  <h3 id="keys">Keyboard access</h3>
+  <ul>
+    <li>The summon shortcut and the dialog helpers are registered Windows shortcuts: Octopolis is only told when that exact combination is pressed, never what you type.</li>
+    <li>If you use Octopolis instead of File Explorer, it also installs a <b>keyboard hook that reacts to Win+E only</b>, because some Windows 11 builds ignore the registry entry for that shortcut. Windows hands every key press to a hook, so this is the one place Octopolis can see keys go by. It checks for Win+E, ignores everything else, and stores and sends nothing. Antivirus tools sometimes flag any keyboard hook.</li>
+    <li>Turn it off under <b>Settings › General › Catch Win+E myself</b>, or turn off the File Explorer replacement. The hook only runs while that replacement is on.</li>
+  </ul>
+
   <h3 id="safety">Safety nets</h3>
   <ul>
     <li>Deleting goes to the Recycle Bin unless you use <kbd>Shift</kbd> <kbd>Del</kbd>, which asks first.</li>

@@ -1,5 +1,5 @@
 import { createResource, createSignal, Show } from "solid-js";
-import { detectEditors, errorText, explorerMenuSet, explorerModeSet, explorerModeStatus, type SummonKey } from "../../lib/ipc";
+import { detectEditors, errorText, explorerMenuSet, explorerModeRepair, explorerModeSet, explorerModeStatus, type SummonKey } from "../../lib/ipc";
 import { ui } from "../../state/ui";
 import { type StartFolder, settings, type TerminalShell } from "../../state/settings";
 import { Section, Segmented, Select, SettingRow, Toggle, type Option } from "./controls";
@@ -54,6 +54,17 @@ function ExplorerModeSection() {
     if (s.folders && !s.winE) return "Folders open here. Win+E is kept by another app";
     return "Opens folders from the desktop, Start, the Run box and other apps, and Win+E, in Octopolis";
   };
+  const repair = async () => {
+    setBusy(true);
+    try {
+      mutate(await explorerModeRepair());
+      ui.toast("Win+E and folders were set up again. Try Win+E now");
+    } catch (e) {
+      ui.toast(`Couldn't fix this: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
   const setMenu = async (next: boolean) => {
     setBusy(true);
     try {
@@ -71,6 +82,17 @@ function ExplorerModeSection() {
         <Toggle label="Use Octopolis instead of File Explorer" checked={on()} disabled={busy() || status.loading} onChange={(next) => (next ? setConfirming(true) : void apply(false))} />
       </SettingRow>
       <Show when={on()}>
+        <SettingRow label="Win+E still opens File Explorer?" hint="Sets everything up again for this copy of Octopolis and restarts the Win+E catcher">
+          <button class="btn small" disabled={busy()} onClick={() => void repair()}>
+            Fix Win+E
+          </button>
+        </SettingRow>
+        <SettingRow
+          label="Catch Win+E myself"
+          hint="Some Windows 11 builds ignore the registry entry for Win+E. This listens for that one combination and nothing else; no other key is read, stored or sent. Turn it off if you'd rather keep Win+E for File Explorer"
+        >
+          <Toggle label="Catch Win+E myself" checked={settings.catchWinE()} onChange={(catchWinE) => settings.set({ catchWinE })} />
+        </SettingRow>
         <SettingRow
           label="Also catch File Explorer windows other apps open"
           hint="Show in folder for a folder that isn't open here, and apps that start File Explorer themselves, still open a File Explorer window. With this on, Octopolis closes that window and opens the folder here; the window may flash briefly. Control Panel, This PC and similar places stay in File Explorer"

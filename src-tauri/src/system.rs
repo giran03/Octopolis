@@ -277,6 +277,23 @@ pub async fn explorer_mode_set(app: tauri::AppHandle, on: bool) -> Result<Explor
         // "Show in folder" follows the same switch.
         crate::shellwin_cmd::apply(&app);
         crate::catch_cmd::apply(&app);
+        apply_win_e();
+        Ok(explorer_mode_dto())
+    })
+    .await
+}
+
+/// Re-applies the whole setup for this copy: rewrites the registry entries and
+/// restarts the Win+E catcher. The fix for Win+E opening File Explorer.
+#[tauri::command]
+pub async fn explorer_mode_repair(app: tauri::AppHandle) -> Result<ExplorerModeDto, String> {
+    crate::off_main(move || {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        octo_core::explorer_mode::enable(&exe).map_err(|e| e.to_string())?;
+        octo_core::winkey::set(None::<fn()>);
+        apply_win_e();
+        crate::shellwin_cmd::apply(&app);
+        crate::catch_cmd::apply(&app);
         Ok(explorer_mode_dto())
     })
     .await
@@ -297,9 +314,38 @@ pub async fn explorer_menu_set(on: bool) -> Result<ExplorerModeDto, String> {
     .await
 }
 
+/// The user's "catch Win+E myself" setting. On until the window says otherwise.
+static WIN_E_CATCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+#[tauri::command]
+pub async fn win_e_catch_set(enabled: bool) -> Result<(), String> {
+    WIN_E_CATCH.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    crate::off_main(|| {
+        apply_win_e();
+        Ok(())
+    })
+    .await
+}
+
+/// Newer Windows 11 builds ignore the registry entry for Win+E, so while the
+/// mode is on Octopolis also catches the key itself and opens "This PC".
+pub fn apply_win_e() {
+    if WIN_E_CATCH.load(std::sync::atomic::Ordering::Relaxed) && octo_core::explorer_mode::status().win_e {
+        octo_core::winkey::set(Some(|| {
+            if let Ok(exe) = std::env::current_exe() {
+                // The single-instance plugin hands this to the running window.
+                let _ = std::process::Command::new(exe).arg(octo_core::explorer_mode::THIS_PC).spawn();
+            }
+        }));
+    } else {
+        octo_core::winkey::set(None::<fn()>);
+    }
+}
+
 /// If the entries point at an Octopolis that no longer exists (the app was
 /// moved), points them at this copy so folders keep opening.
 pub fn repair_explorer_mode() {
+    apply_win_e();
     if let Some(menu) = octo_core::explorer_mode::menu_status()
         && !std::path::Path::new(&menu).exists()
         && let Ok(exe) = std::env::current_exe()
