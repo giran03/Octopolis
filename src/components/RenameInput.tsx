@@ -2,18 +2,37 @@
 import { onCleanup, onMount } from "solid-js";
 import { stemLength } from "../lib/paths";
 
+let draft: { name: string; value: string; start: number; end: number } | null = null;
+
 /** Edits a name in place: Enter or leaving the field keeps it, Escape cancels. The name without its extension starts selected. */
 export function RenameInput(props: { name: string; isDir: boolean; onDone: (value: string | null, move?: 1 | -1) => void }) {
   let input!: HTMLInputElement;
   let finished = false;
+  // A view that rebuilds the row (a layout change, a scroll) replaces this field. The new one picks up what was typed.
+  const resumed = draft?.name === props.name ? draft : null;
   const finish = (v: string | null, move?: 1 | -1) => {
     if (finished) return;
     finished = true;
+    draft = null;
     props.onDone(v, move);
   };
   onMount(() => {
+    if (resumed) input.value = resumed.value;
     input.focus();
-    input.setSelectionRange(0, stemLength(props.name, props.isDir));
+    if (resumed) input.setSelectionRange(resumed.start, resumed.end);
+    else input.setSelectionRange(0, stemLength(props.name, props.isDir));
+    onCleanup(() => {
+      // Removed from the page, not left by the user: keep the text for the field that replaces it.
+      if (!finished) {
+        draft = { name: props.name, value: input.value, start: input.selectionStart ?? 0, end: input.selectionEnd ?? 0 };
+        finished = true;
+        const mine = draft;
+        // A replacement appears in the same update; if none does, forget the text.
+        setTimeout(() => {
+          if (draft === mine) draft = null;
+        }, 0);
+      }
+    });
     // Empty areas start a selection box and cancel the mouse-down's default, so the field would never lose focus on its own.
     const outside = (e: MouseEvent) => {
       if (e.target !== input) finish(input.value);
