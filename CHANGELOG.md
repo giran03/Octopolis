@@ -7,6 +7,10 @@
 - **Win+E catcher**: When Octopolis replaces File Explorer, it also listens for Win+E itself, because some Windows 11 builds ignore the registry entry for that shortcut. It reacts to that one combination only and reads, stores and sends no other key. Turn it off under **Settings > General > Catch Win+E myself**. The privacy guide explains what the hook can and cannot see.
 - **Fix Win+E**: **Settings > General > Fix Win+E** sets everything up again for this copy of Octopolis and restarts the Win+E catcher, for when Win+E still opens File Explorer.
 
+### Changed
+
+- **Explorer switch asks in a pop-up**: Turning on **Use Octopolis instead of File Explorer** now explains what it changes in a modal dialog instead of an inline note under the setting.
+
 ### Fixed
 
 - **New folder and new file always start renaming**: After **New folder** or **New file**, the name field now opens in every view, scrolling to the new item first when it is out of sight (Icons, Tiles, List, Content, Bento and Columns), and it survives a folder refresh arriving at the same moment.

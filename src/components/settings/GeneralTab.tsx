@@ -29,14 +29,20 @@ const SPEEDS: readonly Option<number>[] = [
   ...[10, 50, 100, 500].map((mb) => ({ value: mb * MB, label: `${mb} MB/s` })),
 ];
 
+const EXPLORER_MODE_NOTE =
+  "This changes settings for your Windows account only, and needs no administrator rights. Turn it off here at any time, or uninstall Octopolis, to give folders back to File Explorer. If Octopolis can't open, run Octopolis.exe --restore-explorer. " +
+  "Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer (Also catch File Explorer windows covers that). Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control Panel, Network and similar places still open in File Explorer.";
+
+/** Explains the switch in a modal before it is turned on. */
+const askExplorerMode = (onConfirm: () => void) =>
+  ui.ask({ title: "Use Octopolis instead of File Explorer", body: EXPLORER_MODE_NOTE, confirmLabel: "Turn on", onConfirm });
+
 /** "Use Octopolis instead of File Explorer", with an explanation before the first switch-on. */
 function ExplorerModeSection() {
   const [status, { mutate }] = createResource(() => explorerModeStatus().catch(() => null));
-  const [confirming, setConfirming] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const on = () => !!status() && (status()!.folders || status()!.winE);
   const apply = async (next: boolean) => {
-    setConfirming(false);
     setBusy(true);
     try {
       mutate(await explorerModeSet(next));
@@ -79,7 +85,7 @@ function ExplorerModeSection() {
   return (
     <Section title="File Explorer">
       <SettingRow label="Use Octopolis instead of File Explorer" hint={hint()}>
-        <Toggle label="Use Octopolis instead of File Explorer" checked={on()} disabled={busy() || status.loading} onChange={(next) => (next ? setConfirming(true) : void apply(false))} />
+        <Toggle label="Use Octopolis instead of File Explorer" checked={on()} disabled={busy() || status.loading} onChange={(next) => (next ? askExplorerMode(() => void apply(true)) : void apply(false))} />
       </SettingRow>
       <Show when={on()}>
         <SettingRow label="Win+E still opens File Explorer?" hint="Sets everything up again for this copy of Octopolis and restarts the Win+E catcher">
@@ -126,22 +132,6 @@ function ExplorerModeSection() {
       <SettingRow label="Shortcut to bring Octopolis forward" hint="Ctrl+E only works while the desktop or taskbar is in front, so other apps keep their own Ctrl+E. Ctrl+Shift+Alt+E works anywhere and hides Octopolis again">
         <Select label="Shortcut to bring Octopolis forward" value={settings.summonKey()} options={SUMMON} onChange={(summonKey) => settings.set({ summonKey })} />
       </SettingRow>
-      <Show when={confirming()}>
-        <div class="setting-note" role="alertdialog" aria-label="Use Octopolis instead of File Explorer">
-          <p>
-            This changes settings for your Windows account only, and needs no administrator rights. Turn it off here at any time, or uninstall Octopolis, to give folders back to File Explorer. If Octopolis can't open,
-            run <code>Octopolis.exe --restore-explorer</code>.
-          </p>
-          <p class="muted small">
-            Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer (Also catch File Explorer windows covers that). Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control
-            Panel, Network and similar places still open in File Explorer.
-          </p>
-          <div class="dialog-actions">
-            <button class="btn" onClick={() => setConfirming(false)}>Cancel</button>
-            <button class="btn primary" onClick={() => void apply(true)}>Turn on</button>
-          </div>
-        </div>
-      </Show>
     </Section>
   );
 }
