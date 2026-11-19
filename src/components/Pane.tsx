@@ -44,6 +44,27 @@ export function Pane(props: { pane: PaneModel }) {
   let host!: HTMLElement;
   // The first time the active tab shows an unusual view, say what it does.
   createEffect(on(() => tab()?.viewMode(), (mode) => mode && showViewTip(mode), { defer: true }));
+  // The rows of the views are virtualised: scroll the item being renamed into view so its name field exists.
+  createEffect(
+    on(
+      () => {
+        const t = tab();
+        return t ? [t, t.renaming()] as const : null;
+      },
+      (cur) => {
+        if (!cur || cur[1] === null) return;
+        const [t, entry] = cur;
+        const reveal = () => {
+          const pos = t.view().indexOf(entry);
+          if (pos >= 0) listHandles.get(t)?.ensureVisible(pos);
+        };
+        queueMicrotask(reveal);
+        // A view that was still being laid out measures again a frame later.
+        requestAnimationFrame(reveal);
+      },
+      { defer: true },
+    ),
+  );
   return (
     <section ref={host} class="pane" classList={{ active: active() }} onMouseDown={() => workspace.focusPane(props.pane.id)}>
       <TabStrip pane={props.pane} />

@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- **New folder and new file always start renaming**: After **New folder** or **New file**, the name field now opens even when a folder refresh arrives at the same moment, and it stays on the right item if the refresh renumbers the list.
+- **New folder and new file always start renaming**: After **New folder** or **New file**, the name field now opens in every view, scrolling to the new item first when it is out of sight (Icons, Tiles, List, Content, Bento and Columns), and it survives a folder refresh arriving at the same moment.
 
 ## [0.1.3] - 2026-11-18
 
