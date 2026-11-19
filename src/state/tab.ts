@@ -280,7 +280,14 @@ export function createTab(initialPath: string) {
           const names = explicit ?? selectedNames();
           const focusName = explicit?.length ? null : focusedName();
           pendingSelect = null;
+          // The name being edited keeps its field when a refresh renumbers the items.
+          const editing = renaming();
+          const editingName = editing !== null && sameDir ? listing().names[editing] ?? null : null;
           setListing(snapshot(builder));
+          if (editingName !== null) {
+            const at = indexOfName(listing(), editingName);
+            setRenaming(at >= 0 ? at : null);
+          }
           setStatus({ loading: false, error: null, elapsedMs: summary.elapsedMs });
           setArchive(summary.archive);
           if (summary.archive) {

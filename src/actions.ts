@@ -2,7 +2,7 @@
 import type { ArchiveFormat, GitChange, LinkKind } from "./lib/ipc";
 import { GROUP_KEYS, GROUP_TITLES } from "./lib/group";
 import { listDir, openTerminalHere, pickFolderDialog, createFile, createFolder, createLinks, gitChange, installFont, openInEditor, openInEditorMany, openPaths, runCustomAction, writeTempList, saveDroppedFile, downloadDroppedUrl, startNativeDrag, setCloudPin, ejectDrive, errorText, extractAndOpen, listTemplates, nativeMenu, openPath, openWith, renameItem, revealInExplorer, runAsAdmin, runPath, templatesFolder } from "./lib/ipc";
-import { baseOf, createBuilder, decodeBatch, isDir, snapshot } from "./lib/listing";
+import { baseOf, createBuilder, decodeBatch, indexOfName, isDir, snapshot } from "./lib/listing";
 import { baseName, joinPath, parentPath, samePath, sameVolume } from "./lib/paths";
 import { entryPattern, extensionOf, invertSelection, selectEntriesWhere } from "./lib/selection";
 import { formatPaths, PATH_FORMATS, type PathFormat } from "./lib/pathFormats";
@@ -748,14 +748,26 @@ export function extractHere(tab: TabModel) {
   ui.toast("Open the archive, select items, then extract them");
 }
 
+/** Starts renaming a just-created item by name, waiting briefly for a superseded or slow load to list it. */
+async function renameCreated(tab: TabModel, name: string) {
+  for (let i = 0; i < 20; i++) {
+    const entry = indexOfName(tab.listing(), name);
+    if (entry >= 0 && tab.view().includes(entry)) {
+      tab.setSelection(new Set([entry]));
+      tab.setFocus(tab.view().indexOf(entry));
+      return tab.setRenaming(entry);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 export async function newFolder(tab: TabModel) {
   if (blockedInArchive(tab)) return;
   try {
     const created = await createFolder(tab.path(), "New folder");
     ops.record({ kind: "newFolder", label: `New folder "${baseName(created)}"`, path: created });
     await tab.navigate(tab.path(), [baseName(created)]);
-    const entry = [...tab.selection()][0];
-    if (entry !== undefined) tab.setRenaming(entry);
+    await renameCreated(tab, baseName(created));
   } catch (e) {
     ui.toast(`Couldn't create a folder: ${errorText(e)}`);
   }
@@ -768,8 +780,7 @@ export async function newFile(tab: TabModel, name = "New text document.txt", tem
     const created = await createFile(tab.path(), name, template);
     ops.record({ kind: "newFile", label: `New file "${baseName(created)}"`, path: created });
     await tab.navigate(tab.path(), [baseName(created)]);
-    const entry = [...tab.selection()][0];
-    if (entry !== undefined) tab.setRenaming(entry);
+    await renameCreated(tab, baseName(created));
   } catch (e) {
     ui.toast(`Couldn't create a file: ${errorText(e)}`);
   }
