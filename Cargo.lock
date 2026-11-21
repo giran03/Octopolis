@@ -4428,7 +4428,7 @@ dependencies = [
 
 [[package]]
 name = "octo-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "blake3",
  "bzip2",
@@ -4476,7 +4476,7 @@ dependencies = [
 
 [[package]]
 name = "octopolis"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "blake3",
  "dirs 7.0.0",
@@ -4500,7 +4500,7 @@ dependencies = [
 
 [[package]]
 name = "octopolis-keys"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "octo-core",
  "windows 0.62.2",
