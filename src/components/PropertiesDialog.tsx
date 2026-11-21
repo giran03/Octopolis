@@ -1,11 +1,12 @@
 // Properties (Alt+Enter): details, editable dates and attributes, and checksums.
 import { createResource, createSignal, For, Show } from "solid-js";
 import { formatDate, formatSize, typeLabel } from "../lib/format";
-import { errorText, fileChecksum, filePropertiesMany, setFileAttributes, setFileTimes, type ChecksumKind, type FileAttributes, type FileProperties } from "../lib/ipc";
+import { errorText, fileChecksum, folderStats, filePropertiesMany, setFileAttributes, setFileTimes, type ChecksumKind, type FileAttributes, type FileProperties } from "../lib/ipc";
 import { baseName, parentPath, samePath } from "../lib/paths";
 import { ui } from "../state/ui";
 import { workspace } from "../state/workspace";
 import { Checkbox } from "./Checkbox";
+import { DateTimeField } from "./DateTimeField";
 
 const CHECKSUMS: readonly { kind: ChecksumKind; label: string }[] = [
   { kind: "sha256", label: "SHA-256" },
@@ -50,6 +51,11 @@ export function PropertiesDialog(props: { paths: readonly string[] }) {
     (paths) => filePropertiesMany(paths).catch(() => paths.map(() => null)),
   );
   const first = (): FileProperties | null => info()?.[0] ?? null;
+  // A folder's contents are counted in the background once it's known to be one.
+  const [stats] = createResource(
+    () => (single() && first()?.isDir ? props.paths[0] : null),
+    (path) => folderStats(path),
+  );
   const known = () => (info() ?? []).filter((p): p is FileProperties => p !== null);
 
   // Edited values; null / empty means "unchanged".
@@ -114,6 +120,8 @@ export function PropertiesDialog(props: { paths: readonly string[] }) {
                   </dd>
                   <dt>Location</dt>
                   <dd class="props-path">{parentPath(props.paths[0]) ?? props.paths[0]}</dd>
+                  <dt>Full path</dt>
+                  <dd class="props-path">{props.paths[0]}</dd>
                   <Show when={p().linkTarget}>
                     <dt>Points to</dt>
                     <dd class="props-path">{p().linkTarget}</dd>
@@ -122,7 +130,40 @@ export function PropertiesDialog(props: { paths: readonly string[] }) {
               )}
             </Show>
             <dt>Size</dt>
-            <dd>{single() && first()?.isDir ? "Folder (use Calculate folder sizes to measure it)" : `${formatSize(totalSize())} (${totalSize().toLocaleString()} bytes)`}</dd>
+            <dd>
+              {single() && first()?.isDir ? (
+                <Show when={stats()} fallback={<span class="muted">{stats.error ? "Couldn't measure this folder" : "Calculating…"}</span>}>
+                  {(s) => `${formatSize(s().bytes)} (${s().bytes.toLocaleString()} bytes)`}
+                </Show>
+              ) : (
+                `${formatSize(totalSize())} (${totalSize().toLocaleString()} bytes)`
+              )}
+            </dd>
+            <Show when={single() && first()?.isDir && stats()}>
+              {(s) => (
+                <>
+                  <dt>Contains</dt>
+                  <dd>
+                    {s().files.toLocaleString()} {s().files === 1 ? "file" : "files"}, {s().folders.toLocaleString()} {s().folders === 1 ? "folder" : "folders"}
+                  </dd>
+                </>
+              )}
+            </Show>
+            <Show when={single() && first()?.flags.length}>
+              <dt>Flags</dt>
+              <dd>{first()!.flags.join(", ")}</dd>
+            </Show>
+            <Show when={single() && first()?.volume}>
+              {(v) => (
+                <>
+                  <dt>Drive</dt>
+                  <dd>
+                    {v().root}
+                    {v().fs ? ` · ${v().fs}` : ""} · {formatSize(v().free)} free of {formatSize(v().total)}
+                  </dd>
+                </>
+              )}
+            </Show>
             <Show when={single() && first()?.sizeOnDisk != null}>
               <dt>On disk</dt>
               <dd>{formatSize(first()!.sizeOnDisk!)}</dd>
@@ -135,14 +176,12 @@ export function PropertiesDialog(props: { paths: readonly string[] }) {
                       <>
                         <dt>{label}</dt>
                         <dd>
-                          <input
-                            type="datetime-local"
-                            step="1"
-                            class="text-input props-date"
-                            aria-label={`${label} date`}
+                          <DateTimeField
+                            class="props-date"
+                            label={`${label} date`}
                             value={toLocalInput(times()[key] ?? p()[key])}
-                            onChange={(e) => {
-                              const ms = fromLocalInput(e.currentTarget.value);
+                            onChange={(v) => {
+                              const ms = fromLocalInput(v);
                               if (ms !== null) setTimes((t) => ({ ...t, [key]: ms }));
                             }}
                           />

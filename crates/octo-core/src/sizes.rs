@@ -41,6 +41,42 @@ pub fn folder_size(dir: &Path, cancel: &CancelToken) -> FolderSize {
     subdirs.par_iter().map(|d| folder_size(&dir.join(d), cancel)).reduce(FolderSize::default, FolderSize::add).add(here)
 }
 
+/// What a folder tree holds: bytes, files and subfolders.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FolderStats {
+    pub bytes: u64,
+    pub files: u64,
+    pub folders: u64,
+}
+
+impl FolderStats {
+    fn add(self, o: FolderStats) -> FolderStats {
+        FolderStats { bytes: self.bytes + o.bytes, files: self.files + o.files, folders: self.folders + o.folders }
+    }
+}
+
+/// Totals for everything inside `dir` (the folder itself is not counted).
+/// Junctions and symlinked folders count as one folder and are not entered.
+pub fn folder_stats(dir: &Path, cancel: &CancelToken) -> FolderStats {
+    if cancel.is_cancelled() {
+        return FolderStats::default();
+    }
+    let mut here = FolderStats::default();
+    let mut subdirs: Vec<String> = Vec::new();
+    let _ = crate::enumerate_dir(dir, |e| {
+        if e.kind == EntryKind::Dir {
+            here.folders += 1;
+            if e.attrs & attrs::REPARSE_POINT == 0 {
+                subdirs.push(String::from_utf16_lossy(e.name));
+            }
+        } else {
+            here.bytes += e.size;
+            here.files += 1;
+        }
+    });
+    subdirs.par_iter().map(|d| folder_stats(&dir.join(d), cancel)).reduce(FolderStats::default, FolderStats::add).add(here)
+}
+
 /// Computes the size of each direct subfolder of `dir`, calling `on_size` as
 /// each finishes.
 pub fn subfolder_sizes(dir: &Path, cancel: &CancelToken, on_size: impl Fn(&str, FolderSize) + Sync) -> Result<()> {

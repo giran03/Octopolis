@@ -20,25 +20,41 @@ pub fn delete(ctx: &mut Ctx<'_>, paths: &[PathBuf], permanent: bool) {
         }
         return;
     }
-    // One shell call for the whole batch is far faster than one per item.
-    if trash::delete_all(paths).is_ok() {
-        ctx.progress.done_items = paths.len() as u64;
-        return;
-    }
-    // Something failed: retry item by item to find out which ones.
-    for p in paths {
+    // The shell recycles a folder by visiting every entry inside it, so a big
+    // tree takes seconds however it is called (measured: 50k small files ~12 s,
+    // a single 5 GB file ~0.15 s). Batch in chunks: one shell call per chunk
+    // keeps small items fast, while progress, the current name and cancel stay
+    // live between chunks instead of the whole delete looking frozen.
+    for chunk in paths.chunks(RECYCLE_CHUNK) {
         if ctx.cancelled() {
             return;
         }
-        if p.symlink_metadata().is_ok()
-            && let Err(e) = trash::delete(p)
-        {
-            ctx.fail(p, crate::Error::Trash(e.to_string()));
-        }
-        ctx.progress.done_items += 1;
+        ctx.progress.current = chunk.first().map(|p| p.as_path().into());
         ctx.emit(false);
+        if trash::delete_all(chunk).is_ok() {
+            ctx.progress.done_items += chunk.len() as u64;
+            ctx.emit(false);
+            continue;
+        }
+        // Something failed: retry this chunk item by item to find out which.
+        for p in chunk {
+            if ctx.cancelled() {
+                return;
+            }
+            ctx.progress.current = Some(p.as_path().into());
+            if p.symlink_metadata().is_ok()
+                && let Err(e) = trash::delete(p)
+            {
+                ctx.fail(p, crate::Error::Trash(e.to_string()));
+            }
+            ctx.progress.done_items += 1;
+            ctx.emit(false);
+        }
     }
 }
+
+/// Items per shell call when recycling.
+const RECYCLE_CHUNK: usize = 16;
 
 /// Deletes a file or folder tree. Entries that fail are reported one by one
 /// and the rest of the tree is still removed. Links (symlinks, junctions) are

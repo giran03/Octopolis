@@ -282,6 +282,35 @@ pub struct PropertiesDto {
     hard_links: u32,
     streams: Vec<(String, u64)>,
     link_target: Option<String>,
+    flags: Vec<String>,
+    volume: Option<VolumeDto>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeDto {
+    root: String,
+    fs: String,
+    free: u64,
+    total: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderStatsDto {
+    bytes: u64,
+    files: u64,
+    folders: u64,
+}
+
+/// What a folder holds, counted recursively.
+#[tauri::command]
+pub async fn folder_stats(path: PathBuf) -> Result<FolderStatsDto, String> {
+    crate::off_main(move || {
+        let s = octo_core::sizes::folder_stats(&path, &octo_core::ops::CancelToken::default());
+        Ok(FolderStatsDto { bytes: s.bytes, files: s.files, folders: s.folders })
+    })
+    .await
 }
 
 fn properties_of(path: &std::path::Path) -> Result<PropertiesDto, String> {
@@ -299,6 +328,8 @@ fn properties_of(path: &std::path::Path) -> Result<PropertiesDto, String> {
             hard_links: p.hard_links,
             streams: p.streams.into_iter().map(|s| (s.name, s.size)).collect(),
             link_target: p.link_target,
+            flags: p.flags,
+            volume: p.volume.map(|v| VolumeDto { root: v.root, fs: v.fs, free: v.free, total: v.total }),
         })
     }
 }

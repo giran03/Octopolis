@@ -111,6 +111,7 @@ pub fn run() {
             tools_cmd::file_tags,
             tools_cmd::file_properties,
             tools_cmd::file_properties_many,
+            tools_cmd::folder_stats,
             tools_cmd::set_file_attributes,
             tools_cmd::set_file_times,
             tools_cmd::file_checksum,

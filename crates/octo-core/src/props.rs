@@ -38,6 +38,20 @@ pub struct Properties {
     /// Alternate data streams, such as the "downloaded from the internet" mark.
     pub streams: Vec<Stream>,
     pub link_target: Option<String>,
+    /// Other attribute flags worth showing: Compressed, Encrypted, Sparse, Offline, Temporary, Link.
+    pub flags: Vec<String>,
+    /// The drive this lives on.
+    pub volume: Option<Volume>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Volume {
+    /// Root such as `X:\`.
+    pub root: String,
+    /// File system name, such as NTFS.
+    pub fs: String,
+    pub free: u64,
+    pub total: u64,
 }
 
 fn ms(t: std::io::Result<SystemTime>) -> i64 {
@@ -160,11 +174,11 @@ mod imp {
     use windows::Win32::Storage::FileSystem::{
         BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
         FILE_FLAGS_AND_ATTRIBUTES, FindClose, FindFirstStreamW, FindNextStreamW, FindStreamInfoStandard, GetCompressedFileSizeW,
-        GetDiskFreeSpaceW, GetFileInformationByHandle, SetFileAttributesW, WIN32_FIND_STREAM_DATA,
+        GetDiskFreeSpaceExW, GetDiskFreeSpaceW, GetFileInformationByHandle, GetVolumeInformationW, SetFileAttributesW, WIN32_FIND_STREAM_DATA,
     };
     use windows::core::PCWSTR;
 
-    use super::{Attributes, Properties, Stream};
+    use super::{Attributes, Properties, Stream, Volume};
     use crate::error::{Error, Result};
 
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
@@ -203,6 +217,37 @@ mod imp {
             }
         }
         p.streams = streams(&w);
+        for (bit, name) in [
+            (0x800, "Compressed"),
+            (0x4000, "Encrypted"),
+            (0x200, "Sparse"),
+            (0x1000, "Offline"),
+            (0x100, "Temporary"),
+            (0x400, "Link"),
+        ] {
+            if a & bit != 0 {
+                p.flags.push(name.to_string());
+            }
+        }
+        p.volume = volume(path);
+    }
+
+    fn volume(path: &Path) -> Option<Volume> {
+        let mut root = path.ancestors().last()?.to_string_lossy().into_owned();
+        if !root.ends_with('\\') {
+            root.push('\\');
+        }
+        let rw = wide(Path::new(&root));
+        let (mut free, mut total) = (0u64, 0u64);
+        // SAFETY: `rw` is NUL-terminated; outputs are locals.
+        unsafe { GetDiskFreeSpaceExW(PCWSTR(rw.as_ptr()), Some(&mut free), Some(&mut total), None) }.ok()?;
+        let mut name = [0u16; 64];
+        // SAFETY: as above; the buffer length is passed.
+        let fs = match unsafe { GetVolumeInformationW(PCWSTR(rw.as_ptr()), None, None, None, None, Some(&mut name)) } {
+            Ok(()) => String::from_utf16_lossy(&name[..name.iter().position(|&c| c == 0).unwrap_or(name.len())]),
+            Err(_) => String::new(),
+        };
+        Some(Volume { root, fs, free, total })
     }
 
     fn round_to_cluster(path: &Path, bytes: u64) -> u64 {

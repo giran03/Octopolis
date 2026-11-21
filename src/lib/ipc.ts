@@ -397,7 +397,17 @@ export interface FileProperties {
   /** Alternate data streams: [name, size]. */
   readonly streams: [string, number][];
   readonly linkTarget: string | null;
+  /** Other flags: Compressed, Encrypted, Sparse, Offline, Temporary, Link. */
+  readonly flags: string[];
+  readonly volume: { root: string; fs: string; free: number; total: number } | null;
 }
+export interface FolderStats {
+  readonly bytes: number;
+  readonly files: number;
+  readonly folders: number;
+}
+/** What a folder holds, counted through everything inside it. */
+export const folderStats = (path: string) => invoke<FolderStats>("folder_stats", { path });
 export type ChecksumKind = "blake3" | "sha256" | "md5";
 export const fileProperties = (path: string) => invoke<FileProperties>("file_properties", { path });
 /** Properties of many paths in one call; null for one that can't be read. */

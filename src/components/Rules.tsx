@@ -2,6 +2,7 @@
 // The dialog works like Custom actions: a list with toggles, an editor, ready-made presets, import and export.
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Checkbox } from "./Checkbox";
+import { DateTimeField } from "./DateTimeField";
 import { formatSize } from "../lib/format";
 import { errorText, knownFolders, pickFolderDialog, ruleMatches, type RuleMatch } from "../lib/ipc";
 import { baseName } from "../lib/paths";
@@ -550,12 +551,13 @@ export function Rules() {
                 <div class="rx-row">
                   <label class="rx-label" for="rule-time">At time</label>
                   <div class="rx-ctrl">
-                    <input
+                    <DateTimeField
                       id="rule-time"
-                      class="text-input rx-time"
-                      type="time"
+                      class="rx-time"
+                      mode="time"
+                      label="At time"
                       value={draft().schedule.time}
-                      onInput={(e) => setSchedule({ time: e.currentTarget.value || "09:00" })}
+                      onChange={(v) => setSchedule({ time: v || "09:00" })}
                     />
                   </div>
                 </div>
