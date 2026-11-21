@@ -44,7 +44,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "set:motion", tab: "appearance", tabLabel: "Appearance", title: "Animations", rowLabel: "Animations", keywords: "motion reduce animations", icon: "palette" },
 
   // Shortcuts
-  { id: "set:catch-win-e", tab: "general", tabLabel: "General", title: "Catch Win+E myself", rowLabel: "Catch Win+E myself", keywords: "win+e windows key keyboard hook file explorer shortcut", icon: "keyboard" },
+  { id: "set:catch-win-e", tab: "general", tabLabel: "General", title: "Win+E opens Octopolis", rowLabel: "Win+E opens Octopolis", keywords: "win+e windows key keyboard hook file explorer shortcut catch helper", icon: "keyboard" },
   { id: "set:vim", tab: "shortcuts", tabLabel: "Shortcuts", title: "Vim keys", rowLabel: "Vim keys", keywords: "vim hjkl modal navigation", icon: "keyboard" },
   { id: "set:reset-keys", tab: "shortcuts", tabLabel: "Shortcuts", title: "Restore default shortcuts", rowLabel: "Restore default shortcuts", keywords: "reset shortcuts keybindings", icon: "keyboard" },
 

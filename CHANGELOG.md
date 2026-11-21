@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.1.5] - 2026-11-21
+
+### Added
+
+- **Win+E works while Octopolis is closed**: A small background helper, `octopolis-keys.exe`, starts when you sign in and catches Win+E, so it opens Octopolis on This PC even when the app isn't running. If Octopolis doesn't open in time, File Explorer opens instead, so Win+E always does something.
+- **Win+E checks itself**: Octopolis tests that its Win+E catcher is working when you turn it on and after unlocking, waking from sleep or Explorer restarting, and sets it up again if it stopped. While an app it can't test against is in front, such as a game, it waits instead of showing a false problem.
+- **Win+E log**: Each Win+E press and check is written to `winkey.log` in the log folder, without recording any other keys.
+- **Folder details in Properties**: Properties measures a folder in the background and shows its size, how many files and folders it holds, its full path, its flags and the drive's free space.
+- **Themed date and time picker**: Date and time fields in Properties and Rules use a picker that matches the app theme instead of the browser's own popup.
+
+### Changed
+
+- **Faster Win+E**: Win+E brings the running Octopolis forward on This PC directly instead of starting a second copy first.
+- **Simpler File Explorer settings**: Problems with Use Octopolis instead of File Explorer appear in one "Something isn't working" row with a single **Repair** button, shown only when something is wrong. **Catch Win+E myself** is now **Win+E opens Octopolis** and keeps your choice.
+- **Another copy is not a problem**: When folders and Win+E are set up for another copy of Octopolis, Settings says so and offers **Use this copy instead**, which asks first. Only that copy catches Win+E and File Explorer windows.
+- **Settings of other apps are left alone**: Turning on Use Octopolis instead of File Explorer never overwrites a setting another app made, and says which app keeps it.
+- **Recycle Bin progress**: Sending many items to the Recycle Bin shows progress and the current item as it goes, and Cancel stops it between items.
+
+### Fixed
+
+- **Turning off puts things back**: Turning off Use Octopolis instead of File Explorer, or uninstalling, restores the settings that were there before instead of just deleting Octopolis's, and an interrupted change is finished on the next start. `RESTORE-FILE-EXPLORER.txt` in the app's data folder explains how to undo it by hand.
+- **Win+E no longer falls through to File Explorer**: Win+E could open File Explorer while Octopolis was open, because the catcher was briefly removed while it was being set up again.
+- **Blank window**: The window could stay empty when brought back from the tray or minimized; it now always redraws when shown.
+
 ## [0.1.4] - 2026-11-19
 
 ### Added
