@@ -4446,6 +4446,8 @@ dependencies = [
  "pulldown-cmark",
  "rayon",
  "regex",
+ "serde",
+ "serde_json",
  "sevenz-rust2",
  "sha2 0.10.9",
  "tar",
@@ -4494,6 +4496,14 @@ dependencies = [
  "ureq",
  "webview2-com 0.39.1",
  "windows-core 0.62.2",
+]
+
+[[package]]
+name = "octopolis-keys"
+version = "0.1.5"
+dependencies = [
+ "octo-core",
+ "windows 0.62.2",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/octo-core", "src-tauri"]
+members = ["crates/octo-core", "crates/octo-keys", "src-tauri"]
 
 [workspace.package]
 version = "0.1.5"

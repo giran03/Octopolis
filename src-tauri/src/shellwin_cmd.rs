@@ -79,7 +79,8 @@ fn on_select(app: &AppHandle, selected: Selected) {
 pub fn apply(app: &AppHandle) {
     let state = app.state::<ShellWinState>();
     let wanted = state.wanted.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let active = octo_core::explorer_mode::status().folders;
+    // Only the copy the entries point at handles Show in folder (WE-15).
+    let active = crate::system::catchers(&octo_core::explorer_mode::status(), false, false).show_in_folder;
     if !active && state.registry.get().is_none() {
         return;
     }

@@ -20,8 +20,14 @@ pub fn check() {
     if !octo_core::failsafe::is_first_instance() {
         return;
     }
-    let status = octo_core::explorer_mode::status();
-    if !(status.folders || status.win_e) {
+    let exe = std::env::current_exe().unwrap_or_default();
+    // Finish a turn-on or turn-off that was cut short, before anything reads the state (WE-09).
+    match octo_core::explorer_mode::recover(&exe) {
+        Ok(Some(r)) => crate::diag::write("info", &format!("restore: finished an unfinished change; {} value(s) another tool changed were left", r.left.len())),
+        Ok(None) => {}
+        Err(e) => crate::diag::write("warn", &format!("restore: {e}")),
+    }
+    if !acts_here(&octo_core::explorer_mode::status_for(&exe)) {
         octo_core::failsafe::finished(&dir);
         return;
     }
@@ -29,11 +35,15 @@ pub fn check() {
     if !octo_core::failsafe::begin(&dir) {
         return;
     }
-    if octo_core::explorer_mode::disable().is_err() {
+    // The same restore path as turning the switch off.
+    if let Err(e) = octo_core::explorer_mode::disable(&exe) {
         // Nothing was handed back, so say nothing; the next start tries again.
+        crate::diag::write("warn", &format!("failsafe: restore: {e}"));
         return;
     }
     TRIPPED.store(true, Ordering::Relaxed);
+    // Win+E goes back to File Explorer now, not when the helper next looks (WE-15).
+    crate::system::stop_helper();
     // Whatever was being opened still opens, in File Explorer.
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -42,6 +52,13 @@ pub fn check() {
             let _ = std::process::Command::new(octo_core::shell::explorer_exe()).arg(arg).spawn();
         }
     }
+}
+
+/// The failsafe counts starts and turns the mode off only in the copy the
+/// entries point at: another copy that keeps failing to start never turns off
+/// an existing copy's mode (WE-15).
+fn acts_here(s: &octo_core::explorer_mode::Status) -> bool {
+    s.is_on() && s.target == Some(octo_core::explorer_mode::Target::ThisCopy)
 }
 
 /// What to pass File Explorer so it shows `target`. A file is shown selected in its
@@ -66,6 +83,13 @@ pub fn started() {
     }
 }
 
+/// Two Win+E fallbacks in a row: counts as one failed start (WE-04).
+pub fn win_e_failed_start() {
+    if let Some(dir) = dir() {
+        octo_core::failsafe::failed_start(&dir);
+    }
+}
+
 /// Whether this start handed folders back to File Explorer. True once, so the UI says it once.
 #[tauri::command]
 pub fn explorer_failsafe_tripped() -> bool {
@@ -74,7 +98,32 @@ pub fn explorer_failsafe_tripped() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::explorer_arg;
+    use octo_core::explorer_mode::{FoldersState, RecordState, Status, Target, WinEState};
+
+    use super::{acts_here, explorer_arg};
+
+    fn on(target: Option<Target>) -> Status {
+        Status { folders: FoldersState::Ours, win_e: WinEState::Ours, target, record: RecordState::Active, catches_here: false }
+    }
+
+    /// WE-15/WE-09: the failsafe's turn-off stops the helper at once, right after the restore.
+    #[test]
+    fn the_failsafe_turn_off_stops_the_helper_at_once() {
+        let src = include_str!("failsafe.rs");
+        let check = &src[src.find("pub fn check()").unwrap()..src.find("fn acts_here").unwrap()];
+        let disable = check.find("explorer_mode::disable(&exe)").expect("turns off through the normal restore");
+        let stop = check.find("crate::system::stop_helper()").expect("stops the helper");
+        let reopen = check.find("launch_targets").unwrap();
+        assert!(disable < stop && stop < reopen, "stopped right after the restore, before anything else");
+    }
+
+    #[test]
+    fn the_failsafe_acts_only_in_the_target_copy() {
+        assert!(acts_here(&on(Some(Target::ThisCopy))));
+        assert!(!acts_here(&on(Some(Target::OtherCopy("C:/Program Files/Octopolis/Octopolis.exe".into())))), "a non-target copy does nothing");
+        assert!(!acts_here(&on(Some(Target::Missing("D:/gone/Octopolis.exe".into())))));
+        assert!(!acts_here(&Status::default()), "nothing to do while off");
+    }
 
     #[test]
     fn files_are_shown_not_opened() {

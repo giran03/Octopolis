@@ -24,8 +24,22 @@ pub struct LaunchState {
 /// switches (`/e,`, `/n`, `/root,`) are ignored and `/select,X` opens `X`;
 /// other dash or slash options are skipped. Relative paths resolve against `cwd`.
 pub fn launch_targets(args: &[String], cwd: &Path) -> Vec<String> {
+    // Started by the Win+E helper for a request: This PC opens through the
+    // request (WE-04), only if the helper still wants it; the id isn't a path.
+    let request = octo_core::winkey::pipe::request_arg(args).is_some();
     let mut out = Vec::new();
+    let mut skip_next = false;
     for raw in args {
+        if std::mem::take(&mut skip_next) {
+            continue;
+        }
+        if raw.eq_ignore_ascii_case(octo_core::winkey::pipe::REQUEST_ARG) {
+            skip_next = true;
+            continue;
+        }
+        if request && raw.trim().eq_ignore_ascii_case(octo_core::explorer_mode::THIS_PC) {
+            continue;
+        }
         let arg = raw.trim().trim_matches('"');
         if arg.is_empty() {
             continue;
@@ -116,7 +130,7 @@ pub fn show_main(app: &AppHandle) {
         let _ = w.show();
         let _ = w.set_focus();
     }
-    crate::dormant::sync(app);
+    crate::dormant::wake(app);
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -188,6 +202,15 @@ mod tests {
     fn select_opens_the_named_item() {
         assert_eq!(launch_targets(&s(&["/select,C:\\a\\b.txt"]), Path::new("C:\\")), s(&["C:\\a\\b.txt"]));
         assert_eq!(launch_targets(&s(&["/Select,\"C:\\a b\\c.txt\""]), Path::new("C:\\")), s(&["C:\\a b\\c.txt"]));
+    }
+
+    #[test]
+    fn a_start_by_the_win_e_helper_opens_this_pc_only_through_its_request() {
+        let this_pc = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
+        // The id isn't a path, and This PC waits for the helper's WAIT(id) (WE-04).
+        assert_eq!(launch_targets(&s(&[this_pc, "--win-e-request", "1234"]), Path::new("C:\\")), Vec::<String>::new());
+        // A plain Win+E launch still opens This PC.
+        assert_eq!(launch_targets(&s(&[this_pc]), Path::new("C:\\")), s(&[this_pc]));
     }
 
     #[test]

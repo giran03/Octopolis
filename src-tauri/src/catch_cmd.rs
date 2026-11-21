@@ -23,7 +23,8 @@ fn on_caught(app: &AppHandle, caught: Caught) {
 
 /// Starts or stops catching to match the setting and the default-file-manager switch.
 pub fn apply(app: &AppHandle) {
-    let active = WANTED.load(Ordering::Relaxed) && octo_core::explorer_mode::status().folders;
+    // Only the copy the entries point at catches windows (WE-15).
+    let active = crate::system::catchers(&octo_core::explorer_mode::status(), false, WANTED.load(Ordering::Relaxed)).explorer_windows;
     let handle = app.clone();
     explorer_catch::set(active, move |caught| on_caught(&handle, caught));
 }

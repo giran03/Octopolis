@@ -241,22 +241,93 @@ pub async fn clipboard_clear(window: tauri::WebviewWindow) -> Result<(), String>
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PartDto {
+    state: &'static str,
+    /// Who keeps it, the path, or the reason, depending on the part.
+    detail: Option<String>,
+}
+
+fn part(state: &'static str, detail: Option<String>) -> PartDto {
+    PartDto { state, detail }
+}
+
+/// Status per part (WE-11).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExplorerModeDto {
-    folders: bool,
-    win_e: bool,
-    /// The entries point at this copy of Octopolis.
-    this_copy: bool,
-    target: Option<String>,
+    /// Folders or Win+E open in Octopolis.
+    on: bool,
+    /// ours / kept (detail: who) / stale (detail: the missing Octopolis.exe) / off
+    folders: PartDto,
+    /// ours / other (detail: who) / stale (detail: the missing Octopolis.exe) / absent
+    win_e: PartDto,
+    /// working / checking / notWorking (detail: why) / off
+    catcher: PartDto,
+    /// thisCopy / otherCopy / missing (detail: path), or none
+    target: Option<PartDto>,
+    /// none / active / unfinished / unusable (detail: what to do)
+    record: PartDto,
     /// The opt-in "Open in Octopolis" right-click entry is set up.
     menu: bool,
+    /// Values a turn-off left because another tool changed them.
+    left: Vec<String>,
+    /// The running copy's Octopolis.exe, for "Use this copy instead" (WE-15).
+    this_copy: String,
+    /// The Win+E helper (WE-01): running / notRunning / off, or none when this copy has no helper.
+    helper: Option<PartDto>,
 }
 
 fn explorer_mode_dto() -> ExplorerModeDto {
+    use octo_core::explorer_mode::{FoldersState, RecordState, Target, WinEState};
     let s = octo_core::explorer_mode::status();
-    let exe = std::env::current_exe().ok().map(|p| p.to_string_lossy().to_lowercase());
-    let this_copy = s.target.as_ref().is_some_and(|t| Some(t.to_lowercase()) == exe);
+    let folders = match s.folders.clone() {
+        FoldersState::Ours => part("ours", None),
+        FoldersState::Kept(by) => part("kept", Some(by)),
+        FoldersState::Stale(path) => part("stale", Some(path)),
+        FoldersState::Off => part("off", None),
+    };
+    // Only the copy the Win+E entry names runs the catcher (WE-15).
+    let wants = catchers(&s, WIN_E_CATCH.load(std::sync::atomic::Ordering::Relaxed), false).win_e;
+    let helper_exe = std::env::current_exe().ok().map(|e| octo_core::winkey::pipe::helper_beside(&e)).filter(|h| h.is_file());
+    let (catcher, helper) = match helper_exe {
+        // With the helper, the catcher is the helper's: its status file says how its probe went.
+        Some(_) => {
+            let running = helper_running();
+            let health = std::env::var_os("LOCALAPPDATA")
+                .and_then(|d| std::fs::read_to_string(std::path::PathBuf::from(d).join(octo_core::explorer_mode::record::DIR_NAME).join(octo_core::winkey::pipe::STATUS_FILE)).ok())
+                .map_or(octo_core::winkey::Health::Checking, |t| octo_core::winkey::pipe::parse_status(&t));
+            let (state, detail) = catcher_state(wants && running, health);
+            (part(state, detail), Some(part(helper_state(wants, running), None)))
+        }
+        None => {
+            let (state, detail) = catcher_state(wants, octo_core::winkey::health_state());
+            (part(state, detail), None)
+        }
+    };
+    let win_e = match s.win_e.clone() {
+        WinEState::Ours => part("ours", None),
+        WinEState::Other(by) => part("other", Some(by)),
+        WinEState::Stale(path) => part("stale", Some(path)),
+        WinEState::Absent => part("absent", None),
+    };
+    let target = s.target.clone().map(|t| match t {
+        Target::ThisCopy => part("thisCopy", None),
+        Target::OtherCopy(p) => part("otherCopy", Some(p)),
+        Target::Missing(p) => part("missing", Some(p)),
+    });
+    let record = match s.record.clone() {
+        RecordState::None => part("none", None),
+        RecordState::Active => part("active", None),
+        RecordState::Unfinished => part("unfinished", None),
+        RecordState::Unusable(why) => part("unusable", Some(why)),
+    };
     let menu = octo_core::explorer_mode::menu_status().is_some();
-    ExplorerModeDto { folders: s.folders, win_e: s.win_e, this_copy, target: s.target, menu }
+    let this_copy = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
+    ExplorerModeDto { on: s.is_on(), folders, win_e, catcher, target, record, menu, left: Vec::new(), this_copy, helper }
+}
+
+fn left_lines(report: &octo_core::explorer_mode::RestoreReport) -> Vec<String> {
+    report.left.iter().map(|l| format!("HKEY_CURRENT_USER\\{} ({}) now holds \"{}\"", l.key, l.name.as_deref().unwrap_or("Default"), l.now)).collect()
 }
 
 #[tauri::command]
@@ -268,29 +339,50 @@ pub async fn explorer_mode_status() -> Result<ExplorerModeDto, String> {
 #[tauri::command]
 pub async fn explorer_mode_set(app: tauri::AppHandle, on: bool) -> Result<ExplorerModeDto, String> {
     crate::off_main(move || {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let mut left = Vec::new();
         if on {
-            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
             octo_core::explorer_mode::enable(&exe).map_err(|e| e.to_string())?;
         } else {
-            octo_core::explorer_mode::disable().map_err(|e| e.to_string())?;
+            left = left_lines(&octo_core::explorer_mode::disable(&exe).map_err(|e| e.to_string())?);
+            // The Run value went with the record; the running helper has nothing left to catch.
+            stop_helper();
         }
         // "Show in folder" follows the same switch.
         crate::shellwin_cmd::apply(&app);
         crate::catch_cmd::apply(&app);
         apply_win_e();
+        Ok(ExplorerModeDto { left, ..explorer_mode_dto() })
+    })
+    .await
+}
+
+/// Repair: re-runs turning on for this copy (with the record checks) and
+/// restarts the Win+E catcher. The fix for Win+E opening File Explorer.
+/// `take_over` is set once the user confirmed taking over entries that point
+/// at a missing Octopolis.exe (WE-08).
+#[tauri::command]
+pub async fn explorer_mode_repair(app: tauri::AppHandle, take_over: Option<bool>) -> Result<ExplorerModeDto, String> {
+    crate::off_main(move || {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        octo_core::explorer_mode::repair(&exe, take_over.unwrap_or(false)).map_err(|e| e.to_string())?;
+        repair_win_e();
+        crate::shellwin_cmd::apply(&app);
+        crate::catch_cmd::apply(&app);
         Ok(explorer_mode_dto())
     })
     .await
 }
 
-/// Re-applies the whole setup for this copy: rewrites the registry entries and
-/// restarts the Win+E catcher. The fix for Win+E opening File Explorer.
+/// "Use this copy instead" (WE-15), after the user confirmed: points folders
+/// and Win+E at this copy instead of the other copy they point at now.
 #[tauri::command]
-pub async fn explorer_mode_repair(app: tauri::AppHandle) -> Result<ExplorerModeDto, String> {
+pub async fn explorer_use_this_copy(app: tauri::AppHandle) -> Result<ExplorerModeDto, String> {
     crate::off_main(move || {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        octo_core::explorer_mode::enable(&exe).map_err(|e| e.to_string())?;
-        octo_core::winkey::set(None::<fn()>);
+        octo_core::explorer_mode::use_this_copy(&exe).map_err(|e| e.to_string())?;
+        // The other copy's helper stops; this copy's takes over (one per session).
+        stop_helper();
         apply_win_e();
         crate::shellwin_cmd::apply(&app);
         crate::catch_cmd::apply(&app);
@@ -317,9 +409,25 @@ pub async fn explorer_menu_set(on: bool) -> Result<ExplorerModeDto, String> {
 /// The user's "catch Win+E myself" setting. On until the window says otherwise.
 static WIN_E_CATCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
+fn data_dir() -> Option<std::path::PathBuf> {
+    Some(std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join(octo_core::explorer_mode::record::DIR_NAME))
+}
+
+/// At start-up, before anything catches: the switch as last saved, so a
+/// helper is never started against the user's choice while the page loads.
+pub fn load_win_e_switch() {
+    if let Some(dir) = data_dir() {
+        WIN_E_CATCH.store(octo_core::winkey::pipe::read_switch(&dir), std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 #[tauri::command]
 pub async fn win_e_catch_set(enabled: bool) -> Result<(), String> {
     WIN_E_CATCH.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    // Kept current for the helper, which can't read the page's settings (WE-01).
+    if let Some(dir) = data_dir() {
+        let _ = octo_core::winkey::pipe::write_switch(&dir, enabled);
+    }
     crate::off_main(|| {
         apply_win_e();
         Ok(())
@@ -329,21 +437,148 @@ pub async fn win_e_catch_set(enabled: bool) -> Result<(), String> {
 
 /// Newer Windows 11 builds ignore the registry entry for Win+E, so while the
 /// mode is on Octopolis also catches the key itself and opens "This PC".
-pub fn apply_win_e() {
-    if WIN_E_CATCH.load(std::sync::atomic::Ordering::Relaxed) && octo_core::explorer_mode::status().win_e {
-        octo_core::winkey::set(Some(|| {
-            if let Ok(exe) = std::env::current_exe() {
-                // The single-instance plugin hands this to the running window.
-                let _ = std::process::Command::new(exe).arg(octo_core::explorer_mode::THIS_PC).spawn();
-            }
-        }));
-    } else {
-        octo_core::winkey::set(None::<fn()>);
+/// What this running copy may catch (WE-15). Only the copy the entries point
+/// at runs any File Explorer catcher, so two copies never catch the same
+/// press or window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Catchers {
+    /// The Win+E keyboard hook.
+    pub win_e: bool,
+    /// "Also catch File Explorer windows other apps open".
+    pub explorer_windows: bool,
+    /// "Show in folder" handling (the shell windows table).
+    pub show_in_folder: bool,
+}
+
+/// `catch_win_e` and `catch_explorer` are the user's switches.
+pub fn catchers(s: &octo_core::explorer_mode::Status, catch_win_e: bool, catch_explorer: bool) -> Catchers {
+    use octo_core::explorer_mode::{FoldersState, Target};
+    let folders_here = s.folders == FoldersState::Ours && s.target == Some(Target::ThisCopy);
+    Catchers { win_e: catch_win_e && s.catches_here, explorer_windows: catch_explorer && folders_here, show_in_folder: folders_here }
+}
+
+/// The catcher's status (WE-05, WE-11): "working" only after the self-test saw
+/// its probe, "checking" before any result (a probe that couldn't run keeps
+/// whatever was there). A copy that doesn't catch (switch off, or not the
+/// target, WE-15) reports "off", never "not working".
+pub fn catcher_state(catches: bool, health: octo_core::winkey::Health) -> (&'static str, Option<String>) {
+    use octo_core::winkey::Health;
+    match (catches, health) {
+        (false, _) | (true, Health::Off) => ("off", None),
+        (true, Health::Checking) => ("checking", None),
+        (true, Health::Working) => ("working", None),
+        (true, Health::NotWorking(why)) => ("notWorking", Some(why)),
     }
 }
 
-/// If the entries point at an Octopolis that no longer exists (the app was
-/// moved), points them at this copy so folders keep opening.
+/// Who holds the Win+E hook for this copy (WE-01, WE-15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WinEPlan {
+    /// This process installs its own hook.
+    pub own_hook: bool,
+    /// The helper is registered, started and served.
+    pub helper: bool,
+}
+
+/// `wants`: this copy should catch Win+E (the switch is on and it is the target).
+/// One hook per session: with a helper beside this copy, this process never installs its own.
+pub fn win_e_plan(wants: bool, helper_exists: bool) -> WinEPlan {
+    WinEPlan { own_hook: wants && !helper_exists, helper: wants && helper_exists }
+}
+
+/// The helper's status (WE-11).
+pub fn helper_state(wants: bool, running: bool) -> &'static str {
+    match (wants, running) {
+        (false, _) => "off",
+        (true, true) => "running",
+        (true, false) => "notRunning",
+    }
+}
+
+fn helper_running() -> bool {
+    #[cfg(windows)]
+    return octo_core::winkey::pipe::sys::exists(octo_core::winkey::pipe::HELPER_MUTEX);
+    #[cfg(not(windows))]
+    false
+}
+
+/// Starts the helper unless one already runs in this session.
+fn start_helper(helper: &std::path::Path) {
+    if !helper_running()
+        && let Err(e) = std::process::Command::new(helper).spawn()
+    {
+        crate::diag::write("warn", &format!("win+e: the helper couldn't start: {e}"));
+    }
+}
+
+/// Asks the session's helper to stop, and waits a little for it.
+pub fn stop_helper() {
+    #[cfg(windows)]
+    {
+        use octo_core::winkey::pipe::{self, sys};
+        if !sys::signal(pipe::QUIT_EVENT) {
+            return;
+        }
+        let started = std::time::Instant::now();
+        while sys::exists(pipe::HELPER_MUTEX) && started.elapsed() < std::time::Duration::from_secs(3) {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+}
+
+/// Matches the Win+E catching to the switches. Re-applying with nothing
+/// changed leaves a running hook or helper alone.
+pub fn apply_win_e() {
+    use octo_core::explorer_mode::HelperRun;
+    let Ok(exe) = std::env::current_exe() else { return };
+    let s = octo_core::explorer_mode::status();
+    // Only the copy the Win+E entry names catches, so two copies never catch the same press (WE-15).
+    let wants = catchers(&s, WIN_E_CATCH.load(std::sync::atomic::Ordering::Relaxed), false).win_e;
+    let helper = octo_core::winkey::pipe::helper_beside(&exe);
+    let plan = win_e_plan(wants, helper.is_file());
+    // Without the helper: this window's own hook opens This PC here directly (WE-03).
+    octo_core::winkey::apply(plan.own_hook, crate::win_e_cmd::on_press);
+    if plan.helper {
+        match octo_core::explorer_mode::set_helper(&exe, Some(&helper)) {
+            Ok(HelperRun::Kept(by)) => crate::diag::write("warn", &format!("win+e: the Run value is kept by {by}, so the helper won't start at sign-in")),
+            Err(e) => crate::diag::write("warn", &format!("win+e: the helper's Run value: {e}")),
+            Ok(_) => {}
+        }
+        crate::win_e_cmd::serve(helper.clone());
+        start_helper(&helper);
+    } else if helper.is_file() && s.catches_here {
+        // The target copy with "Win+E opens Octopolis" off: its helper and Run value go.
+        let _ = octo_core::explorer_mode::set_helper(&exe, None);
+        crate::win_e_cmd::stop_serving();
+        stop_helper();
+    } else {
+        // Not the target: the target copy's helper is left alone.
+        crate::win_e_cmd::stop_serving();
+    }
+}
+
+/// Repair: a fresh hook (new before old) and its self-test, in the helper or here.
+fn repair_win_e() {
+    let wants = catchers(&octo_core::explorer_mode::status(), WIN_E_CATCH.load(std::sync::atomic::Ordering::Relaxed), false).win_e;
+    let helper = std::env::current_exe().ok().map(|e| octo_core::winkey::pipe::helper_beside(&e)).filter(|h| h.is_file());
+    apply_win_e();
+    match helper {
+        Some(_) if wants => {
+            #[cfg(windows)]
+            octo_core::winkey::pipe::sys::signal(octo_core::winkey::pipe::REPAIR_EVENT);
+        }
+        _ => {
+            if octo_core::winkey::is_running() {
+                octo_core::winkey::restart();
+            }
+        }
+    }
+}
+
+/// At start-up: restarts the Win+E catcher, and re-points the right-click menu
+/// entry if the copy it names is gone. The File Explorer entries are never
+/// re-pointed here: an unfinished change was already finished by the failsafe
+/// check, and entries this copy doesn't own are left alone (WE-08).
 pub fn repair_explorer_mode() {
     apply_win_e();
     if let Some(menu) = octo_core::explorer_mode::menu_status()
@@ -351,14 +586,6 @@ pub fn repair_explorer_mode() {
         && let Ok(exe) = std::env::current_exe()
     {
         let _ = octo_core::explorer_mode::enable_menu(&exe);
-    }
-    let s = octo_core::explorer_mode::status();
-    let Some(target) = s.target else { return };
-    if !(s.folders || s.win_e) || std::path::Path::new(&target).exists() {
-        return;
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = octo_core::explorer_mode::enable(&exe);
     }
 }
 
@@ -826,6 +1053,74 @@ mod catalog_tests {
             let png = octo_core::thumbs::thumbnail_png(&path, 64, true);
             println!("{} | {} | {}", a.label, a.id, png.as_ref().map_or_else(|e| format!("ERR {e}"), |p| format!("{} bytes", p.len())));
         }
+    }
+}
+
+#[cfg(test)]
+mod catcher_tests {
+    use octo_core::explorer_mode::{FoldersState, RecordState, Status, Target, WinEState};
+
+    use super::{Catchers, catcher_state, catchers};
+
+    #[test]
+    fn with_a_helper_the_app_never_installs_its_own_hook() {
+        use super::{WinEPlan, win_e_plan};
+        assert_eq!(win_e_plan(true, true), WinEPlan { own_hook: false, helper: true }, "one hook per session");
+        assert_eq!(win_e_plan(true, false), WinEPlan { own_hook: true, helper: false });
+        assert_eq!(win_e_plan(false, true), WinEPlan { own_hook: false, helper: false }, "a copy that isn't the target starts nothing");
+        assert_eq!(win_e_plan(false, false), WinEPlan { own_hook: false, helper: false });
+    }
+
+    #[test]
+    fn the_helper_status_is_off_unless_this_copy_wants_it() {
+        use super::helper_state;
+        assert_eq!(helper_state(true, true), "running");
+        assert_eq!(helper_state(true, false), "notRunning");
+        assert_eq!(helper_state(false, true), "off", "another copy's helper isn't this copy's problem");
+    }
+
+    #[test]
+    fn the_catcher_is_working_only_after_its_probe_was_seen() {
+        use octo_core::winkey::Health;
+        assert_eq!(catcher_state(true, Health::Working), ("working", None));
+        assert_eq!(catcher_state(true, Health::NotWorking("the keyboard hook didn't see the test key".into())), ("notWorking", Some("the keyboard hook didn't see the test key".into())));
+        assert_eq!(catcher_state(true, Health::Checking), ("checking", None), "checking before the first result, never not working");
+    }
+
+    #[test]
+    fn a_copy_that_doesnt_catch_never_reports_not_working() {
+        use octo_core::winkey::Health;
+        let other = on(Target::OtherCopy("C:/Program Files/Octopolis/Octopolis.exe".into()), false);
+        let c = catchers(&other, true, true);
+        assert!(!c.win_e);
+        assert_eq!(catcher_state(c.win_e, Health::NotWorking("stale result".into())), ("off", None));
+        assert_eq!(catcher_state(c.win_e, Health::Checking), ("off", None));
+    }
+
+    fn on(target: Target, catches_here: bool) -> Status {
+        Status { folders: FoldersState::Ours, win_e: WinEState::Ours, target: Some(target), record: RecordState::Active, catches_here }
+    }
+
+    #[test]
+    fn the_target_copy_runs_every_catcher_the_user_wants() {
+        let s = on(Target::ThisCopy, true);
+        assert_eq!(catchers(&s, true, true), Catchers { win_e: true, explorer_windows: true, show_in_folder: true });
+        assert_eq!(catchers(&s, false, false), Catchers { win_e: false, explorer_windows: false, show_in_folder: true });
+    }
+
+    #[test]
+    fn another_running_copy_starts_none_of_them() {
+        let s = on(Target::OtherCopy("C:/Program Files/Octopolis/Octopolis.exe".into()), false);
+        assert_eq!(catchers(&s, true, true), Catchers::default());
+        // Even if its Win+E check were wrong, the folder catchers follow the target.
+        assert_eq!(catchers(&Status { catches_here: false, ..on(Target::Missing("D:/gone.exe".into()), false) }, true, true), Catchers::default());
+    }
+
+    #[test]
+    fn nothing_runs_while_the_mode_is_off_or_kept() {
+        assert_eq!(catchers(&Status::default(), true, true), Catchers::default());
+        let kept = Status { folders: FoldersState::Kept("x.exe".into()), win_e: WinEState::Other("y.exe".into()), ..on(Target::ThisCopy, false) };
+        assert_eq!(catchers(&kept, true, true), Catchers::default());
     }
 }
 

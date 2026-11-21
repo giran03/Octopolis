@@ -10,8 +10,9 @@ import { TooltipLayer } from "./components/Tooltip";
 import { trackDrags } from "./state/drag";
 import { isGoogleFont, loadGoogleFont } from "./lib/fonts";
 import { sidebarWidthForRowPx } from "./lib/sidebar";
-import { detectEditors, errorText, explorerFailsafeTripped, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
-import { classifyTarget } from "./lib/launch";
+import { detectEditors, errorText, explorerFailsafeTripped, startupMark, knownFolders, OPEN_PATHS_EVENT, openInExplorer, WIN_E_EVENT, winEClaim, winEReady, winEShown, resolvePath, setKeepInTray, setSummon, setWindowCorners, startupPaths, type KnownFolder } from "./lib/ipc";
+import { classifyTarget, THIS_PC } from "./lib/launch";
+import { afterPaint, handleWinE } from "./lib/winE";
 import { startShellWindows } from "./state/shellWindows";
 import { dialogAssist } from "./state/dialogAssist";
 import { DialogPickBar } from "./components/DialogPickBar";
@@ -237,6 +238,18 @@ export function App() {
       .then(({ listen }) => listen<string[]>(OPEN_PATHS_EVENT, (e) => void openLaunchTargets(e.payload)))
       .catch(() => null);
     onCleanup(() => void unlisten.then((off) => off?.()));
+    // A caught Win+E: claim it, open This PC here, and say "shown" once painted (WE-03, WE-04).
+    // Requests that arrive during start-up wait until the tabs are set up.
+    let pageReady: () => void = () => undefined;
+    const ready = new Promise<void>((done) => (pageReady = done));
+    const unlistenWinE = import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<number>(WIN_E_EVENT, (e) =>
+          void ready.then(() => handleWinE(e.payload, { claim: winEClaim, open: () => openLaunchTargets([THIS_PC]), painted: afterPaint, shown: winEShown })).catch(() => undefined),
+        ),
+      )
+      .catch(() => null);
+    onCleanup(() => void unlistenWinE.then((off) => off?.()));
 
     const folders = await knownFolders().catch(() => [] as KnownFolder[]);
     knownFolderPaths = folders;
@@ -249,6 +262,8 @@ export function App() {
       workspace.init(startFolder);
     } else startFolder = home || "C:\\";
     await openLaunchTargets(await startupPaths().catch(() => []));
+    pageReady();
+    void winEReady().catch(() => undefined);
     startShellWindows();
     dialogAssist.start();
     if (await explorerFailsafeTripped().catch(() => false)) {
