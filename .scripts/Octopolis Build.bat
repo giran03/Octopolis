@@ -26,6 +26,10 @@ if not exist "node_modules\" (
   where bun >nul 2>&1 && (call bun install || goto :fail) || (call npm install || goto :fail)
 )
 
+echo Building the Win+E helper ^(octopolis-keys.exe^)...
+call cargo build --release -p octopolis-keys
+if errorlevel 1 goto :fail
+
 echo Building the app and compressed NSIS installer...
 where bun >nul 2>&1
 if not errorlevel 1 (

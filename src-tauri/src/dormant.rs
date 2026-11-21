@@ -20,6 +20,17 @@ static LOW: AtomicBool = AtomicBool::new(false);
 /// Matches the WebView's memory target to whether the main window can be seen.
 /// Cheap to call on every window event.
 pub fn sync(app: &AppHandle) {
+    sync_with(app, false);
+}
+
+/// After an explicit show (second launch, tray, summon, Win+E): as [`sync`], and
+/// the page is always told to draw again, even when the low-target bookkeeping
+/// says it never left. A page that sat hidden must never stay blank once shown.
+pub fn wake(app: &AppHandle) {
+    sync_with(app, true);
+}
+
+fn sync_with(app: &AppHandle, force_repaint: bool) {
     let Some(w) = app.get_webview_window("main") else { return };
     let hwnd = w.hwnd().map_or(0, |h| h.0 as isize);
     let _ = w.with_webview(move |wv| {
@@ -32,8 +43,14 @@ pub fn sync(app: &AppHandle) {
         }
         // A visible window always gets the normal target again, even when nothing seems to have changed:
         // setting it is harmless, and it repairs any state that went out of step.
-        set_low_memory(&wv, unseen, was_low && !unseen);
+        set_low_memory(&wv, unseen, repaint_needed(unseen, was_low, force_repaint));
     });
+}
+
+/// Whether the page must be told to draw: it is visible now, and it was on the low
+/// target or the window was just shown on purpose.
+fn repaint_needed(unseen: bool, was_low: bool, force: bool) -> bool {
+    !unseen && (was_low || force)
 }
 
 /// Whether the window is shown and not minimized.
@@ -149,3 +166,16 @@ fn watch(wv: tauri::webview::PlatformWebview) {
 
 #[cfg(not(windows))]
 fn watch(_: tauri::webview::PlatformWebview) {}
+
+#[cfg(test)]
+mod tests {
+    use super::repaint_needed;
+
+    #[test]
+    fn a_shown_window_always_repaints_when_shown_on_purpose() {
+        assert!(repaint_needed(false, true, false), "back from the low target");
+        assert!(repaint_needed(false, false, true), "an explicit show repaints even if the bookkeeping missed the hide");
+        assert!(!repaint_needed(false, false, false), "ordinary focus changes don't flicker the page");
+        assert!(!repaint_needed(true, true, true), "nothing to draw while it can't be seen");
+    }
+}

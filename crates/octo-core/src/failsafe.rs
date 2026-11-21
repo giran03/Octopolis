@@ -28,6 +28,13 @@ pub fn begin(dir: &Path) -> bool {
     trip
 }
 
+/// Counts one failed start without starting: two Win+E fallbacks in a row
+/// (WE-04). The next start sees it like a start that never finished.
+pub fn failed_start(dir: &Path) {
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(dir.join(FILE), (read(dir) + 1).to_string());
+}
+
 /// The window is up and working: forget earlier unfinished starts.
 pub fn finished(dir: &Path) {
     let _ = std::fs::remove_file(dir.join(FILE));
@@ -67,6 +74,17 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_start_from_win_e_fallbacks_counts_like_an_unfinished_start() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!begin(dir.path()));
+        finished(dir.path());
+        // Two fallbacks in a row while running: one failed start.
+        failed_start(dir.path());
+        assert!(!begin(dir.path()), "one failed start doesn't trip on its own");
+        assert!(begin(dir.path()), "plus an unfinished start, it does");
+    }
 
     #[test]
     fn trips_after_two_unfinished_starts_and_only_once() {

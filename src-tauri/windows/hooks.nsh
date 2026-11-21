@@ -1,12 +1,68 @@
 ; Octopolis installer hooks.
 
+; The Win+E helper (octopolis-keys.exe, WE-01) is built by Octopolis Build.bat
+; ("cargo build --release -p octopolis-keys") and installed beside Octopolis.exe.
+; The path is fixed here, while this file is being included.
+!define OCTO_KEYS_SRC "${__FILEDIR__}\..\..\target\release\octopolis-keys.exe"
+
+; Installing or updating: stop this copy's running helper so its file can be replaced.
+!macro NSIS_HOOK_PREINSTALL
+  ${If} ${FileExists} "$INSTDIR\octopolis-keys.exe"
+    ExecWait '"$INSTDIR\octopolis-keys.exe" --stop'
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  !if /FileExists "${OCTO_KEYS_SRC}"
+    SetOutPath "$INSTDIR"
+    File "/oname=octopolis-keys.exe" "${OCTO_KEYS_SRC}"
+  !else
+    !error "octopolis-keys.exe isn't built. Run: cargo build --release -p octopolis-keys (Octopolis Build.bat does this)"
+  !endif
+  ; Started only when its Run value names it: the mode points at this copy and
+  ; "Win+E opens Octopolis" is on. It checks that again itself before catching.
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "OctopolisKeys"
+  ${If} $0 == '"$INSTDIR\octopolis-keys.exe"'
+    Exec '"$INSTDIR\octopolis-keys.exe"'
+  ${EndIf}
+!macroend
+
+; After uninstalling: the helper isn't one of the files Tauri tracks, so it is removed here.
+!macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $UpdateMode <> 1
+    Delete "$INSTDIR\octopolis-keys.exe"
+  ${EndIf}
+!macroend
+
 ; Before uninstalling, give folders and Win+E back to File Explorer if
-; "Use Octopolis instead of File Explorer" was on. Only Octopolis's own
-; per-user entries are removed; another tool's Win+E override is kept.
+; "Use Octopolis instead of File Explorer" was on. Octopolis.exe --restore-explorer
+; goes first: it puts back what each value held before, using the record Octopolis
+; kept, and leaves values another tool wrote. The direct deletes after it are only
+; a fallback, run when Octopolis.exe is missing or --restore-explorer did not exit 0;
+; another tool's Win+E override is kept.
 ; An update also runs the old uninstaller (UpdateMode 1): the entries stay
 ; then, since the new version keeps using them.
 !macro NSIS_HOOK_PREUNINSTALL
+  ; This copy's Win+E helper stops first (another copy's is left alone), so nothing
+  ; catches Win+E for a copy that is going away and its file can be removed.
+  ${If} ${FileExists} "$INSTDIR\octopolis-keys.exe"
+    ExecWait '"$INSTDIR\octopolis-keys.exe" --stop'
+  ${EndIf}
   ${If} $UpdateMode <> 1
+    ; 1 (run the fallback) unless --restore-explorer starts and exits 0. ExecWait
+    ; sets the error flag when it can't start the exe and then leaves $0 undefined,
+    ; so the flag is checked directly.
+    StrCpy $0 1
+    ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+      ClearErrors
+      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --restore-explorer' $0
+      ${If} ${Errors}
+        StrCpy $0 1
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${If} $UpdateMode <> 1
+  ${AndIf} $0 <> 0
     DeleteRegKey HKCU "Software\Classes\Directory\shell\openinoctopolis"
     DeleteRegKey HKCU "Software\Classes\Drive\shell\openinoctopolis"
     ; The opt-in "Open in Octopolis" menu entry.
@@ -23,6 +79,10 @@
     ReadRegStr $0 HKCU "Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow\command" ""
     StrCmp $0 '"$INSTDIR\${MAINBINARYNAME}.exe" "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"' 0 +2
       DeleteRegKey HKCU "Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}"
+    ; The helper's Run value, only when it starts this install's helper.
+    ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "OctopolisKeys"
+    StrCmp $0 '"$INSTDIR\octopolis-keys.exe"' 0 +2
+      DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "OctopolisKeys"
   ${EndIf}
 
   ; Fonts saved from Google Fonts (Settings > Appearance) live in <app data>\fonts. Ticking "Delete the

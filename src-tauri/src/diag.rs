@@ -27,6 +27,17 @@ pub fn mark_start() {
     }));
 }
 
+/// Points the log at its usual folder (`%LOCALAPPDATA%\<identifier>\logs`, what
+/// Tauri's `app_log_dir` gives) before Tauri is up, for work done without a window.
+pub fn init_early() {
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let dir = PathBuf::from(local).join(octo_core::explorer_mode::record::DIR_NAME).join("logs");
+        let _ = std::fs::create_dir_all(&dir);
+        octo_core::winkey::log::init(&dir);
+        let _ = DIR.set(dir);
+    }
+}
+
 pub fn init(app: &tauri::AppHandle) {
     use tauri::Manager;
     if let Ok(dir) = app.path().app_log_dir() {

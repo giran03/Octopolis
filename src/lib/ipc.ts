@@ -471,19 +471,40 @@ export const disconnectNetworkDrive = (root: string, force = false) => invoke<vo
 export const wslDistros = () => invoke<string[]>("wsl_distros");
 /** Opens a Windows shell location (Control Panel, `shell:` names) in File Explorer. */
 export const openInExplorer = (target: string) => invoke<void>("open_in_explorer", { target });
+/** One part of "Use Octopolis instead of File Explorer". `detail` is who keeps it, a path, or a reason. */
+export interface ExplorerPart<S extends string> {
+  readonly state: S;
+  readonly detail: string | null;
+}
+/** Status reported separately for each part. */
 export interface ExplorerMode {
-  /** Folder opens go to Octopolis. */
-  readonly folders: boolean;
-  readonly winE: boolean;
-  /** The entries point at this copy of Octopolis. */
-  readonly thisCopy: boolean;
-  readonly target: string | null;
+  /** Folders or Win+E open in Octopolis. */
+  readonly on: boolean;
+  /** `stale`: an entry with no record points at a missing Octopolis.exe (the detail). */
+  readonly folders: ExplorerPart<"ours" | "kept" | "stale" | "off">;
+  /** The Win+E registry entry. */
+  readonly winE: ExplorerPart<"ours" | "other" | "stale" | "absent">;
+  /** Octopolis's own Win+E catcher. */
+  readonly catcher: ExplorerPart<"working" | "checking" | "notWorking" | "off">;
+  /** The copy of Octopolis the entries open. */
+  readonly target: ExplorerPart<"thisCopy" | "otherCopy" | "missing"> | null;
+  /** Octopolis's record of what it changed. */
+  readonly record: ExplorerPart<"none" | "active" | "unfinished" | "unusable">;
   /** The opt-in "Open in Octopolis" entry is in File Explorer's folder menu. */
   readonly menu: boolean;
+  /** Values a turn-off left as they are because another tool changed them. */
+  readonly left: readonly string[];
+  /** The running copy's Octopolis.exe. */
+  readonly thisCopy: string;
+  /** The Win+E helper (octopolis-keys.exe), or null when this copy has none. */
+  readonly helper: ExplorerPart<"running" | "notRunning" | "off"> | null;
 }
 export const explorerModeStatus = () => invoke<ExplorerMode>("explorer_mode_status");
+/** Sets everything up again. `takeOver`: the user confirmed taking over entries that point at a missing Octopolis. */
+export const explorerModeRepair = (takeOver = false) => invoke<ExplorerMode>("explorer_mode_repair", { takeOver });
+/** "Use this copy instead": points folders and Win+E at the running copy. Ask first. */
+export const explorerUseThisCopy = () => invoke<ExplorerMode>("explorer_use_this_copy");
 /** Turns "Use Octopolis instead of File Explorer" on or off for this Windows account. */
-export const explorerModeRepair = () => invoke<ExplorerMode>("explorer_mode_repair");
 export const explorerModeSet = (on: boolean) => invoke<ExplorerMode>("explorer_mode_set", { on });
 /** Adds or removes "Open in Octopolis" in File Explorer's folder right-click menu. */
 export const explorerMenuSet = (on: boolean) => invoke<ExplorerMode>("explorer_menu_set", { on });
@@ -522,6 +543,14 @@ export const dialogAssistSend = (files: readonly string[], folder: string) => in
 export const dialogAssistCancel = () => invoke<void>("dialog_assist_cancel");
 /** Event sent when another launch asks this window to open paths. */
 export const OPEN_PATHS_EVENT = "octopolis://open-paths";
+/** A caught Win+E, with its request id (WE-03). */
+export const WIN_E_EVENT = "octopolis://win-e";
+/** The page is ready for Win+E requests (a request before this gets the cold-start timeout). */
+export const winEReady = () => invoke<void>("win_e_ready");
+/** Claims Win+E request `id`; `false` when it was cancelled and must not be opened. */
+export const winEClaim = (id: number) => invoke<boolean>("win_e_claim", { id });
+/** The window is visible and painted for request `id`. */
+export const winEShown = (id: number) => invoke<void>("win_e_shown", { id });
 
 export function watchDir(id: string, path: string, onChange: () => void): Promise<void> {
   const channel = new Channel<number>();

@@ -25,6 +25,7 @@ mod rules_cmd;
 mod syscleanup_cmd;
 mod update_cmd;
 mod watch;
+mod win_e_cmd;
 
 use tauri::Manager;
 
@@ -36,12 +37,31 @@ pub(crate) async fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, St
 
 pub fn run() {
     // `Octopolis.exe --restore-explorer` gives folders back to File Explorer
-    // without opening a window (also usable if the app can't start).
+    // without opening a window (also usable if the app can't start, and run
+    // by the uninstaller). Exit code 0: restored; 1: something was left.
     if std::env::args().any(|a| a.eq_ignore_ascii_case("--restore-explorer")) {
-        let menu = octo_core::explorer_mode::disable_menu();
-        let code = i32::from(octo_core::explorer_mode::disable().is_err() || menu.is_err());
+        diag::init_early();
+        let exe = std::env::current_exe().unwrap_or_default();
+        // This copy's helper stops first; another copy's is left alone (WE-10, WE-15).
+        if octo_core::explorer_mode::status_for(&exe).catches_here {
+            system::stop_helper();
+        }
+        let (mut code, line) = octo_core::explorer_mode::restore_cli(&exe);
+        diag::write(if code == 0 { "info" } else { "warn" }, &line);
+        octo_core::winkey::log::write(octo_core::winkey::log::Stage::Restore, &format!("--restore-explorer exited {code}"), None);
+        // The right-click entry goes too, unless it opens another copy that still exists:
+        // uninstalling one copy never removes another existing copy's entries (WE-10).
+        let menu_elsewhere = octo_core::explorer_mode::menu_belongs_elsewhere(octo_core::explorer_mode::menu_status().as_deref(), &exe);
+        if !menu_elsewhere
+            && let Err(e) = octo_core::explorer_mode::disable_menu()
+        {
+            diag::write("warn", &format!("restore: the Open in Octopolis menu entry was left: {e}"));
+            code = 1;
+        }
         std::process::exit(code);
     }
+    diag::init_early();
+    system::load_win_e_switch();
     failsafe::check();
     diag::mark_start();
     octo_core::shell::suppress_drive_error_dialogs();
@@ -75,6 +95,7 @@ pub fn run() {
         .setup(|app| {
             diag::init(app.handle());
             launch::init(app.handle());
+            win_e_cmd::init(app.handle());
             icon_cmd::restore(app.handle());
             dormant::watch_failures(app.handle());
             std::thread::spawn(system::repair_explorer_mode);
@@ -192,6 +213,10 @@ pub fn run() {
             system::explorer_mode_status,
             system::explorer_mode_set,
             system::explorer_mode_repair,
+            system::explorer_use_this_copy,
+            win_e_cmd::win_e_ready,
+            win_e_cmd::win_e_claim,
+            win_e_cmd::win_e_shown,
             system::win_e_catch_set,
             system::explorer_menu_set,
             failsafe::explorer_failsafe_tripped,
@@ -232,4 +257,27 @@ pub fn run() {
                 octo_core::explorer_catch::set(false, |_| {});
             }
         });
+}
+
+#[cfg(test)]
+mod startup_tests {
+    /// Start-up never waits on the Win+E machinery (hook, probe, helper, pipe):
+    /// before the window exists nothing touches it, and the setup hands it to a
+    /// thread of its own, so the window and the page come up whatever it does.
+    #[test]
+    fn start_up_never_waits_on_win_e() {
+        let src = include_str!("lib.rs");
+        let run = &src[src.find("pub fn run()").unwrap()..];
+        let before_window = &run[..run.find("tauri::Builder::default()").unwrap()];
+        let setup_start = run.find(".setup(|app| {").unwrap();
+        let setup = &run[setup_start..setup_start + run[setup_start..].find("Ok(())").unwrap()];
+        let win_e = ["apply_win_e", "winkey::set", "winkey::apply", "self_test", "probe(", "set_helper", "start_helper", "win_e_cmd::serve"];
+        // The `--restore-explorer` branch exits before any window; everything after it is start-up.
+        let normal_start = &before_window[before_window.find("std::process::exit(code);").unwrap()..];
+        for call in win_e {
+            assert!(!normal_start.contains(call), "start-up calls {call} before the window exists");
+            assert!(!setup.contains(call), "the setup calls {call} on the UI thread");
+        }
+        assert!(setup.contains("std::thread::spawn(system::repair_explorer_mode)"), "the Win+E start runs on its own thread");
+    }
 }

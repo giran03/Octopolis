@@ -1,5 +1,6 @@
-import { createResource, createSignal, Show } from "solid-js";
-import { detectEditors, errorText, explorerMenuSet, explorerModeRepair, explorerModeSet, explorerModeStatus, type SummonKey } from "../../lib/ipc";
+import { createResource, createSignal, For, Show } from "solid-js";
+import { explorerChangeText, explorerHint, explorerProblems, otherCopy, PROBLEMS_TITLE, staleTarget, useThisCopyQuestion, WIN_E_SWITCH } from "../../lib/explorerMode";
+import { detectEditors, errorText, explorerMenuSet, explorerModeRepair, explorerModeSet, explorerModeStatus, explorerUseThisCopy, type SummonKey } from "../../lib/ipc";
 import { ui } from "../../state/ui";
 import { type StartFolder, settings, type TerminalShell } from "../../state/settings";
 import { Section, Segmented, Select, SettingRow, Toggle, type Option } from "./controls";
@@ -30,8 +31,8 @@ const SPEEDS: readonly Option<number>[] = [
 ];
 
 const EXPLORER_MODE_NOTE =
-  "This changes settings for your Windows account only, and needs no administrator rights. Turn it off here at any time, or uninstall Octopolis, to give folders back to File Explorer. If Octopolis can't open, run Octopolis.exe --restore-explorer. " +
-  "Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer (Also catch File Explorer windows covers that). Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control Panel, Network and similar places still open in File Explorer.";
+  "This changes settings for your Windows account only, and needs no administrator rights. Turn it off here at any time, or uninstall Octopolis, to give folders back to File Explorer. If Octopolis can't open, run Octopolis.exe --restore-explorer, or follow RESTORE-FILE-EXPLORER.txt in %LOCALAPPDATA%\\app.octopolis.explorer. Settings another app already owns are left alone, and turning this off puts back what was there before. " +
+  "Show in folder in other apps selects the file here when a tab already has that folder open; otherwise Windows opens File Explorer (Also catch File Explorer windows covers that). Open and Save dialogs in other apps stay the Windows ones (Help in Open and Save dialogs below adds shortcuts to them), and Control Panel, Network and similar places still open in File Explorer. Win+E may not be caught while a window running as administrator is in front.";
 
 /** Explains the switch in a modal before it is turned on. */
 const askExplorerMode = (onConfirm: () => void) =>
@@ -41,35 +42,63 @@ const askExplorerMode = (onConfirm: () => void) =>
 function ExplorerModeSection() {
   const [status, { mutate }] = createResource(() => explorerModeStatus().catch(() => null));
   const [busy, setBusy] = createSignal(false);
-  const on = () => !!status() && (status()!.folders || status()!.winE);
+  const on = () => !!status()?.on;
+  const problems = () => {
+    const s = status();
+    return s ? explorerProblems(s) : [];
+  };
   const apply = async (next: boolean) => {
     setBusy(true);
     try {
-      mutate(await explorerModeSet(next));
-      ui.toast(next ? "Folders and Win+E now open in Octopolis" : "Folders open in File Explorer again");
+      const s = await explorerModeSet(next);
+      mutate(s);
+      ui.toast(explorerChangeText(next, s));
     } catch (e) {
       ui.toast(`Couldn't change this: ${errorText(e)}`);
     } finally {
       setBusy(false);
     }
   };
-  const hint = () => {
-    const s = status();
-    if (!s) return "Opens folders from the desktop, Start, the Run box and other apps, and Win+E, in Octopolis";
-    if (on() && !s.thisCopy && s.target) return `Currently set to another copy of Octopolis: ${s.target}`;
-    if (s.folders && !s.winE) return "Folders open here. Win+E is kept by another app";
-    return "Opens folders from the desktop, Start, the Run box and other apps, and Win+E, in Octopolis";
-  };
-  const repair = async () => {
+  const repair = async (takeOver = false) => {
     setBusy(true);
     try {
-      mutate(await explorerModeRepair());
-      ui.toast("Win+E and folders were set up again. Try Win+E now");
+      const s = await explorerModeRepair(takeOver);
+      mutate(s);
+      const left = explorerProblems(s);
+      ui.toast(left.length ? `Set up again, but: ${left[0]}` : "Win+E and folders were set up again. Try Win+E now");
     } catch (e) {
       ui.toast(`Couldn't fix this: ${errorText(e)}`);
     } finally {
       setBusy(false);
     }
+  };
+  /** Repair. Entries that point at a missing Octopolis are only taken over once the user says yes. */
+  const askRepair = () => {
+    const s = status();
+    const path = s ? staleTarget(s) : null;
+    if (!path) return void repair();
+    ui.ask({ title: "Repair", body: `Take over the entry that points at ${path}?`, confirmLabel: "Take over", onConfirm: () => void repair(true) });
+  };
+  /** "Use this copy instead" (WE-15): asks first, then points the entries at this copy. */
+  const askUseThisCopy = () => {
+    const s = status();
+    if (!s || !otherCopy(s)) return;
+    ui.ask({
+      title: "Use this copy instead",
+      body: useThisCopyQuestion(s),
+      confirmLabel: "Use this copy",
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          mutate(await explorerUseThisCopy());
+          ui.toast("Folders and Win+E now open this copy of Octopolis");
+        } catch (e) {
+          ui.toast(`Couldn't change this: ${errorText(e)}`);
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   };
   const setMenu = async (next: boolean) => {
     setBusy(true);
@@ -84,20 +113,31 @@ function ExplorerModeSection() {
   };
   return (
     <Section title="File Explorer">
-      <SettingRow label="Use Octopolis instead of File Explorer" hint={hint()}>
+      <SettingRow label="Use Octopolis instead of File Explorer" hint={explorerHint(status())}>
+        <Show when={otherCopy(status())}>
+          <button class="btn small" disabled={busy()} onClick={askUseThisCopy}>
+            Use this copy instead
+          </button>
+        </Show>
         <Toggle label="Use Octopolis instead of File Explorer" checked={on()} disabled={busy() || status.loading} onChange={(next) => (next ? askExplorerMode(() => void apply(true)) : void apply(false))} />
       </SettingRow>
+      {/* One row for every problem, with one Repair button (WE-14). */}
+      <Show when={problems().length > 0}>
+        <div class="srow">
+          <div class="srow-text">
+            <div class="srow-label">{PROBLEMS_TITLE}</div>
+            <For each={problems()}>{(line) => <div class="srow-hint">{line}</div>}</For>
+          </div>
+          <div class="srow-control">
+            <button class="btn small" disabled={busy()} onClick={askRepair}>
+              Repair
+            </button>
+          </div>
+        </div>
+      </Show>
       <Show when={on()}>
-        <SettingRow label="Win+E still opens File Explorer?" hint="Sets everything up again for this copy of Octopolis and restarts the Win+E catcher">
-          <button class="btn small" disabled={busy()} onClick={() => void repair()}>
-            Fix Win+E
-          </button>
-        </SettingRow>
-        <SettingRow
-          label="Catch Win+E myself"
-          hint="Some Windows 11 builds ignore the registry entry for Win+E. This listens for that one combination and nothing else; no other key is read, stored or sent. Turn it off if you'd rather keep Win+E for File Explorer"
-        >
-          <Toggle label="Catch Win+E myself" checked={settings.catchWinE()} onChange={(catchWinE) => settings.set({ catchWinE })} />
+        <SettingRow label={WIN_E_SWITCH.label} hint={WIN_E_SWITCH.hint}>
+          <Toggle label={WIN_E_SWITCH.label} checked={settings.catchWinE()} onChange={(catchWinE) => settings.set({ catchWinE })} />
         </SettingRow>
         <SettingRow
           label="Also catch File Explorer windows other apps open"
